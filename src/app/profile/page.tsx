@@ -4,14 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Award, BookOpen, ChevronRight, Flame, Mic, TrendingUp, User } from 'lucide-react'
-
-interface Profile {
-  level?: string
-  goal?: string
-  english?: string
-  resume?: string
-  interview?: string
-}
+import type { StudentProfile } from '@/types'
+import { getCurrentStudent, getStudentProfile, getStudentProgress, type StudentIdentity, type StudentProgress } from '@/lib/studentStore'
 
 const labels: Record<string, string> = {
   hsc: 'HSC',
@@ -26,20 +20,16 @@ const labels: Record<string, string> = {
   good: 'Good',
 }
 
-function safeProfile(): Profile {
-  try {
-    const saved = localStorage.getItem('vp_profile')
-    return saved ? JSON.parse(saved) : {}
-  } catch {
-    return {}
-  }
-}
-
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<Profile>({})
+  const [student, setStudent] = useState<StudentIdentity | null>(null)
+  const [profile, setProfile] = useState<Partial<StudentProfile>>({})
+  const [progress, setProgress] = useState<StudentProgress | null>(null)
 
   useEffect(() => {
-    setProfile(safeProfile())
+    const current = getCurrentStudent()
+    setStudent(current)
+    setProfile(getStudentProfile(current.id))
+    setProgress(getStudentProgress(current.id))
   }, [])
 
   const track = useMemo(() => {
@@ -49,6 +39,7 @@ export default function ProfilePage() {
   }, [profile])
 
   const hasProfile = Object.keys(profile).length > 0
+  const stats = progress || getStudentProgress(student?.id)
 
   return (
     <div className="min-h-dvh bg-cream">
@@ -65,18 +56,28 @@ export default function ProfilePage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="card p-6 bg-forest text-white">
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-forest/20 bg-forest p-6 text-white shadow-sm"
+        >
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-white/70 text-sm mb-1">Student profile</p>
-              <h1 className="font-display text-2xl font-bold">Your learning journey</h1>
-              <p className="text-white/75 text-sm mt-2">{track}</p>
+              <h1 className="font-display text-2xl font-bold">{student?.name || 'Your learning journey'}</h1>
+              <p className="text-white/75 text-sm mt-2">{student?.email || track}</p>
+              <p className="text-white/70 text-xs mt-1">{track}</p>
             </div>
             <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5">
               <Flame size={14} className="text-saffron" />
-              <span className="text-sm font-semibold">7 day streak</span>
+              <span className="text-sm font-semibold">{stats.streak} day streak</span>
             </div>
           </div>
+          {student?.isDemo && (
+            <div className="mt-4 inline-flex rounded-full bg-saffron/20 px-3 py-1 text-xs font-semibold text-white">
+              Judge demo profile
+            </div>
+          )}
         </motion.section>
 
         {!hasProfile && (
@@ -94,9 +95,9 @@ export default function ProfilePage() {
 
         <section className="grid grid-cols-3 gap-3">
           {[
-            { icon: BookOpen, label: 'Questions', value: '47' },
-            { icon: TrendingUp, label: 'Avg score', value: '82%' },
-            { icon: Award, label: 'Badges', value: '4' },
+            { icon: BookOpen, label: 'Questions', value: String(stats.questions) },
+            { icon: TrendingUp, label: 'Avg score', value: `${stats.avgScore}%` },
+            { icon: Award, label: 'Badges', value: String(stats.badges) },
           ].map((stat, index) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="card p-4 text-center">
               <stat.icon size={20} className="text-saffron mx-auto mb-2" />

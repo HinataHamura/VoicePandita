@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, ChevronLeft } from 'lucide-react'
+import { saveStudentProfile } from '@/lib/studentStore'
 
 const steps = [
   {
@@ -79,7 +80,7 @@ export default function OnboardingPage() {
       setStep(s => s + 1)
     } else {
       // Save to localStorage and go to dashboard
-      localStorage.setItem('vp_profile', JSON.stringify({ ...answers, [current.id]: selected }))
+      saveStudentProfile({ ...answers, [current.id]: selected })
       router.push('/learn')
     }
   }

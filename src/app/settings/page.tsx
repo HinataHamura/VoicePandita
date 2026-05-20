@@ -112,6 +112,7 @@ export default function SettingsPage() {
             onClick={() => {
               localStorage.removeItem('vp_guest')
               localStorage.removeItem('vp_session_id')
+              localStorage.removeItem('vp_current_student')
             }}
             className="w-full text-left text-sm text-clay font-medium py-2 hover:underline"
           >

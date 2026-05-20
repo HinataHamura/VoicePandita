@@ -8,6 +8,7 @@ import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
+import { recordPractice } from '@/lib/studentStore'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -181,6 +182,7 @@ export default function LearnPage() {
           ? { ...msg, text: `${offline} Online হলে আমি আরও বিস্তারিত visual explanation দেব।`, emotion: 'confident', loading: false }
           : msg
       ))
+      recordPractice(subject, question)
       setIsLoading(false)
       return
     }
@@ -207,6 +209,7 @@ export default function LearnPage() {
           : msg
       ))
       if (data.answer) speakText(data.answer, nextEmotion)
+      recordPractice(subject, question)
       logPeerWisdom(question)
     } catch {
       setMessages(prev => prev.map(msg =>

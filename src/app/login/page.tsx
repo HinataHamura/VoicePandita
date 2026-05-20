@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent, startGuestStudent } from '@/lib/studentStore'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -21,13 +22,33 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
+      if (!isSignup && email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD) {
+        startDemoStudent()
+        router.push('/learn')
+        return
+      }
+
       if (isSignup) {
-        const { error } = await supabase.auth.signUp({ email, password })
+        const { data, error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
+        if (data.user) {
+          setCurrentStudent({
+            id: data.user.id,
+            email: data.user.email || email,
+            name: data.user.email?.split('@')[0] || 'Student',
+          })
+        }
         router.push('/onboarding')
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
+        if (data.user) {
+          setCurrentStudent({
+            id: data.user.id,
+            email: data.user.email || email,
+            name: data.user.email?.split('@')[0] || 'Student',
+          })
+        }
         router.push('/learn')
       }
     } catch (e: any) {
@@ -39,9 +60,16 @@ export default function LoginPage() {
 
   async function guestLogin() {
     setLoading(true)
-    // Guest: just go to onboarding with no auth
     localStorage.setItem('vp_guest', 'true')
+    startGuestStudent()
     router.push('/onboarding')
+  }
+
+  function fillDemoLogin() {
+    setIsSignup(false)
+    setEmail(DEMO_EMAIL)
+    setPassword(DEMO_PASSWORD)
+    setError('')
   }
 
   return (
@@ -110,6 +138,15 @@ export default function LoginPage() {
             className="w-full border border-black/10 text-ink/70 py-3 rounded-xl text-sm font-medium hover:bg-paper transition-all bangla">
             Guest হিসেবে চালিয়ে যাও
           </button>
+
+          <button onClick={fillDemoLogin}
+            className="mt-3 w-full border border-saffron/30 bg-saffron/5 text-saffron py-3 rounded-xl text-sm font-semibold hover:bg-saffron/10 transition-all">
+            Use judge demo account
+          </button>
+
+          <div className="mt-3 rounded-lg bg-paper px-3 py-2 text-xs text-ink/55">
+            Demo: <span className="font-mono">{DEMO_EMAIL}</span> / <span className="font-mono">{DEMO_PASSWORD}</span>
+          </div>
         </div>
 
         <button onClick={() => setIsSignup(v => !v)}
