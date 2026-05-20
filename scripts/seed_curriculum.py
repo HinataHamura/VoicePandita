@@ -1,0 +1,79 @@
+"""
+seed_curriculum.py
+──────────────────
+Run once to embed SSC-BanglaTutor dataset into Supabase pgvector.
+
+Usage:
+  pip install supabase sentence-transformers python-dotenv
+  python seed_curriculum.py
+"""
+
+import os, json, time
+from dotenv import load_dotenv
+from supabase import create_client
+from sentence_transformers import SentenceTransformer
+
+load_dotenv()
+
+SUPABASE_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+model    = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+# ── Curriculum data (expand with full SSC-BanglaTutor dataset) ──
+CURRICULUM = [
+  # Physics
+  {"content": "Newton-এর ১ম সূত্র: বাহ্যিক বল না থাকলে স্থির বস্তু স্থির থাকে এবং গতিশীল বস্তু সমবেগে চলতে থাকে।", "subject": "physics", "chapter": "গতিবিদ্যা", "topic": "Newton-এর সূত্র"},
+  {"content": "Newton-এর ২য় সূত্র: F = ma। বল = ভর × ত্বরণ। বল বেশি হলে ত্বরণ বেশি হয়।", "subject": "physics", "chapter": "গতিবিদ্যা", "topic": "Newton-এর সূত্র"},
+  {"content": "Newton-এর ৩য় সূত্র: প্রতিটি ক্রিয়ার একটি সমান ও বিপরীত প্রতিক্রিয়া আছে।", "subject": "physics", "chapter": "গতিবিদ্যা", "topic": "Newton-এর সূত্র"},
+  {"content": "ওহম-এর সূত্র: V = IR। ভোল্টেজ = কারেন্ট × রেজিস্ট্যান্স। V বাড়লে I বাড়ে।", "subject": "physics", "chapter": "তড়িৎ", "topic": "ওহম-এর সূত্র"},
+  {"content": "গতিশক্তি: KE = ½mv²। ভর ও বেগের বর্গের গুণফলের অর্ধেক।", "subject": "physics", "chapter": "শক্তি", "topic": "গতিশক্তি"},
+  {"content": "স্থিতিশক্তি: PE = mgh। ভর × অভিকর্ষজ ত্বরণ × উচ্চতা।", "subject": "physics", "chapter": "শক্তি", "topic": "স্থিতিশক্তি"},
+  {"content": "তরঙ্গদৈর্ঘ্য ও কম্পাঙ্ক: v = fλ। বেগ = কম্পাঙ্ক × তরঙ্গদৈর্ঘ্য।", "subject": "physics", "chapter": "তরঙ্গ", "topic": "তরঙ্গ গতি"},
+
+  # Chemistry
+  {"content": "আয়নিক বন্ধন: ধাতু ইলেকট্রন ছেড়ে দেয়, অধাতু গ্রহণ করে। যেমন NaCl।", "subject": "chemistry", "chapter": "রাসায়নিক বন্ধন", "topic": "আয়নিক বন্ধন"},
+  {"content": "সমযোজী বন্ধন: দুটি অধাতু ইলেকট্রন শেয়ার করে। যেমন H₂O, CO₂।", "subject": "chemistry", "chapter": "রাসায়নিক বন্ধন", "topic": "সমযোজী বন্ধন"},
+  {"content": "pH স্কেল: ০-৭ অম্লীয়, ৭ নিরপেক্ষ, ৭-১৪ ক্ষারীয়। pH = -log[H⁺]।", "subject": "chemistry", "chapter": "এসিড-ক্ষার", "topic": "pH"},
+  {"content": "মোলার ভর: এক মোল পদার্থের গ্রামে ভর। পরমাণু ভর বা আণবিক ভরের সমান।", "subject": "chemistry", "chapter": "মোল ধারণা", "topic": "মোলার ভর"},
+
+  # Biology
+  {"content": "সালোকসংশ্লেষণ: ৬CO₂ + ৬H₂O + আলো → C₆H₁₂O₆ + ৬O₂। ক্লোরোপ্লাস্টে ঘটে।", "subject": "biology", "chapter": "উদ্ভিদ শারীরবিদ্যা", "topic": "সালোকসংশ্লেষণ"},
+  {"content": "মাইটোসিস: দেহকোষ বিভাজন। ২টি অভিন্ন কোষ তৈরি হয়। ধাপ: প্রোফেজ, মেটাফেজ, অ্যানাফেজ, টেলোফেজ।", "subject": "biology", "chapter": "কোষ বিভাজন", "topic": "মাইটোসিস"},
+  {"content": "মিয়োসিস: জননকোষ বিভাজন। ৪টি অর্ধক্রোমোসোম সমৃদ্ধ কোষ তৈরি হয়।", "subject": "biology", "chapter": "কোষ বিভাজন", "topic": "মিয়োসিস"},
+  {"content": "DNA: ডিঅক্সিরাইবো নিউক্লিক এসিড। বংশগতির মূল উপাদান। ডাবল হেলিক্স গঠন।", "subject": "biology", "chapter": "বংশগতি", "topic": "DNA"},
+
+  # Math
+  {"content": "দ্বিঘাত সমীকরণ: ax²+bx+c=0 এর সমাধান x = (-b ± √(b²-4ac)) / 2a।", "subject": "math", "chapter": "বীজগণিত", "topic": "দ্বিঘাত সমীকরণ"},
+  {"content": "sin, cos, tan: একটি সমকোণ ত্রিভুজে কোণ ও বাহুর অনুপাত।", "subject": "math", "chapter": "ত্রিকোণমিতি", "topic": "ত্রিকোণমিতিক অনুপাত"},
+  {"content": "লগারিদম: log(ab) = log(a) + log(b)। log(aⁿ) = n·log(a)।", "subject": "math", "chapter": "লগারিদম", "topic": "লগারিদমের সূত্র"},
+]
+
+def seed():
+  print(f"Seeding {len(CURRICULUM)} curriculum entries...")
+  batch_size = 8
+  for i in range(0, len(CURRICULUM), batch_size):
+    batch = CURRICULUM[i : i + batch_size]
+    texts = [item["content"] for item in batch]
+    embeddings = model.encode(texts).tolist()
+
+    rows = [
+      {
+        "content":   item["content"],
+        "subject":   item["subject"],
+        "chapter":   item["chapter"],
+        "topic":     item["topic"],
+        "embedding": emb,
+      }
+      for item, emb in zip(batch, embeddings)
+    ]
+
+    result = supabase.table("curriculum_embeddings").insert(rows).execute()
+    print(f"  Inserted batch {i//batch_size + 1} ({len(rows)} rows)")
+    time.sleep(0.5)
+
+  print("Done! Curriculum seeded.")
+
+if __name__ == "__main__":
+  seed()
