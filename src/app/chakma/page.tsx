@@ -3,19 +3,20 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Globe, Wifi, WifiOff } from 'lucide-react'
+import { ArrowLeft, Database, Globe, Wifi, WifiOff } from 'lucide-react'
 
 const EXAMPLES = [
-  { label: 'Chakma demo', text: 'Newton er second law bujhao' },
-  { label: 'Marma demo', text: 'Photosynthesis সহজ করে বুঝাও' },
-  { label: 'Garo demo', text: 'Ionic bond ki bhabe hoy?' },
+  { label: 'Chakma script', text: '𑄥𑄨𑄠𑄚𑄴 𑄈𑄬𑄚𑄨𑄇𑄴𑄇𑄬 𑄉𑄧𑄢𑄨 ?' },
+  { label: 'Bangla to Chakma', text: 'সালোকসংশ্লেষণ সহজ করে বুঝাও' },
+  { label: 'Mixed science', text: 'Newton er second law bujhao' },
 ]
 
 export default function ChakmaPage() {
   const [offline, setOffline] = useState(false)
-  const [language, setLanguage] = useState<'ckm' | 'mrm' | 'gnk'>('ckm')
+  const [language, setLanguage] = useState<'ccp' | 'bn'>('ccp')
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
+  const [translatedQuestion, setTranslatedQuestion] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function ask() {
@@ -29,6 +30,7 @@ export default function ChakmaPage() {
       })
       const data = await res.json()
       setAnswer(data.answer)
+      setTranslatedQuestion(data.translatedQuestion)
     } finally {
       setLoading(false)
     }
@@ -46,7 +48,7 @@ export default function ChakmaPage() {
               <h1 className="font-display text-lg font-bold flex items-center gap-2">
                 <Globe size={18} className="text-forest" /> MELD Language Bridge
               </h1>
-              <p className="text-xs text-ink/45">Chakma, Marma, Garo mother-tongue support demo</p>
+              <p className="text-xs text-ink/45">Chakma dataset-backed mother-tongue support</p>
             </div>
           </div>
           <button
@@ -70,17 +72,20 @@ export default function ChakmaPage() {
 
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-6">
           <p className="mb-4 text-sm leading-relaxed text-ink/64">
-            VoicePandita detects ckm/mrm/gnk, bridges to Bangla curriculum context, then returns culturally adapted explanations with examples like Karnaphuli River and jhum farming.
+            VoicePandita এখন Chakma Unicode detect করে, Hugging Face-এর BN↔CCP parallel dataset দিয়ে Bangla curriculum context বানায়, তারপর answer Chakma script-এ ফিরিয়ে দেয়।
           </p>
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-forest/10 bg-paper/65 px-3 py-2 text-xs text-ink/55">
+            <Database size={14} className="text-forest" />
+            amlan107/chakma-nmt-base-parallel-dev-set · bn/ccp · dev_val
+          </div>
           <div className="mb-3 flex gap-2">
             {[
-              ['ckm', 'Chakma'],
-              ['mrm', 'Marma'],
-              ['gnk', 'Garo'],
+              ['ccp', 'Chakma'],
+              ['bn', 'Bangla'],
             ].map(([value, label]) => (
               <button
                 key={value}
-                onClick={() => setLanguage(value as 'ckm' | 'mrm' | 'gnk')}
+                onClick={() => setLanguage(value as 'ccp' | 'bn')}
                 className={`rounded-full border px-3 py-1.5 text-xs ${language === value ? 'border-forest bg-forest text-white' : 'border-forest/10 bg-white/80 text-ink/55'}`}
               >
                 {label}
@@ -90,7 +95,7 @@ export default function ChakmaPage() {
           <textarea
             value={question}
             onChange={e => setQuestion(e.target.value)}
-            placeholder="Mother tongue or Bangla question..."
+            placeholder="Chakma script বা Bangla question..."
             className="bangla w-full resize-none rounded-lg border border-forest/10 bg-white/86 p-4 text-sm shadow-sm focus:border-saffron/40 focus:outline-none"
             rows={3}
           />
@@ -102,6 +107,11 @@ export default function ChakmaPage() {
         {answer && (
           <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-6">
             <div className="mb-3 border-b border-forest/10 pb-3 text-xs font-medium text-forest">MELD bridge response</div>
+            {translatedQuestion && (
+              <div className="mb-4 rounded-lg bg-forest/5 p-3 text-xs leading-relaxed text-ink/55">
+                Bangla bridge question: {translatedQuestion}
+              </div>
+            )}
             <p className="bangla whitespace-pre-line leading-relaxed">{answer}</p>
           </motion.section>
         )}

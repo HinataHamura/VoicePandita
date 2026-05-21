@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import {
+  formatChakmaExamples,
+  prepareChakmaBridge,
+  selectChakmaExamples,
+  translateBanglaWithDataset,
+  type ChakmaBridgeContext,
+} from '@/lib/chakmaBridge'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated'
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000)
 
 const LESSONS = {
   newton_second_law: {
@@ -140,7 +148,7 @@ async function geminiText(prompt: string) {
   for (const modelName of models) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName })
-      const result = await model.generateContent(prompt)
+      const result = await withTimeout(model.generateContent(prompt), GEMINI_TIMEOUT_MS, modelName)
       return result.response.text().trim()
     } catch (err) {
       lastError = err
@@ -149,6 +157,73 @@ async function geminiText(prompt: string) {
   }
 
   throw lastError
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timer = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  })
+
+  return Promise.race([promise, timer]).finally(() => {
+    if (timeout) clearTimeout(timeout)
+  })
+}
+
+async function translateChakmaQuestionWithGemini(question: string, bridge: ChakmaBridgeContext) {
+  if (!bridge.enabled || bridge.detectedLanguage !== 'ccp') return bridge.questionForTutor
+  if (bridge.inputMatch && bridge.inputMatch.score >= 0.82) return bridge.questionForTutor
+
+  const prompt = `You are translating a student question from Chakma to Bangla for VoicePandita.
+Use the parallel Chakma/Bangla examples from the Hugging Face dataset as guidance.
+
+Examples:
+${formatChakmaExamples(bridge.examples)}
+
+Chakma student question:
+${question}
+
+Return ONLY the Bangla translation. Do not answer the question. Preserve formulas and English scientific terms.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translated?.trim() || bridge.questionForTutor
+  } catch (err) {
+    console.warn('/api/ask Chakma question translation failed', err instanceof Error ? err.message : err)
+    return bridge.questionForTutor
+  }
+}
+
+async function translateBanglaAnswerToChakma(answer: string, bridge: ChakmaBridgeContext) {
+  if (!bridge.enabled) return answer
+
+  const datasetFallback = translateBanglaWithDataset(answer, bridge.pairs)
+  const answerExamples = selectChakmaExamples(answer, bridge.pairs, 16)
+
+  if (!genAI) return datasetFallback
+
+  const prompt = `Translate this Bangla tutoring answer into Chakma language using Chakma script (ISO 639-3: ccp).
+Use the parallel examples from the Hugging Face dataset as style and vocabulary guidance.
+
+Examples:
+${formatChakmaExamples(answerExamples)}
+
+Bangla answer:
+${answer}
+
+Rules:
+- Return ONLY the Chakma translation.
+- Preserve formulas, symbols, English science terms, and Mermaid-independent wording.
+- Keep the Socratic follow-up question as a question in Chakma.
+- If a school term has no reliable Chakma equivalent, keep that term in Bangla/English inside the Chakma sentence.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translated?.trim() || datasetFallback
+  } catch (err) {
+    console.warn('/api/ask Chakma answer translation failed', err instanceof Error ? err.message : err)
+    return datasetFallback
+  }
 }
 
 function extractJson(text: string) {
@@ -227,13 +302,15 @@ Rules:
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const question = String(body.question || '').trim()
-    if (!question) return NextResponse.json({ error: 'Question required' }, { status: 400 })
+    const originalQuestion = String(body.question || '').trim()
+    if (!originalQuestion) return NextResponse.json({ error: 'Question required' }, { status: 400 })
 
     const outputMode = String(body.outputMode || 'whiteboard') as OutputMode
     const language = String(body.language || 'bn')
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
+    const bridge = await prepareChakmaBridge(originalQuestion, language)
+    const question = await translateChakmaQuestionWithGemini(originalQuestion, bridge)
     const lessonKey = inferLesson(question)
     const detectedEmotion = detectEmotion(question, repeatCount)
     const emotion = (body.emotion || detectedEmotion) as EmotionState
@@ -291,13 +368,22 @@ Rules:
       if (!answer) answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
     }
 
+    const finalAnswer = bridge.enabled
+      ? await translateBanglaAnswerToChakma(answer, bridge)
+      : answer
+    const finalDiagram = bridge.enabled
+      ? translateBanglaWithDataset(diagram, bridge.pairs)
+      : diagram
+
     return NextResponse.json({
-      answer,
-      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : diagram,
+      answer: finalAnswer,
+      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : finalDiagram,
       detectedEmotion,
+      detectedLanguage: bridge.enabled ? 'ccp' : language,
+      translatedQuestion: bridge.enabled && question !== originalQuestion ? question : null,
       graphPath,
       pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
-      source,
+      source: bridge.enabled ? `${source}+chakma-${bridge.source}` : source,
     })
   } catch (err) {
     console.error('/api/ask error:', err)

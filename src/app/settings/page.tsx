@@ -19,17 +19,46 @@ const defaultSettings: Settings = {
   dark: false,
 }
 
+function loadSettings(): Settings {
+  if (typeof window === 'undefined') return defaultSettings
+  try {
+    const saved = localStorage.getItem('vp_settings')
+    return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings
+  } catch {
+    return defaultSettings
+  }
+}
+
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
-    <button onClick={onToggle} className={`relative w-11 h-6 rounded-full transition-colors ${on ? 'bg-saffron' : 'bg-black/15'}`} aria-pressed={on}>
+    <button
+      onClick={event => {
+        event.stopPropagation()
+        onToggle()
+      }}
+      className={`relative w-11 h-6 rounded-full transition-colors ${on ? 'bg-saffron' : 'bg-black/15'}`}
+      aria-pressed={on}
+    >
       <motion.span animate={{ x: on ? 20 : 2 }} className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow" />
     </button>
   )
 }
 
-function Row({ icon: Icon, label, sub, children }: { icon: any; label: string; sub?: string; children: React.ReactNode }) {
+function Row({ icon: Icon, label, sub, children, onClick }: { icon: any; label: string; sub?: string; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-4 border-b border-black/5 last:border-0">
+    <div
+      onClick={onClick}
+      onKeyDown={event => {
+        if (!onClick) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      }}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      className={`flex items-center justify-between gap-4 py-4 border-b border-black/5 last:border-0 ${onClick ? 'cursor-pointer rounded-lg px-2 hover:bg-black/5' : ''}`}
+    >
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 bg-black/5 rounded-xl flex items-center justify-center">
           <Icon size={16} className="text-ink/50" />
@@ -45,20 +74,12 @@ function Row({ icon: Icon, label, sub, children }: { icon: any; label: string; s
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<Settings>(defaultSettings)
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('vp_settings')
-      if (saved) setSettings({ ...defaultSettings, ...JSON.parse(saved) })
-    } catch {
-      setSettings(defaultSettings)
-    }
-  }, [])
+  const [settings, setSettings] = useState<Settings>(loadSettings)
 
   useEffect(() => {
     localStorage.setItem('vp_settings', JSON.stringify(settings))
     document.documentElement.classList.toggle('vp-dark', settings.dark)
+    window.dispatchEvent(new Event('vp-settings-change'))
   }, [settings])
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
@@ -91,17 +112,17 @@ export default function SettingsPage() {
               <option value="en">English</option>
             </select>
           </Row>
-          <Row icon={settings.dark ? Moon : Sun} label="Dark mode" sub="High contrast reading preference">
+          <Row icon={settings.dark ? Moon : Sun} label="Dark mode" sub="High contrast reading preference" onClick={() => update('dark', !settings.dark)}>
             <Toggle on={settings.dark} onToggle={() => update('dark', !settings.dark)} />
           </Row>
         </motion.section>
 
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="card p-5">
           <h2 className="text-xs font-semibold text-ink/45 uppercase tracking-wider mb-2">Connection and sound</h2>
-          <Row icon={settings.offline ? WifiOff : Wifi} label="Prefer offline pack" sub="Use cached answers first on weak networks">
+          <Row icon={settings.offline ? WifiOff : Wifi} label="Prefer offline pack" sub="Use cached answers first on weak networks" onClick={() => update('offline', !settings.offline)}>
             <Toggle on={settings.offline} onToggle={() => update('offline', !settings.offline)} />
           </Row>
-          <Row icon={settings.sound ? Volume2 : VolumeX} label="Voice output" sub="Read tutor answers aloud in the browser">
+          <Row icon={settings.sound ? Volume2 : VolumeX} label="Voice output" sub="Read tutor answers aloud in the browser" onClick={() => update('sound', !settings.sound)}>
             <Toggle on={settings.sound} onToggle={() => update('sound', !settings.sound)} />
           </Row>
         </motion.section>

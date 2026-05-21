@@ -7,6 +7,8 @@ import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent, startGuestStudent } from '@/lib/studentStore'
 
+const AFTER_LOGIN_PATH = '/profile'
+
 export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -24,7 +26,7 @@ export default function LoginPage() {
     try {
       if (!isSignup && email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD) {
         startDemoStudent()
-        router.push('/student-path')
+        router.push(AFTER_LOGIN_PATH)
         return
       }
 
@@ -38,7 +40,7 @@ export default function LoginPage() {
             name: data.user.email?.split('@')[0] || 'Student',
           })
         }
-        router.push('/student-path')
+        router.push(AFTER_LOGIN_PATH)
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
@@ -49,7 +51,7 @@ export default function LoginPage() {
             name: data.user.email?.split('@')[0] || 'Student',
           })
         }
-        router.push('/student-path')
+        router.push(AFTER_LOGIN_PATH)
       }
     } catch (e: any) {
       setError(e.message || 'কিছু সমস্যা হয়েছে। আবার চেষ্টা করো।')
@@ -62,7 +64,7 @@ export default function LoginPage() {
     setLoading(true)
     localStorage.setItem('vp_guest', 'true')
     startGuestStudent()
-    router.push('/student-path')
+    router.push(AFTER_LOGIN_PATH)
   }
 
   function fillDemoLogin() {

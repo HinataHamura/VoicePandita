@@ -114,6 +114,60 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
 
 ::selection { background: var(--saffron); color: white; }
 
+html.vp-dark body {
+  background:
+    linear-gradient(135deg, rgba(88,194,177,0.09), transparent 34%),
+    linear-gradient(315deg, rgba(242,116,87,0.08), transparent 34%),
+    #07110F;
+  color: #ECF6F1;
+}
+
+html.vp-dark body::before {
+  background-image:
+    linear-gradient(rgba(236,246,241,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(236,246,241,0.055) 1px, transparent 1px),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+html.vp-dark .card {
+  background: rgba(12, 24, 22, 0.9);
+  border-color: rgba(141, 181, 172, 0.2);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+}
+
+html.vp-dark [class*="bg-cream"] { background-color: rgba(7, 17, 15, 0.94) !important; }
+html.vp-dark [class*="bg-white"] { background-color: rgba(14, 28, 25, 0.9) !important; }
+html.vp-dark [class*="bg-paper"] { background-color: rgba(20, 43, 38, 0.82) !important; }
+html.vp-dark [class*="bg-black/"] { background-color: rgba(236, 246, 241, 0.1) !important; }
+html.vp-dark [class*="border-forest"],
+html.vp-dark [class*="border-black"] { border-color: rgba(141, 181, 172, 0.2) !important; }
+html.vp-dark [class*="text-ink"] { color: #ECF6F1 !important; }
+html.vp-dark .text-ink\/75 { color: rgba(236, 246, 241, 0.78) !important; }
+html.vp-dark .text-ink\/65,
+html.vp-dark .text-ink\/64,
+html.vp-dark .text-ink\/60 { color: rgba(236, 246, 241, 0.66) !important; }
+html.vp-dark .text-ink\/58,
+html.vp-dark .text-ink\/55,
+html.vp-dark .text-ink\/54,
+html.vp-dark .text-ink\/50 { color: rgba(236, 246, 241, 0.58) !important; }
+html.vp-dark .text-ink\/45,
+html.vp-dark .text-ink\/40,
+html.vp-dark .text-ink\/35,
+html.vp-dark .text-ink\/30 { color: rgba(236, 246, 241, 0.44) !important; }
+html.vp-dark input,
+html.vp-dark textarea,
+html.vp-dark select {
+  background-color: rgba(14, 28, 25, 0.92) !important;
+  color: #ECF6F1;
+  border-color: rgba(141, 181, 172, 0.22) !important;
+}
+html.vp-dark input::placeholder,
+html.vp-dark textarea::placeholder { color: rgba(236, 246, 241, 0.42); }
+html.vp-dark .skeleton {
+  background: linear-gradient(90deg, #18302b 25%, #24453e 50%, #18302b 75%);
+  background-size: 200% 100%;
+}
+
 :focus-visible {
   outline: 2px solid var(--saffron);
   outline-offset: 3px;

@@ -2,18 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, Loader2, Mic, MicOff, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, Loader2, Mic, MicOff, Plus, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
-import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
 import { getConceptMemory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
-type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
+type LanguageMode = 'bn' | 'ccp' | 'mrm' | 'gnk'
 
 interface Message {
   id: string
@@ -82,7 +81,6 @@ export default function LearnPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isOcrLoading, setIsOcrLoading] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [questionHistory, setQuestionHistory] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -95,10 +93,12 @@ export default function LearnPage() {
     const params = new URLSearchParams(window.location.search)
     const seededQuestion = params.get('q')
     const mode = params.get('mode') as OutputMode | null
-    const languageParam = params.get('language') as LanguageMode | null
+    const languageParam = params.get('language')
     if (seededQuestion) setInput(seededQuestion)
     if (mode && ['whiteboard', 'text', 'exam', 'simple', 'animation'].includes(mode)) setOutputMode(mode)
-    if (languageParam && ['bn', 'ckm', 'mrm', 'gnk'].includes(languageParam)) setLanguage(languageParam)
+    if (languageParam && ['bn', 'ccp', 'ckm', 'mrm', 'gnk'].includes(languageParam)) {
+      setLanguage((languageParam === 'ckm' ? 'ccp' : languageParam) as LanguageMode)
+    }
     if (params.get('deaf') === '1') setDeafMode(true)
     const update = () => setIsOnline(navigator.onLine)
     window.addEventListener('online', update)
@@ -259,7 +259,7 @@ export default function LearnPage() {
             }
           : msg
       ))
-      if (data.answer) speakText(data.answer, nextEmotion)
+      if (data.answer && language === 'bn') speakText(data.answer, nextEmotion)
       recordPractice(subject, question)
       recordConceptMemory(question, subject, data.graphPath)
       logPeerWisdom(question)
@@ -274,17 +274,20 @@ export default function LearnPage() {
     }
   }
 
+  function startNewChat() {
+    window.speechSynthesis?.cancel()
+    localStorage.setItem('vp_session_id', crypto.randomUUID())
+    setMessages([])
+    setInput('')
+    setEmotion(null)
+    setQuestionHistory([])
+  }
+
   return (
     <div className="flex h-dvh overflow-hidden bg-cream">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-forest/10 bg-cream/82 px-4 py-3 backdrop-blur-xl">
-          <div className="flex min-w-0 items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80" aria-label="Open menu">
-              <span className="mb-1 block h-0.5 w-5 rounded bg-ink" />
-              <span className="block h-0.5 w-3 rounded bg-ink/50" />
-            </button>
+          <div className="ml-16 flex min-w-0 items-center gap-3">
             <div className="min-w-0">
               <div className="font-display text-lg font-bold leading-tight">Voice<span className="text-saffron">Pandita</span></div>
               <div className="truncate text-[11px] text-ink/45">SSC/HSC voice-first GraphRAG tutor</div>
@@ -294,6 +297,15 @@ export default function LearnPage() {
           <div className="flex items-center gap-2">
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
+            <button
+              onClick={startNewChat}
+              disabled={isLoading && messages.length > 0}
+              className="inline-flex items-center gap-1.5 rounded-full border border-forest/10 bg-white/78 px-3 py-1.5 text-xs font-medium text-ink/65 shadow-sm hover:border-saffron/30 hover:text-saffron disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="Start new chat"
+            >
+              <Plus size={13} />
+              New chat
+            </button>
             <SubjectSelector value={subject} onChange={setSubject} />
           </div>
         </header>
@@ -303,7 +315,7 @@ export default function LearnPage() {
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {[
               ['bn', 'Bangla'],
-              ['ckm', 'Chakma'],
+              ['ccp', 'Chakma'],
               ['mrm', 'Marma'],
               ['gnk', 'Garo'],
             ].map(([value, label]) => (
