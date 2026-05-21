@@ -30,6 +30,14 @@ export interface StudentProgress {
   strongTopics: Omit<TopicProgress, 'sessions' | 'query'>[]
 }
 
+export interface ConceptMemory {
+  id: string
+  question: string
+  subject: string
+  graphPath: string[]
+  createdAt: string
+}
+
 export const DEMO_EMAIL = 'demo@voicepandita.app'
 export const DEMO_PASSWORD = 'Demo@1234'
 
@@ -43,9 +51,7 @@ export const DEMO_STUDENT: StudentIdentity = {
 export const DEMO_PROFILE: StudentProfile = {
   level: 'hsc',
   goal: 'admission',
-  english: 'weak',
-  resume: 'building',
-  interview: 'never',
+  group: 'science',
 }
 
 const DEMO_PROGRESS: StudentProgress = {
@@ -86,6 +92,7 @@ const subjectLabels: Record<Subject | string, string> = {
   chemistry: 'Chemistry',
   biology: 'Biology',
   math: 'Math',
+  bangla: 'Bangla',
   english: 'English',
 }
 
@@ -94,6 +101,7 @@ const topicBySubject: Record<Subject | string, { topic: string; query: string }>
   chemistry: { topic: 'Ionic bonding', query: 'ionic bond bujhao' },
   biology: { topic: 'Photosynthesis', query: 'photosynthesis explain koro' },
   math: { topic: 'Quadratic equation', query: 'quadratic formula bujhao' },
+  bangla: { topic: 'Creative question answer', query: 'srijonshil uttor kivabe likhbo' },
   english: { topic: 'Simple sentence', query: 'simple sentence practice korte chai' },
 }
 
@@ -157,6 +165,10 @@ export function progressKey(studentId = getCurrentStudent().id) {
   return `vp_progress:${studentId}`
 }
 
+export function conceptMemoryKey(studentId = getCurrentStudent().id) {
+  return `vp_concept_memory:${studentId}`
+}
+
 export function getStudentProfile(studentId?: string): Partial<StudentProfile> {
   const key = profileKey(studentId)
   const fallback = studentId === DEMO_STUDENT.id || getCurrentStudent().isDemo ? DEMO_PROFILE : {}
@@ -175,6 +187,34 @@ export function getStudentProgress(studentId?: string): StudentProgress {
 
 export function saveStudentProgress(progress: StudentProgress, studentId?: string) {
   writeJson(progressKey(studentId), progress)
+}
+
+export function getConceptMemory(studentId?: string): ConceptMemory[] {
+  if (!canUseStorage()) return []
+  try {
+    const saved = localStorage.getItem(conceptMemoryKey(studentId))
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+export function recordConceptMemory(question: string, subject: string, graphPath?: string[]) {
+  if (!graphPath?.length) return
+  const memory = getConceptMemory()
+  const signature = `${subject}:${graphPath.join('>')}`.toLowerCase()
+  const withoutDuplicate = memory.filter(item => `${item.subject}:${item.graphPath.join('>')}`.toLowerCase() !== signature)
+  const next: ConceptMemory[] = [
+    {
+      id: crypto.randomUUID(),
+      question,
+      subject,
+      graphPath,
+      createdAt: new Date().toISOString(),
+    },
+    ...withoutDuplicate,
+  ].slice(0, 25)
+  writeJson(conceptMemoryKey(), next)
 }
 
 export function recordPractice(subject: string, question: string) {

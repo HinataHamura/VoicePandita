@@ -20,9 +20,9 @@ export default function ProgressPage() {
 
   return (
     <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 bg-cream/85 backdrop-blur-sm border-b border-black/5 px-4 py-4">
+      <header className="sticky top-0 z-10 border-b border-forest/10 bg-cream/82 px-4 py-4 backdrop-blur-xl">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <Link href="/learn" className="p-2 hover:bg-black/5 rounded-lg transition-colors" aria-label="Back to learn">
+          <Link href="/learn" className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80" aria-label="Back to learn">
             <ArrowLeft size={18} />
           </Link>
           <div>
@@ -67,8 +67,8 @@ export default function ProgressPage() {
                   </div>
                   <span className="text-2xl font-display font-bold text-clay">{topic.score}%</span>
                 </div>
-                <div className="h-2 bg-black/5 rounded-full overflow-hidden">
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${topic.score}%` }} transition={{ delay: index * 0.06 + 0.2, duration: 0.6 }} className="h-full bg-clay rounded-full" />
+                <div className="h-2 overflow-hidden rounded-full bg-forest/8">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${topic.score}%` }} transition={{ delay: index * 0.06 + 0.2, duration: 0.6 }} className="h-full rounded-full bg-gradient-to-r from-clay to-saffron" />
                 </div>
                 <Link href={`/learn?q=${encodeURIComponent(topic.query)}`} className="mt-3 inline-flex items-center gap-1 text-xs text-saffron font-medium hover:underline">
                   <Target size={12} /> Practice this topic
@@ -95,8 +95,8 @@ export default function ProgressPage() {
                   <span className="text-xs text-ink/45">{topic.subject}</span>
                   <div className="font-semibold text-sm mt-0.5">{topic.topic}</div>
                 </div>
-                <div className="h-1.5 w-24 bg-black/5 rounded-full overflow-hidden">
-                  <div className="h-full bg-forest rounded-full" style={{ width: `${topic.score}%` }} />
+                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-forest/8">
+                  <div className="h-full rounded-full bg-gradient-to-r from-forest to-aqua" style={{ width: `${topic.score}%` }} />
                 </div>
                 <span className="text-sm font-mono font-bold text-forest">{topic.score}%</span>
               </motion.div>

@@ -1,15 +1,15 @@
-export type Subject = 'physics' | 'chemistry' | 'biology' | 'math' | 'english'
-export type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple'
+export type Subject = 'physics' | 'chemistry' | 'biology' | 'math' | 'bangla' | 'english'
+export type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 export type EmotionState = 'confident' | 'confused' | 'frustrated'
 export type Language = 'bn' | 'ckm' | 'mrm' | 'gnk'
-export type UserLevel = 'hsc' | 'university' | 'graduate' | 'job'
+export type UserLevel = 'ssc' | 'hsc'
+export type StudentGoal = 'board' | 'admission'
+export type StudyGroup = 'science' | 'humanities' | 'business'
 
 export interface StudentProfile {
   level:     UserLevel
-  goal:      string
-  english:   'weak' | 'moderate' | 'good'
-  resume:    'yes' | 'no' | 'building'
-  interview: 'never' | 'few' | 'regular'
+  goal:      StudentGoal
+  group:     StudyGroup
 }
 
 export interface Message {

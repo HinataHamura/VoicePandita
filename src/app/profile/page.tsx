@@ -8,16 +8,13 @@ import type { StudentProfile } from '@/types'
 import { getCurrentStudent, getStudentProfile, getStudentProgress, type StudentIdentity, type StudentProgress } from '@/lib/studentStore'
 
 const labels: Record<string, string> = {
+  ssc: 'SSC',
   hsc: 'HSC',
-  university: 'University',
-  graduate: 'Graduate',
-  job: 'Job seeker',
+  board: 'Board Exam',
   admission: 'Admission',
-  skill: 'Skill building',
-  english: 'English',
-  weak: 'Very weak',
-  moderate: 'Moderate',
-  good: 'Good',
+  science: 'Science',
+  humanities: 'Humanities',
+  business: 'Business Studies',
 }
 
 export default function ProfilePage() {
@@ -33,7 +30,8 @@ export default function ProfilePage() {
   }, [])
 
   const track = useMemo(() => {
-    if (profile.level === 'hsc' || profile.goal === 'admission') return 'Visual Answer Engine'
+    if (profile.goal === 'admission') return 'Admission GraphRAG Track'
+    if (profile.level === 'ssc' || profile.level === 'hsc') return 'Board Exam Visual Track'
     if (profile.level) return 'English + Career Track'
     return 'Student learning track'
   }, [profile])
@@ -43,12 +41,12 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 bg-cream/85 backdrop-blur-sm border-b border-black/5 px-4 py-4">
+      <header className="sticky top-0 z-10 border-b border-forest/10 bg-cream/82 px-4 py-4 backdrop-blur-xl">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <Link href="/learn" className="font-display font-bold text-lg">
             Voice<span className="text-saffron">Pandita</span>
           </Link>
-          <Link href="/learn" className="flex items-center gap-1.5 bg-saffron text-white text-sm px-4 py-2 rounded-full font-medium">
+          <Link href="/learn" className="flex items-center gap-1.5 rounded-full bg-saffron px-4 py-2 text-sm font-medium text-white shadow-sm shadow-saffron/20 hover:bg-saffron/90">
             <Mic size={14} />
             Ask
           </Link>
@@ -59,7 +57,7 @@ export default function ProfilePage() {
         <motion.section
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-forest/20 bg-forest p-6 text-white shadow-sm"
+          className="rounded-lg border border-forest/20 bg-gradient-to-br from-forest to-indigo p-6 text-white shadow-xl shadow-forest/16"
         >
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -68,7 +66,7 @@ export default function ProfilePage() {
               <p className="text-white/75 text-sm mt-2">{student?.email || track}</p>
               <p className="text-white/70 text-xs mt-1">{track}</p>
             </div>
-            <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-full bg-white/14 px-3 py-1.5 backdrop-blur-sm">
               <Flame size={14} className="text-saffron" />
               <span className="text-sm font-semibold">{stats.streak} day streak</span>
             </div>
@@ -82,7 +80,7 @@ export default function ProfilePage() {
 
         {!hasProfile && (
           <section className="card p-5 flex items-center gap-4">
-            <div className="w-10 h-10 bg-saffron/10 rounded-xl flex items-center justify-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-saffron/10">
               <User size={18} className="text-saffron" />
             </div>
             <div className="flex-1">
@@ -113,10 +111,10 @@ export default function ProfilePage() {
             {[
               ['Level', labels[profile.level || ''] || 'Not set'],
               ['Goal', labels[profile.goal || ''] || 'Not set'],
-              ['English', labels[profile.english || ''] || 'Not set'],
+              ['Group', labels[profile.group || ''] || 'Not set'],
               ['Track', track],
             ].map(([key, value]) => (
-              <div key={key} className="rounded-lg bg-paper px-4 py-3">
+              <div key={key} className="rounded-lg border border-forest/8 bg-paper/72 px-4 py-3">
                 <div className="text-xs text-ink/45">{key}</div>
                 <div className="font-medium mt-0.5">{value}</div>
               </div>
@@ -131,7 +129,7 @@ export default function ProfilePage() {
             { href: '/pwn', title: 'Peer Wisdom Network', sub: 'See common confusion hotspots', icon: BookOpen },
           ].map(action => (
             <Link key={action.href} href={action.href} className="card p-4 flex items-center gap-4 hover:border-saffron/30 transition-colors">
-              <div className="w-10 h-10 bg-saffron/10 rounded-xl flex items-center justify-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-saffron/10">
                 <action.icon size={18} className="text-saffron" />
               </div>
               <div className="flex-1">

@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       if (!isSignup && email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD) {
         startDemoStudent()
-        router.push('/learn')
+        router.push('/student-path')
         return
       }
 
@@ -38,7 +38,7 @@ export default function LoginPage() {
             name: data.user.email?.split('@')[0] || 'Student',
           })
         }
-        router.push('/onboarding')
+        router.push('/student-path')
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
@@ -49,7 +49,7 @@ export default function LoginPage() {
             name: data.user.email?.split('@')[0] || 'Student',
           })
         }
-        router.push('/learn')
+        router.push('/student-path')
       }
     } catch (e: any) {
       setError(e.message || 'কিছু সমস্যা হয়েছে। আবার চেষ্টা করো।')
@@ -62,7 +62,7 @@ export default function LoginPage() {
     setLoading(true)
     localStorage.setItem('vp_guest', 'true')
     startGuestStudent()
-    router.push('/onboarding')
+    router.push('/student-path')
   }
 
   function fillDemoLogin() {
@@ -98,7 +98,7 @@ export default function LoginPage() {
                 <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink/30" />
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
                   placeholder="তোমার email"
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-black/10 bg-cream/50 text-sm focus:outline-none focus:border-saffron/50 transition-colors" />
+                  className="w-full rounded-lg border border-forest/10 bg-white/78 py-3 pl-9 pr-4 text-sm shadow-sm focus:border-saffron/50 focus:outline-none" />
               </div>
             </div>
 
@@ -108,7 +108,7 @@ export default function LoginPage() {
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink/30" />
                 <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
                   placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-3 rounded-xl border border-black/10 bg-cream/50 text-sm focus:outline-none focus:border-saffron/50 transition-colors" />
+                  className="w-full rounded-lg border border-forest/10 bg-white/78 py-3 pl-9 pr-10 text-sm shadow-sm focus:border-saffron/50 focus:outline-none" />
                 <button type="button" onClick={() => setShowPw(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-ink/30 hover:text-ink/60 transition-colors">
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -121,7 +121,7 @@ export default function LoginPage() {
             )}
 
             <button type="submit" disabled={loading}
-              className="w-full bg-saffron text-white py-3 rounded-xl font-semibold text-sm hover:bg-saffron/90 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-saffron py-3 text-sm font-semibold text-white shadow-lg shadow-saffron/18 hover:bg-saffron/90 disabled:opacity-60">
               {loading && <Loader2 size={16} className="animate-spin" />}
               <span className="bangla">{isSignup ? 'Account তৈরি করো' : 'Login করো'}</span>
             </button>
@@ -131,20 +131,20 @@ export default function LoginPage() {
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-black/8" />
             </div>
-            <div className="relative flex justify-center text-xs text-ink/40 bg-white px-3">অথবা</div>
+            <div className="relative flex justify-center bg-white/0 px-3 text-xs text-ink/40">অথবা</div>
           </div>
 
           <button onClick={guestLogin}
-            className="w-full border border-black/10 text-ink/70 py-3 rounded-xl text-sm font-medium hover:bg-paper transition-all bangla">
+            className="bangla w-full rounded-lg border border-forest/10 bg-white/70 py-3 text-sm font-medium text-ink/70 shadow-sm hover:bg-paper/80">
             Guest হিসেবে চালিয়ে যাও
           </button>
 
           <button onClick={fillDemoLogin}
-            className="mt-3 w-full border border-saffron/30 bg-saffron/5 text-saffron py-3 rounded-xl text-sm font-semibold hover:bg-saffron/10 transition-all">
+            className="mt-3 w-full rounded-lg border border-saffron/30 bg-saffron/5 py-3 text-sm font-semibold text-saffron shadow-sm hover:bg-saffron/10">
             Use judge demo account
           </button>
 
-          <div className="mt-3 rounded-lg bg-paper px-3 py-2 text-xs text-ink/55">
+          <div className="mt-3 rounded-lg border border-forest/8 bg-paper/72 px-3 py-2 text-xs text-ink/55">
             Demo: <span className="font-mono">{DEMO_EMAIL}</span> / <span className="font-mono">{DEMO_PASSWORD}</span>
           </div>
         </div>

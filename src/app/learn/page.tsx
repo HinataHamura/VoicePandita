@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Camera, Loader2, Mic, MicOff, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, Loader2, Mic, MicOff, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
+import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
-import { recordPractice } from '@/lib/studentStore'
+import { getConceptMemory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 
-type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple'
+type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
 
@@ -21,21 +22,23 @@ interface Message {
   diagram?: string | null
   emotion?: EmotionState
   pwnMessage?: string
+  graphPath?: string[]
   loading?: boolean
 }
 
 const QUICK_QUESTIONS = [
   'Newton-er 2nd law bujhai dao',
-  'সালোকসংশ্লেষণ কীভাবে হয়?',
+  'সালোকসংশ্লেষণ কীভাবে হয়?',
   'আয়নিক বন্ধন সহজ করে বুঝাও',
-  'দ্বিঘাত সমীকরণের সূত্র কিভাবে ব্যবহার করব?',
+  'দ্বিঘাত সমীকরণের সূত্র কীভাবে ব্যবহার করব?',
 ]
 
 const OFFLINE_ANSWERS: Record<string, string> = {
-  physics: 'Offline pack: F = ma মানে বল = ভর × ত্বরণ। একই ভরের বস্তুকে বেশি বল দিলে ত্বরণ বেশি হয়।',
-  chemistry: 'Offline pack: আয়নিক বন্ধনে এক পরমাণু ইলেকট্রন ছাড়ে, অন্যটি নেয়। বিপরীত আধান আকর্ষণ করে বন্ধন বানায়।',
+  physics: 'Offline pack: F = ma মানে বল = ভর × ত্বরণ। একই ভরে বেশি বল দিলে ত্বরণ বেশি হয়।',
+  chemistry: 'Offline pack: আয়নিক বন্ধনে এক পরমাণু ইলেকট্রন ছাড়ে, অন্যটি নেয়। বিপরীত আধান আকর্ষণ করে বন্ধন বানায়।',
   biology: 'Offline pack: সালোকসংশ্লেষণে উদ্ভিদ আলো, CO2 ও পানি ব্যবহার করে গ্লুকোজ ও অক্সিজেন তৈরি করে।',
   math: 'Offline pack: ax²+bx+c=0 হলে x = (-b ± √(b²-4ac)) / 2a সূত্রে মান বসাও।',
+  bangla: 'Offline pack: সৃজনশীল উত্তরে মূল ভাব, ব্যাখ্যা, উদাহরণ - এই তিন ধাপ রাখো।',
   english: 'Offline pack: Start with one short correct sentence, then add details.',
 }
 
@@ -43,7 +46,7 @@ function speakText(text: string, emotion?: EmotionState) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.lang = 'bn-BD'
-  utterance.rate = emotion === 'frustrated' ? 0.85 : emotion === 'confused' ? 0.9 : 1
+  utterance.rate = emotion === 'frustrated' ? 0.82 : emotion === 'confused' ? 0.9 : 1
   utterance.pitch = 1
   const banglaVoice = window.speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('bn'))
   if (banglaVoice) utterance.voice = banglaVoice
@@ -60,6 +63,13 @@ function getSessionId() {
   return id
 }
 
+function localEmotionHint(question: string, repeatCount: number): Exclude<EmotionState, null> {
+  const lc = question.toLowerCase()
+  if (repeatCount > 1 || ['পারছি না', 'কঠিন', 'too hard', 'frustrated'].some(word => lc.includes(word))) return 'frustrated'
+  if (['বুঝি না', 'কেন', 'কিভাবে', 'bujhi na', 'bujhao', 'why', 'how'].some(word => lc.includes(word))) return 'confused'
+  return 'confident'
+}
+
 export default function LearnPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -67,20 +77,29 @@ export default function LearnPage() {
   const [outputMode, setOutputMode] = useState<OutputMode>('whiteboard')
   const [language, setLanguage] = useState<LanguageMode>('bn')
   const [emotion, setEmotion] = useState<EmotionState>(null)
+  const [deafMode, setDeafMode] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isOcrLoading, setIsOcrLoading] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [questionHistory, setQuestionHistory] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
+  const recognitionRef = useRef<any>(null)
   const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     setIsOnline(navigator.onLine)
-    const seededQuestion = new URLSearchParams(window.location.search).get('q')
+    const params = new URLSearchParams(window.location.search)
+    const seededQuestion = params.get('q')
+    const mode = params.get('mode') as OutputMode | null
+    const languageParam = params.get('language') as LanguageMode | null
     if (seededQuestion) setInput(seededQuestion)
+    if (mode && ['whiteboard', 'text', 'exam', 'simple', 'animation'].includes(mode)) setOutputMode(mode)
+    if (languageParam && ['bn', 'ckm', 'mrm', 'gnk'].includes(languageParam)) setLanguage(languageParam)
+    if (params.get('deaf') === '1') setDeafMode(true)
     const update = () => setIsOnline(navigator.onLine)
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
@@ -95,6 +114,24 @@ export default function LearnPage() {
   }, [messages])
 
   async function startRecording() {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'bn-BD'
+      recognition.interimResults = false
+      recognition.maxAlternatives = 1
+      recognition.onresult = async (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript
+        if (transcript) await sendMessage(transcript)
+      }
+      recognition.onerror = () => setInput('Voice dhora jayni. Type kore pathao, ba abar mic chapo.')
+      recognition.onend = () => setIsRecording(false)
+      recognitionRef.current = recognition
+      recognition.start()
+      setIsRecording(true)
+      return
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
@@ -109,11 +146,12 @@ export default function LearnPage() {
       mediaRef.current = recorder
       setIsRecording(true)
     } catch {
-      alert('Microphone permission is needed for voice questions.')
+      setInput('Microphone permission lagbe. Type koreo question pathate paro.')
     }
   }
 
   function stopRecording() {
+    recognitionRef.current?.stop?.()
     mediaRef.current?.stop()
     setIsRecording(false)
   }
@@ -168,6 +206,10 @@ export default function LearnPage() {
   async function sendMessage(text?: string) {
     const question = (text ?? input).trim()
     if (!question || isLoading) return
+    const repeatCount = questionHistory.filter(item => item.toLowerCase() === question.toLowerCase()).length
+    const localEmotion = localEmotionHint(question, repeatCount)
+    setEmotion(localEmotion)
+    setQuestionHistory(prev => [...prev, question].slice(-8))
     setInput('')
 
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', text: question }
@@ -179,7 +221,7 @@ export default function LearnPage() {
       const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
-          ? { ...msg, text: `${offline} Online হলে আমি আরও বিস্তারিত visual explanation দেব।`, emotion: 'confident', loading: false }
+          ? { ...msg, text: `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`, emotion: localEmotion, loading: false }
           : msg
       ))
       recordPractice(subject, question)
@@ -191,25 +233,35 @@ export default function LearnPage() {
       const res = await fetch('/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, subject, outputMode, emotion, language }),
+        body: JSON.stringify({
+          question,
+          subject,
+          outputMode,
+          emotion: localEmotion,
+          language,
+          repeatCount,
+          conceptMemory: getConceptMemory().slice(0, 6),
+        }),
       })
       const data = await res.json()
-      const nextEmotion = (data.detectedEmotion ?? null) as EmotionState
+      const nextEmotion = (data.detectedEmotion ?? localEmotion) as EmotionState
       setEmotion(nextEmotion)
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
           ? {
               ...msg,
-              text: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
+              text: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
               diagram: data.diagram,
               emotion: nextEmotion,
               pwnMessage: data.pwnMessage,
+              graphPath: data.graphPath,
               loading: false,
             }
           : msg
       ))
       if (data.answer) speakText(data.answer, nextEmotion)
       recordPractice(subject, question)
+      recordConceptMemory(question, subject, data.graphPath)
       logPeerWisdom(question)
     } catch {
       setMessages(prev => prev.map(msg =>
@@ -223,19 +275,19 @@ export default function LearnPage() {
   }
 
   return (
-    <div className="flex h-dvh bg-cream overflow-hidden">
+    <div className="flex h-dvh overflow-hidden bg-cream">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex flex-col flex-1 min-w-0">
-        <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-black/5 bg-cream/85 backdrop-blur-sm">
-          <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-black/5 rounded-lg transition-colors" aria-label="Open menu">
-              <span className="block h-0.5 w-5 bg-ink rounded mb-1" />
-              <span className="block h-0.5 w-3 bg-ink/50 rounded" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between gap-3 border-b border-forest/10 bg-cream/82 px-4 py-3 backdrop-blur-xl">
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80" aria-label="Open menu">
+              <span className="mb-1 block h-0.5 w-5 rounded bg-ink" />
+              <span className="block h-0.5 w-3 rounded bg-ink/50" />
             </button>
             <div className="min-w-0">
-              <div className="font-display font-bold text-lg leading-tight">Voice<span className="text-saffron">Pandita</span></div>
-              <div className="text-[11px] text-ink/45 truncate">Learn. Understand. Belong.</div>
+              <div className="font-display text-lg font-bold leading-tight">Voice<span className="text-saffron">Pandita</span></div>
+              <div className="truncate text-[11px] text-ink/45">SSC/HSC voice-first GraphRAG tutor</div>
             </div>
           </div>
 
@@ -246,7 +298,7 @@ export default function LearnPage() {
           </div>
         </header>
 
-        <div className="px-4 py-2 border-b border-black/5 space-y-2">
+        <div className="space-y-2 border-b border-forest/10 bg-white/45 px-4 py-2 backdrop-blur-xl">
           <OutputModeSelector value={outputMode} onChange={setOutputMode} />
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {[
@@ -259,12 +311,20 @@ export default function LearnPage() {
                 key={value}
                 onClick={() => setLanguage(value as LanguageMode)}
                 className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs ${
-                  language === value ? 'bg-forest/10 border-forest/30 text-forest font-medium' : 'bg-white border-black/8 text-ink/55'
+                  language === value ? 'border-forest bg-forest text-white shadow-sm shadow-forest/15' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-forest/24 hover:text-ink/75'
                 }`}
               >
                 {label}
               </button>
             ))}
+            <button
+              onClick={() => setDeafMode(prev => !prev)}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+                deafMode ? 'border-indigo bg-indigo text-white' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-indigo/25'
+              }`}
+            >
+              <Accessibility size={12} /> BdSL
+            </button>
           </div>
         </div>
 
@@ -274,23 +334,24 @@ export default function LearnPage() {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+        <main className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
           {messages.length === 0 && (
-            <div className="min-h-full flex flex-col items-center justify-center text-center py-12">
-              <div className="w-20 h-20 bg-forest/10 rounded-full flex items-center justify-center mb-5">
-                <Mic size={32} className="text-forest" />
+            <div className="flex min-h-full flex-col items-center justify-center py-12 text-center">
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-forest to-indigo shadow-xl shadow-forest/20">
+                <Mic size={32} className="text-white" />
               </div>
-              <h1 className="bangla font-display text-2xl font-bold mb-2">কী জানতে চাও?</h1>
-              <p className="bangla text-ink/55 max-w-md text-sm leading-relaxed">
-                Bangla voice, typed question, or textbook photo - যেভাবে সুবিধা হয় সেভাবে প্রশ্ন করো।
+              <h1 className="bangla mb-2 font-display text-2xl font-bold">কী জানতে চাও?</h1>
+              <p className="bangla max-w-md text-sm leading-relaxed text-ink/55">
+                Bangla voice, typed question, textbook photo, mother-tongue mode, emotion adaptation, and BdSL avatar - এক জায়গায়।
               </p>
-              <div className="mt-7 flex flex-wrap gap-2 justify-center max-w-2xl">
+              <div className="mt-5 grid max-w-2xl grid-cols-2 gap-2 text-left text-xs text-ink/58 md:grid-cols-4">
+                {['GraphRAG NCTB', 'ONNX emotion stub', 'MELD bridge', 'PWN hotspot'].map(item => (
+                  <div key={item} className="rounded-lg border border-forest/10 bg-white/72 px-3 py-2 shadow-sm">{item}</div>
+                ))}
+              </div>
+              <div className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
                 {QUICK_QUESTIONS.map(q => (
-                  <button
-                    key={q}
-                    onClick={() => sendMessage(q)}
-                    className="bangla text-xs bg-white border border-black/8 rounded-full px-4 py-2 hover:border-saffron/40 hover:bg-saffron/5 transition-all"
-                  >
+                  <button key={q} onClick={() => sendMessage(q)} className="bangla rounded-full border border-forest/10 bg-white/82 px-4 py-2 text-xs shadow-sm hover:border-saffron/35 hover:bg-saffron/5">
                     {q}
                   </button>
                 ))}
@@ -308,15 +369,15 @@ export default function LearnPage() {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.role === 'user' ? (
-                  <div className="max-w-[84%] bg-forest text-white px-5 py-3 rounded-2xl rounded-br-md bangla leading-relaxed">
+                  <div className="bangla max-w-[84%] rounded-2xl rounded-br-md bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-lg shadow-forest/15">
                     {msg.text}
                   </div>
                 ) : (
-                  <div className="max-w-[94%] md:max-w-[76%] space-y-3">
+                  <div className="max-w-[94%] space-y-3 md:max-w-[76%]">
                     {msg.loading ? (
-                      <div className="card p-5 space-y-3">
+                      <div className="card space-y-3 p-5">
                         <div className="flex items-center gap-2 text-xs text-ink/50">
-                          <Loader2 size={14} className="animate-spin" /> TutorAgent thinking...
+                          <Loader2 size={14} className="animate-spin" /> TutorAgent traversing NCTB graph...
                         </div>
                         <div className="skeleton h-4 w-3/4" />
                         <div className="skeleton h-4 w-full" />
@@ -325,8 +386,13 @@ export default function LearnPage() {
                     ) : (
                       <>
                         <div className="card p-5">
-                          <div className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-black/5">
+                          <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
                             {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
+                            {msg.graphPath && (
+                              <span className="rounded-full bg-forest/8 px-2.5 py-0.5 text-xs text-forest">
+                                {msg.graphPath.join(' -> ')}
+                              </span>
+                            )}
                             {msg.pwnMessage && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs text-saffron">
                                 <Sparkles size={12} /> {msg.pwnMessage}
@@ -337,13 +403,14 @@ export default function LearnPage() {
                         </div>
                         {msg.diagram && (
                           <div className="card p-4">
-                            <div className="flex items-center gap-2 mb-3 text-forest text-xs font-medium">
+                            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-forest">
                               <Zap size={12} />
                               <span>Concept Diagram</span>
                             </div>
                             <MermaidDiagram chart={msg.diagram} />
                           </div>
                         )}
+                        <BdslAvatar active={deafMode} text={msg.text} />
                       </>
                     )}
                   </div>
@@ -354,17 +421,17 @@ export default function LearnPage() {
           <div ref={bottomRef} />
         </main>
 
-        <div className="px-4 pb-safe pb-4 pt-3 border-t border-black/5 bg-cream/85 backdrop-blur-sm">
-          <div className="flex items-end gap-2 max-w-3xl mx-auto">
+        <div className="border-t border-forest/10 bg-cream/82 px-4 pb-4 pb-safe pt-3 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-3xl items-end gap-2">
             <button
               onMouseDown={startRecording}
               onMouseUp={stopRecording}
               onTouchStart={startRecording}
               onTouchEnd={stopRecording}
-              className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+              className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full ${
                 isRecording
-                  ? 'bg-saffron text-white mic-recording scale-105'
-                  : 'bg-white border border-black/10 text-ink/60 hover:border-saffron/40 hover:text-saffron'
+                  ? 'mic-recording scale-105 bg-saffron text-white shadow-lg shadow-saffron/20'
+                  : 'border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-saffron/35 hover:text-saffron'
               }`}
               aria-label={isRecording ? 'Stop recording' : 'Start recording'}
             >
@@ -375,13 +442,13 @@ export default function LearnPage() {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={isOcrLoading}
-              className="flex-shrink-0 w-12 h-12 rounded-full bg-white border border-black/10 text-ink/60 hover:border-forest/40 hover:text-forest flex items-center justify-center disabled:opacity-50"
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50"
               aria-label="Upload textbook photo"
             >
               {isOcrLoading ? <Loader2 size={19} className="animate-spin" /> : <Camera size={19} />}
             </button>
 
-            <div className="flex-1 relative">
+            <div className="relative flex-1">
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
@@ -392,14 +459,14 @@ export default function LearnPage() {
                   }
                 }}
                 placeholder="বাংলায় প্রশ্ন লেখো... Enter চাপলে পাঠাবে"
-                className="bangla w-full resize-none rounded-2xl border border-black/10 bg-white px-4 py-3 pr-12 text-sm focus:outline-none focus:border-saffron/40 transition-colors leading-relaxed"
+                className="bangla w-full resize-none rounded-2xl border border-forest/10 bg-white/92 px-4 py-3 pr-12 text-sm leading-relaxed shadow-sm focus:border-saffron/40 focus:outline-none"
                 rows={1}
                 style={{ minHeight: 48, maxHeight: 160 }}
               />
               <button
                 onClick={() => sendMessage()}
                 disabled={!input.trim() || isLoading}
-                className="absolute right-2 bottom-2 w-8 h-8 bg-saffron text-white rounded-xl flex items-center justify-center disabled:opacity-30 hover:bg-saffron/90 transition-all"
+                className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-saffron text-white shadow-sm hover:bg-saffron/90 disabled:opacity-30"
                 aria-label="Send question"
               >
                 <Send size={14} />

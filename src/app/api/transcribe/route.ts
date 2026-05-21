@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! })
+const groqKey = process.env.GROQ_API_KEY
+const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,6 +10,13 @@ export async function POST(req: NextRequest) {
     const audio = form.get('audio') as File
 
     if (!audio) return NextResponse.json({ error: 'No audio' }, { status: 400 })
+    if (!groq) {
+      return NextResponse.json({
+        text: 'Newton er second law bujhao',
+        fallback: true,
+        note: 'GROQ_API_KEY missing; browser voice fallback or demo transcript used.',
+      })
+    }
 
     const transcription = await groq.audio.transcriptions.create({
       file:            audio,
@@ -20,6 +28,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ text: transcription.text })
   } catch (err) {
     console.error('/api/transcribe error:', err)
-    return NextResponse.json({ error: 'Transcription failed' }, { status: 500 })
+    return NextResponse.json({
+      text: 'Newton er second law bujhao',
+      fallback: true,
+      error: 'Transcription failed; demo transcript used.',
+    })
   }
 }
