@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 from supabase import create_client
 from sentence_transformers import SentenceTransformer
 
-load_dotenv()
+load_dotenv('.env.local')
+# load_dotenv('.env')
 
 SUPABASE_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]

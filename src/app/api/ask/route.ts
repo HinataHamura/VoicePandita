@@ -171,12 +171,20 @@ async function dynamicGeminiNode(params: {
   emotion: EmotionState
   language: string
   conceptMemory: unknown
+  curriculumChunks?: Array<{ content: string; topic: string; similarity: number }>
 }) {
   const memoryText = Array.isArray(params.conceptMemory)
     ? params.conceptMemory
         .slice(0, 6)
         .map((item: any) => Array.isArray(item.graphPath) ? item.graphPath.join(' -> ') : '')
         .filter(Boolean)
+        .join('\n')
+    : ''
+
+  const curriculumContext = Array.isArray(params.curriculumChunks) && params.curriculumChunks.length > 0
+    ? '\n\nCurriculum context (from vector search):\n' +
+      params.curriculumChunks
+        .map((chunk, i) => `${i + 1}. [${chunk.topic}] ${chunk.content}`)
         .join('\n')
     : ''
 
@@ -189,7 +197,7 @@ Emotion: ${params.emotion}
 Language: ${params.language}
 Output mode: ${params.outputMode}
 Recent student concept memory:
-${memoryText || 'None'}
+${memoryText || 'None'}${curriculumContext}
 
 Return ONLY valid JSON with this shape:
 {
@@ -206,6 +214,7 @@ Rules:
 - If the student asks repeated words like 'করো করো করো', ignore repetition.
 - If emotion is confused, use a simple analogy.
 - If emotion is frustrated, be short and encouraging.
+- Use curriculum context if available to ground your answer.
 - End answer with one Socratic follow-up question.
 - Do not invent fake textbook references.`
 
@@ -234,6 +243,7 @@ export async function POST(req: NextRequest) {
     const language = String(body.language || 'bn')
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
+    const curriculumChunks = Array.isArray(body.curriculumChunks) ? body.curriculumChunks : undefined
     const lessonKey = inferLesson(question)
     const detectedEmotion = detectEmotion(question, repeatCount)
     const emotion = (body.emotion || detectedEmotion) as EmotionState
@@ -254,6 +264,7 @@ export async function POST(req: NextRequest) {
           emotion,
           language,
           conceptMemory,
+          curriculumChunks,
         })
         answer = dynamic.answer
         diagram = dynamic.diagram

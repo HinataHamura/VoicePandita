@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent, startGuestStudent } from '@/lib/studentStore'
+import { setDemoAuthCookie } from '@/lib/authFlow'
+import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent } from '@/lib/studentStore'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -17,6 +18,15 @@ export default function LoginPage() {
   const [error, setError]       = useState('')
   const [isSignup, setIsSignup] = useState(false)
 
+  function routeAfterLogin(fallback = '/learn') {
+    const next = new URLSearchParams(window.location.search).get('next')
+    if (next && next.startsWith('/')) {
+      router.push(next)
+      return
+    }
+    router.push(fallback)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
@@ -24,7 +34,8 @@ export default function LoginPage() {
     try {
       if (!isSignup && email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD) {
         startDemoStudent()
-        router.push('/student-path')
+        setDemoAuthCookie()
+        routeAfterLogin('/learn')
         return
       }
 
@@ -37,8 +48,9 @@ export default function LoginPage() {
             email: data.user.email || email,
             name: data.user.email?.split('@')[0] || 'Student',
           })
+          routeAfterLogin('/onboarding')
+          return
         }
-        router.push('/student-path')
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
@@ -48,8 +60,9 @@ export default function LoginPage() {
             email: data.user.email || email,
             name: data.user.email?.split('@')[0] || 'Student',
           })
+          routeAfterLogin('/learn')
+          return
         }
-        router.push('/student-path')
       }
     } catch (e: any) {
       setError(e.message || 'কিছু সমস্যা হয়েছে। আবার চেষ্টা করো।')
@@ -58,18 +71,14 @@ export default function LoginPage() {
     }
   }
 
-  async function guestLogin() {
-    setLoading(true)
-    localStorage.setItem('vp_guest', 'true')
-    startGuestStudent()
-    router.push('/student-path')
-  }
-
-  function fillDemoLogin() {
+  function demoLogin() {
     setIsSignup(false)
     setEmail(DEMO_EMAIL)
     setPassword(DEMO_PASSWORD)
     setError('')
+    startDemoStudent()
+    setDemoAuthCookie()
+    routeAfterLogin('/learn')
   }
 
   return (
@@ -134,12 +143,8 @@ export default function LoginPage() {
             <div className="relative flex justify-center bg-white/0 px-3 text-xs text-ink/40">অথবা</div>
           </div>
 
-          <button onClick={guestLogin}
-            className="bangla w-full rounded-lg border border-forest/10 bg-white/70 py-3 text-sm font-medium text-ink/70 shadow-sm hover:bg-paper/80">
-            Guest হিসেবে চালিয়ে যাও
-          </button>
 
-          <button onClick={fillDemoLogin}
+          <button onClick={demoLogin}
             className="mt-3 w-full rounded-lg border border-saffron/30 bg-saffron/5 py-3 text-sm font-semibold text-saffron shadow-sm hover:bg-saffron/10">
             Use judge demo account
           </button>

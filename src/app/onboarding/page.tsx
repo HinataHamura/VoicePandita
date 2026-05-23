@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BookOpen, ChevronLeft, ChevronRight, GraduationCap, Target } from 'lucide-react'
+import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { saveStudentProfile } from '@/lib/studentStore'
 
 const steps = [
@@ -46,6 +47,12 @@ export default function OnboardingPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [dir, setDir] = useState(1)
 
+  useEffect(() => {
+    getAuthenticatedStudent().then(student => {
+      if (!student) router.replace('/login?next=/onboarding')
+    })
+  }, [router])
+
   const current = steps[step]
   const selected = answers[current.id]
   const progress = ((step + 1) / steps.length) * 100
@@ -63,7 +70,7 @@ export default function OnboardingPage() {
       return
     }
     saveStudentProfile({ ...answers, [current.id]: selected })
-    router.push('/learn')
+    router.push('/student-path')
   }
 
   function back() {

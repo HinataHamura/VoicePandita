@@ -1,8 +1,11 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Accessibility, ArrowRight, Globe, Languages, Video } from 'lucide-react'
+import { getAuthenticatedStudent, nextRouteForStudent } from '@/lib/authFlow'
 
 const paths = [
   {
@@ -29,6 +32,20 @@ const paths = [
 ]
 
 export default function StudentPathPage() {
+  const router = useRouter()
+
+  useEffect(() => {
+    getAuthenticatedStudent().then(student => {
+      if (!student) {
+        router.replace('/login?next=/student-path')
+        return
+      }
+      if (nextRouteForStudent(student.id, '/onboarding') === '/onboarding') {
+        router.replace('/onboarding')
+      }
+    })
+  }, [router])
+
   return (
     <div className="min-h-dvh bg-cream px-4 py-10">
       <main className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-4xl flex-col justify-center">

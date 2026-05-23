@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Globe, Moon, Sun, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
+import { clearDemoAuthCookie } from '@/lib/authFlow'
+import { createClient } from '@/lib/supabase/client'
 
 interface Settings {
   lang: string
@@ -45,6 +48,7 @@ function Row({ icon: Icon, label, sub, children }: { icon: any; label: string; s
 }
 
 export default function SettingsPage() {
+  const router = useRouter()
   const [settings, setSettings] = useState<Settings>(defaultSettings)
 
   useEffect(() => {
@@ -63,6 +67,15 @@ export default function SettingsPage() {
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
     setSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  async function logout() {
+    clearDemoAuthCookie()
+    localStorage.removeItem('vp_guest')
+    localStorage.removeItem('vp_session_id')
+    localStorage.removeItem('vp_current_student')
+    await createClient().auth.signOut()
+    router.push('/login')
   }
 
   return (
@@ -109,14 +122,10 @@ export default function SettingsPage() {
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card p-5">
           <h2 className="text-xs font-semibold text-ink/45 uppercase tracking-wider mb-3">Account</h2>
           <button
-            onClick={() => {
-              localStorage.removeItem('vp_guest')
-              localStorage.removeItem('vp_session_id')
-              localStorage.removeItem('vp_current_student')
-            }}
+            onClick={logout}
             className="w-full text-left text-sm text-clay font-medium py-2 hover:underline"
           >
-            Clear guest session
+            Log out
           </button>
           <Link href="/onboarding" className="block text-sm text-ink/55 py-2 hover:underline">
             Edit onboarding profile

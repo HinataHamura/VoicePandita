@@ -1,12 +1,16 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Globe, Home, Mic, Settings, TrendingUp, User, Users, X } from 'lucide-react'
+import { Globe, History, Home, LogOut, Mic, Settings, TrendingUp, User, Users, X } from 'lucide-react'
+import { clearDemoAuthCookie } from '@/lib/authFlow'
+import { createClient } from '@/lib/supabase/client'
 
 const nav = [
   { href: '/', icon: Home, label: 'Home', sub: 'Overview' },
   { href: '/learn', icon: Mic, label: 'Learn', sub: 'Voice tutor' },
+  { href: '/history', icon: History, label: 'History', sub: 'Saved Q&A' },
   { href: '/profile', icon: User, label: 'Profile', sub: 'Student dashboard' },
   { href: '/progress', icon: TrendingUp, label: 'Progress', sub: 'Weak topics' },
   { href: '/pwn', icon: Users, label: 'Peer Wisdom', sub: 'Community hotspots' },
@@ -17,6 +21,18 @@ const nav = [
 interface Props { open: boolean; onClose: () => void }
 
 export default function Sidebar({ open, onClose }: Props) {
+  const router = useRouter()
+
+  async function handleLogout() {
+    clearDemoAuthCookie()
+    localStorage.removeItem('vp_guest')
+    localStorage.removeItem('vp_session_id')
+    localStorage.removeItem('vp_current_student')
+    await createClient().auth.signOut()
+    onClose()
+    router.push('/login')
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -48,7 +64,14 @@ export default function Sidebar({ open, onClose }: Props) {
                 </Link>
               ))}
             </nav>
-            <div className="border-t border-forest/10 p-4">
+            <div className="border-t border-forest/10 p-4 space-y-3">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 rounded-lg p-3 text-clay font-medium hover:bg-red-50 transition-colors text-sm"
+              >
+                <LogOut size={18} />
+                <span>Log out</span>
+              </button>
               <div className="text-xs text-ink/35 text-center">Student-only MVP</div>
             </div>
           </motion.aside>

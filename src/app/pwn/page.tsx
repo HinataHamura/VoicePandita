@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, BookOpen, Flame, Users } from 'lucide-react'
+import { ArrowLeft, BookOpen, Flame, MessageCircleQuestion, Users } from 'lucide-react'
 
 interface Hotspot {
   topic: string
   subject: string
   count: number
   clarification: string
+  samples?: string[]
 }
 
 const subjectColor: Record<string, string> = {
@@ -53,7 +54,7 @@ export default function PwnPage() {
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-5 bg-forest/5 border-forest/10">
           <p className="text-sm text-ink/70 leading-relaxed">
-            When many students get stuck on the same concept, VoicePandita marks it as a hotspot and shows a clearer explanation. Your identity is not stored here.
+            Same concept niye koto bar question hocche seta ekhane dekha jay. Example: Ionic Bond niye 10 ta question hole eta hotspot hisebe upore ashbe.
           </p>
         </motion.section>
 
@@ -92,10 +93,25 @@ export default function PwnPage() {
                   </div>
                   <div className="flex items-center gap-1 text-saffron flex-shrink-0">
                     <Flame size={14} />
-                    <span className="text-xs font-bold">{hotspot.count}</span>
+                    <span className="text-xs font-bold">{hotspot.count}x</span>
                   </div>
                 </div>
-                <p className="text-sm text-ink/70 leading-relaxed bg-paper rounded-lg p-3">{hotspot.clarification}</p>
+                <div className="bg-paper rounded-lg p-3 space-y-3">
+                  <p className="text-sm font-medium text-ink">
+                    {hotspot.topic} niye {hotspot.count} bar question kora hoyeche.
+                  </p>
+                  <p className="text-sm text-ink/65 leading-relaxed">{hotspot.clarification}</p>
+                  {hotspot.samples?.length ? (
+                    <div className="space-y-1.5">
+                      {hotspot.samples.slice(0, 3).map((sample, sampleIndex) => (
+                        <div key={`${hotspot.topic}-${sampleIndex}`} className="flex gap-2 text-xs text-ink/55">
+                          <MessageCircleQuestion size={13} className="mt-0.5 flex-shrink-0 text-saffron" />
+                          <span className="line-clamp-2">{sample}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <Link href={`/learn?q=${encodeURIComponent(hotspot.topic)}`} className="mt-3 inline-flex items-center gap-1 text-xs text-saffron font-medium hover:underline">
                   <BookOpen size={12} /> Study this concept
                 </Link>

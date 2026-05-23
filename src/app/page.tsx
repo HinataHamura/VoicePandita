@@ -39,7 +39,7 @@ export default function HomePage() {
             <Link href="/login" className="px-3 py-2 text-sm text-ink/60 hover:text-ink">
               Login
             </Link>
-            <Link href="/onboarding" className="rounded-full bg-forest px-4 py-2 text-sm font-medium text-white shadow-sm shadow-forest/20 hover:bg-forest/90">
+            <Link href="/learn" className="rounded-full bg-forest px-4 py-2 text-sm font-medium text-white shadow-sm shadow-forest/20 hover:bg-forest/90">
               শুরু করো
             </Link>
           </div>
@@ -66,7 +66,7 @@ export default function HomePage() {
           </motion.p>
 
           <motion.div custom={3} variants={fadeUp} className="flex flex-col justify-center gap-3 sm:flex-row">
-            <Link href="/onboarding" className="group inline-flex items-center gap-2 rounded-full bg-saffron px-8 py-4 text-base font-semibold text-white shadow-lg shadow-saffron/20 hover:-translate-y-0.5 hover:bg-saffron/90 hover:shadow-xl hover:shadow-saffron/25">
+            <Link href="/learn" className="group inline-flex items-center gap-2 rounded-full bg-saffron px-8 py-4 text-base font-semibold text-white shadow-lg shadow-saffron/20 hover:-translate-y-0.5 hover:bg-saffron/90 hover:shadow-xl hover:shadow-saffron/25">
               <span className="bangla">এখনই শুরু করো</span>
               <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </Link>
@@ -125,7 +125,7 @@ export default function HomePage() {
           <p className="bangla mb-8 text-ink/60">
             Registration করো, ২ মিনিটে onboarding শেষ করো, আর voice দিয়ে প্রথম প্রশ্ন করো।
           </p>
-          <Link href="/onboarding" className="inline-flex items-center gap-2 rounded-full bg-saffron px-10 py-4 text-base font-semibold text-white shadow-lg shadow-saffron/20 hover:bg-saffron/90">
+          <Link href="/learn" className="inline-flex items-center gap-2 rounded-full bg-saffron px-10 py-4 text-base font-semibold text-white shadow-lg shadow-saffron/20 hover:bg-saffron/90">
             <span className="bangla">শুরু করো - সম্পূর্ণ free</span>
             <ChevronRight size={18} />
           </Link>
@@ -141,3 +141,4 @@ export default function HomePage() {
     </div>
   )
 }
+

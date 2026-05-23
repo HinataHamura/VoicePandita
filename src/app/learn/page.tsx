@@ -9,7 +9,10 @@ import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
-import { getConceptMemory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
+import { getAuthenticatedStudent } from '@/lib/authFlow'
+import { getConceptMemory, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
+import { searchCurriculum } from '@/lib/embeddings'
+import { createClient } from '@/lib/supabase/client'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -91,6 +94,11 @@ export default function LearnPage() {
   const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
+    getAuthenticatedStudent().then(student => {
+      if (!student) {
+        window.location.replace('/login?next=/learn')
+      }
+    })
     setIsOnline(navigator.onLine)
     const params = new URLSearchParams(window.location.search)
     const seededQuestion = params.get('q')
@@ -191,15 +199,75 @@ export default function LearnPage() {
     }
   }
 
-  async function logPeerWisdom(question: string) {
+  async function logPeerWisdom(question: string, graphPath?: string[]) {
     try {
       await fetch('/api/pwn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, subject, sessionId: getSessionId() }),
+        body: JSON.stringify({ question, subject, sessionId: getSessionId(), graphPath }),
       })
     } catch {
       // Community logging is helpful, not required for answering.
+    }
+  }
+
+  async function storeQuestionEmbedding(params: {
+    question: string
+    answer: string
+    graphPath?: string[]
+  }) {
+    try {
+      const res = await fetch('/api/curriculum-memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: params.question,
+          answer: params.answer,
+          subject,
+          graphPath: params.graphPath,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        console.warn('[VectorRAG] Student question embedding was not stored:', data)
+        return
+      }
+      console.info('[VectorRAG] Student question embedding stored in curriculum_embeddings:', data.row)
+    } catch (err) {
+      console.warn('[VectorRAG] Failed to store student question embedding:', err)
+    }
+  }
+
+  async function storeQuestionGraph(params: {
+    question: string
+    answer: string
+    graphPath?: string[]
+    source?: string
+  }) {
+    try {
+      const res = await fetch('/api/graph-memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: params.question,
+          answer: params.answer,
+          subject,
+          graphPath: params.graphPath,
+          source: params.source,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.skipped) {
+        console.info('[GraphDB] Neo4j graph write skipped:', data.reason)
+        return
+      }
+      if (!res.ok) {
+        console.warn('[GraphDB] Question graph was not stored:', data)
+        return
+      }
+      console.info('[GraphDB] Question graph stored in Neo4j:', data)
+    } catch (err) {
+      console.warn('[GraphDB] Failed to store question graph:', err)
     }
   }
 
@@ -219,17 +287,30 @@ export default function LearnPage() {
 
     if (!navigator.onLine) {
       const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
+      const offlineAnswer = `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
-          ? { ...msg, text: `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`, emotion: localEmotion, loading: false }
+          ? { ...msg, text: offlineAnswer, emotion: localEmotion, loading: false }
           : msg
       ))
       recordPractice(subject, question)
+      recordChatHistory({
+        question,
+        answer: offlineAnswer,
+        subject,
+        outputMode,
+        language,
+        source: 'offline-pack',
+      })
       setIsLoading(false)
       return
     }
 
     try {
+      const supabase = createClient()
+      const curriculumChunks = await searchCurriculum(question, supabase, 0.5, 3)
+      console.info('[VectorRAG] Sending to Gemini with curriculum context:', curriculumChunks)
+
       const res = await fetch('/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -241,6 +322,7 @@ export default function LearnPage() {
           language,
           repeatCount,
           conceptMemory: getConceptMemory().slice(0, 6),
+          curriculumChunks,
         }),
       })
       const data = await res.json()
@@ -262,13 +344,42 @@ export default function LearnPage() {
       if (data.answer) speakText(data.answer, nextEmotion)
       recordPractice(subject, question)
       recordConceptMemory(question, subject, data.graphPath)
-      logPeerWisdom(question)
+      storeQuestionEmbedding({
+        question,
+        answer: data.answer || '',
+        graphPath: data.graphPath,
+      })
+      storeQuestionGraph({
+        question,
+        answer: data.answer || '',
+        graphPath: data.graphPath,
+        source: data.source,
+      })
+      recordChatHistory({
+        question,
+        answer: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
+        subject,
+        outputMode,
+        language,
+        graphPath: data.graphPath,
+        source: data.source,
+      })
+      logPeerWisdom(question, data.graphPath)
     } catch {
+      const errorAnswer = 'দুঃখিত, সার্ভারে সমস্যা হচ্ছে। একটু পরে আবার চেষ্টা করো।'
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
-          ? { ...msg, text: 'দুঃখিত, সার্ভারে সমস্যা হচ্ছে। একটু পরে আবার চেষ্টা করো।', loading: false }
+          ? { ...msg, text: errorAnswer, loading: false }
           : msg
       ))
+      recordChatHistory({
+        question,
+        answer: errorAnswer,
+        subject,
+        outputMode,
+        language,
+        source: 'error',
+      })
     } finally {
       setIsLoading(false)
     }

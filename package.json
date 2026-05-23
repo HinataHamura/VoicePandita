@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:tts": "uvicorn scripts.tts_server:app --port 8001 --reload",
+    "dev:seed": "python scripts/seed_curriculum.py",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:tts\"",
     "build": "node --max-old-space-size=4096 node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "next lint"
@@ -17,6 +20,7 @@
     "groq-sdk": "^0.5.0",
     "lucide-react": "^0.383.0",
     "mermaid": "^10.9.1",
+    "neo4j-driver": "^6.0.1",
     "next": "14.2.3",
     "next-pwa": "^5.6.0",
     "onnxruntime-web": "^1.18.0",
@@ -30,6 +34,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
+    "concurrently": "^8.2.2",
     "eslint": "^8",
     "eslint-config-next": "14.2.3",
     "postcss": "^8",

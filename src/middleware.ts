@@ -1,8 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const protectedRoutes = ['/onboarding', '/student-path', '/learn', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn']
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } })
+  const { pathname, search } = request.nextUrl
+  const isProtectedRoute = protectedRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))
+  const hasDemoSession = request.cookies.get('vp_demo_session')?.value === '1'
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,7 +29,23 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  const { data } = await supabase.auth.getUser()
+  const hasSupabaseSession = Boolean(data.user)
+
+  if (isProtectedRoute && !hasSupabaseSession && !hasDemoSession) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/login'
+    redirectUrl.searchParams.set('next', `${pathname}${search}`)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  if (pathname === '/login' && (hasSupabaseSession || hasDemoSession)) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/learn'
+    redirectUrl.search = ''
+    return NextResponse.redirect(redirectUrl)
+  }
+
   return response
 }
 

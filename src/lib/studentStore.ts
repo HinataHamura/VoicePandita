@@ -38,6 +38,18 @@ export interface ConceptMemory {
   createdAt: string
 }
 
+export interface ChatHistoryItem {
+  id: string
+  question: string
+  answer: string
+  subject: string
+  outputMode: string
+  language: string
+  graphPath?: string[]
+  source?: string
+  createdAt: string
+}
+
 export const DEMO_EMAIL = 'demo@voicepandita.app'
 export const DEMO_PASSWORD = 'Demo@1234'
 
@@ -169,6 +181,10 @@ export function conceptMemoryKey(studentId = getCurrentStudent().id) {
   return `vp_concept_memory:${studentId}`
 }
 
+export function chatHistoryKey(studentId = getCurrentStudent().id) {
+  return `vp_chat_history:${studentId}`
+}
+
 export function getStudentProfile(studentId?: string): Partial<StudentProfile> {
   const key = profileKey(studentId)
   const fallback = studentId === DEMO_STUDENT.id || getCurrentStudent().isDemo ? DEMO_PROFILE : {}
@@ -177,6 +193,10 @@ export function getStudentProfile(studentId?: string): Partial<StudentProfile> {
 
 export function saveStudentProfile(profile: Partial<StudentProfile>, studentId?: string) {
   writeJson(profileKey(studentId), profile)
+}
+
+export function isStudentProfileComplete(profile: Partial<StudentProfile>) {
+  return Boolean(profile.level && profile.goal && profile.group)
 }
 
 export function getStudentProgress(studentId?: string): StudentProgress {
@@ -215,6 +235,34 @@ export function recordConceptMemory(question: string, subject: string, graphPath
     ...withoutDuplicate,
   ].slice(0, 25)
   writeJson(conceptMemoryKey(), next)
+}
+
+export function getChatHistory(studentId?: string): ChatHistoryItem[] {
+  if (!canUseStorage()) return []
+  try {
+    const saved = localStorage.getItem(chatHistoryKey(studentId))
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+export function recordChatHistory(item: Omit<ChatHistoryItem, 'id' | 'createdAt'>) {
+  const history = getChatHistory()
+  const next: ChatHistoryItem[] = [
+    {
+      id: crypto.randomUUID(),
+      ...item,
+      createdAt: new Date().toISOString(),
+    },
+    ...history,
+  ].slice(0, 100)
+  writeJson(chatHistoryKey(), next)
+}
+
+export function clearChatHistory(studentId?: string) {
+  if (!canUseStorage()) return
+  localStorage.removeItem(chatHistoryKey(studentId))
 }
 
 export function recordPractice(subject: string, question: string) {
