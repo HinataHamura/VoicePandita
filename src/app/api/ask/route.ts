@@ -7,6 +7,13 @@ import {
   translateBanglaWithDataset,
   type ChakmaBridgeContext,
 } from '@/lib/chakmaBridge'
+import {
+  detectInputLanguage,
+  normalizeTargetLanguage,
+  targetLanguageToCode,
+  type TargetLanguage,
+} from '@/lib/multilingualSupport'
+import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/marmaBridge'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated'
@@ -219,7 +226,7 @@ Rules:
 
   try {
     const translated = await geminiText(prompt)
-    return translated?.trim() || datasetFallback
+    return translateBanglaWithDataset(translated?.trim() || datasetFallback, bridge.pairs)
   } catch (err) {
     console.warn('/api/ask Chakma answer translation failed', err instanceof Error ? err.message : err)
     return datasetFallback
@@ -239,12 +246,242 @@ function safeDiagram(value: unknown, fallbackTitle: string) {
   return `graph LR\n  A[প্রশ্ন] --> B[${fallbackTitle || 'Concept'}]\n  B --> C[কারণ]\n  C --> D[ফলাফল]\n  D --> E[বোঝা]`
 }
 
+const BANGLA_TO_MARMA_SCRIPT: Record<string, string> = {
+  অ: 'အ',
+  আ: 'အာ',
+  ই: 'ဣ',
+  ঈ: 'ဤ',
+  উ: 'ဥ',
+  ঊ: 'ဦ',
+  ঋ: 'ရီ',
+  এ: 'အေ',
+  ঐ: 'အိုက်',
+  ও: 'အို',
+  ঔ: 'အောက်',
+  ক: 'က',
+  খ: 'ခ',
+  গ: 'ဂ',
+  ঘ: 'ဃ',
+  ঙ: 'င',
+  চ: 'စ',
+  ছ: 'ဆ',
+  জ: 'ဇ',
+  ঝ: 'ဈ',
+  ঞ: 'ည',
+  ট: 'တ',
+  ঠ: 'ထ',
+  ড: 'ဒ',
+  ঢ: 'ဓ',
+  ণ: 'န',
+  ত: 'တ',
+  থ: 'သ',
+  দ: 'ဒ',
+  ধ: 'ဓ',
+  ন: 'န',
+  প: 'ပ',
+  ফ: 'ဖ',
+  ব: 'ဗ',
+  ভ: 'ဘ',
+  ম: 'မ',
+  য: 'ယ',
+  র: 'ရ',
+  ল: 'လ',
+  শ: 'ရှ',
+  ষ: 'ရှ',
+  স: 'စ',
+  হ: 'ဟ',
+  ড়: 'ရ',
+  ঢ়: 'ရ',
+  য়: 'ယ',
+  '়': '',
+  'ং': 'ံ',
+  'ঃ': 'း',
+  'ঁ': 'ံ',
+  'া': 'ာ',
+  'ি': 'ိ',
+  'ী': 'ီ',
+  'ু': 'ု',
+  'ূ': 'ူ',
+  'ৃ': 'ြိ',
+  'ে': 'ေ',
+  'ৈ': 'ိုင်',
+  'ো': 'ို',
+  'ৌ': 'ေါ',
+  '্': '်',
+  '০': '၀',
+  '১': '၁',
+  '২': '၂',
+  '৩': '၃',
+  '৪': '၄',
+  '৫': '၅',
+  '৬': '၆',
+  '৭': '၇',
+  '৮': '၈',
+  '৯': '၉',
+  '।': '။',
+}
+
+const BANGLA_TO_LATIN_SCRIPT: Record<string, string> = {
+  অ: 'a',
+  আ: 'a',
+  ই: 'i',
+  ঈ: 'i',
+  উ: 'u',
+  ঊ: 'u',
+  ঋ: 'ri',
+  এ: 'e',
+  ঐ: 'oi',
+  ও: 'o',
+  ঔ: 'ou',
+  ক: 'k',
+  খ: 'kh',
+  গ: 'g',
+  ঘ: 'gh',
+  ঙ: 'ng',
+  চ: 'ch',
+  ছ: 'chh',
+  জ: 'j',
+  ঝ: 'jh',
+  ঞ: 'ny',
+  ট: 't',
+  ঠ: 'th',
+  ড: 'd',
+  ঢ: 'dh',
+  ণ: 'n',
+  ত: 't',
+  থ: 'th',
+  দ: 'd',
+  ধ: 'dh',
+  ন: 'n',
+  প: 'p',
+  ফ: 'ph',
+  ব: 'b',
+  ভ: 'bh',
+  ম: 'm',
+  য: 'y',
+  র: 'r',
+  ল: 'l',
+  শ: 'sh',
+  ষ: 'sh',
+  স: 's',
+  হ: 'h',
+  ড়: 'r',
+  ঢ়: 'rh',
+  য়: 'y',
+  '়': '',
+  'ং': 'ng',
+  'ঃ': 'h',
+  'ঁ': 'n',
+  'া': 'a',
+  'ি': 'i',
+  'ী': 'i',
+  'ু': 'u',
+  'ূ': 'u',
+  'ৃ': 'ri',
+  'ে': 'e',
+  'ৈ': 'oi',
+  'ো': 'o',
+  'ৌ': 'ou',
+  '্': '',
+  '০': '0',
+  '১': '1',
+  '২': '2',
+  '৩': '3',
+  '৪': '4',
+  '৫': '5',
+  '৬': '6',
+  '৭': '7',
+  '৮': '8',
+  '৯': '9',
+  '।': '.',
+}
+
+const GARO_TERM_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/সালোকসংশ্লেষণ/g, 'photosynthesis'],
+  [/উদ্ভিদ/g, 'sam bolrang'],
+  [/আলো/g, 'salni teng.su'],
+  [/পানি/g, 'chi'],
+  [/অক্সিজেন/g, 'oxygen'],
+  [/গ্লুকোজ/g, 'glucose'],
+  [/খাদ্য/g, 'cha.aniko'],
+  [/কার্বন ডাই-অক্সাইড|CO2/g, 'CO2'],
+  [/ক্লোরোফিল/g, 'chlorophyll'],
+  [/বল/g, 'bil'],
+  [/ভর/g, 'jrimani'],
+  [/ত্বরণ/g, 'ta.rake re.ani'],
+  [/গতি/g, 're.ani'],
+  [/ধাতু/g, 'metal'],
+  [/অধাতু/g, 'non-metal'],
+  [/ইলেকট্রন/g, 'electron'],
+  [/আয়ন/g, 'ion'],
+  [/বন্ধন/g, 'bond'],
+  [/আকর্ষণ/g, 'salnapani'],
+  [/প্রশ্ন/g, 'sing.aniko'],
+  [/কারণ/g, 'a.sel'],
+  [/ফলাফল/g, 'bite'],
+  [/বোঝা/g, 'ma.siani'],
+  [/সূত্র/g, 'formula'],
+  [/যাচাই/g, 'nirokani'],
+  [/উদাহরণ/g, 'mesokani'],
+  [/ব্যাখ্যা/g, 'talatani'],
+  [/মূল ভাব/g, 'mongsonggipa miksongani'],
+]
+
+function transliterateBangla(value: string, alphabet: Record<string, string>) {
+  let output = ''
+  for (const char of value) {
+    const codePoint = char.codePointAt(0) || 0
+    output += codePoint >= 0x0980 && codePoint <= 0x09ff ? alphabet[char] ?? char : char
+  }
+  return output
+}
+
+function translateBanglaToGaroText(value: string) {
+  let output = value
+  for (const [pattern, replacement] of GARO_TERM_REPLACEMENTS) {
+    output = output.replace(pattern, replacement)
+  }
+  return transliterateBangla(output, BANGLA_TO_LATIN_SCRIPT)
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([?.!,])/g, '$1')
+    .trim()
+}
+
+function translateBanglaToMarmaScript(value: string) {
+  return transliterateBangla(value, BANGLA_TO_MARMA_SCRIPT)
+}
+
+function sanitizeMermaidLabel(label: string) {
+  return label.replace(/[[\]{}<>]/g, '').replace(/\s+/g, ' ').trim() || 'Concept'
+}
+
+function translateMermaidLabels(chart: string, translator: (label: string) => string) {
+  return chart.replace(/\[([^\]]+)\]/g, (_, label: string) => `[${sanitizeMermaidLabel(translator(label))}]`)
+}
+
+function localizeDiagram(
+  chart: string | null,
+  targetLanguage: TargetLanguage,
+  bridge: ChakmaBridgeContext
+) {
+  if (!chart) return null
+  if (targetLanguage === 'Bangla') return chart
+  if (targetLanguage === 'Chakma') {
+    return translateMermaidLabels(chart, label => translateBanglaWithDataset(label, bridge.pairs))
+  }
+  if (targetLanguage === 'Marma') {
+    return translateMermaidLabels(chart, translateBanglaToMarmaScript)
+  }
+  return translateMermaidLabels(chart, translateBanglaToGaroText)
+}
+
 async function dynamicGeminiNode(params: {
   question: string
   selectedSubject: string
   outputMode: OutputMode
   emotion: EmotionState
-  language: string
+  inputLanguage: string
+  targetLanguage: TargetLanguage
   conceptMemory: unknown
 }) {
   const memoryText = Array.isArray(params.conceptMemory)
@@ -261,7 +498,8 @@ The question may be new and not in the local graph. Create a fresh curriculum-sa
 Student question: ${params.question}
 Selected subject from UI: ${params.selectedSubject}
 Emotion: ${params.emotion}
-Language: ${params.language}
+Detected input language: ${params.inputLanguage}
+Selected target language: ${params.targetLanguage}
 Output mode: ${params.outputMode}
 Recent student concept memory:
 ${memoryText || 'None'}
@@ -271,12 +509,13 @@ Return ONLY valid JSON with this shape:
   "subject": "Physics/Chemistry/Biology/Math/Bangla/English",
   "conceptTitle": "short concept title",
   "graphPath": ["Subject", "Chapter", "Topic", "Subtopic"],
-  "answer": "Bangla answer, max 130 words, exact to the question, no unrelated concept",
+  "answer": "Bangla source answer, max 130 words, exact to the question, no unrelated concept",
   "diagram": "valid Mermaid graph LR diagram with 4-6 nodes using Bangla labels"
 }
 
 Rules:
 - Infer the true school subject from the question first; the selected subject may be wrong.
+- Create the answer in Bangla first. A separate language router will convert it or safely fall back.
 - Must answer the exact question.
 - If the student asks repeated words like 'করো করো করো', ignore repetition.
 - If emotion is confused, use a simple analogy.
@@ -299,6 +538,94 @@ Rules:
   }
 }
 
+async function maybeGenerateLowResourceAnswer(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  inputLanguage: string
+  targetLanguage: Exclude<TargetLanguage, 'Bangla' | 'Chakma'>
+  subjectContext: string
+}) {
+  const deterministicFallback = params.targetLanguage === 'Garo'
+    ? translateBanglaToGaroText(params.banglaAnswer)
+    : translateBanglaToMarmaScript(params.banglaAnswer)
+
+  const prompt = `You are VoicePandita's multilingual tutoring translator.
+Translate the Bangla source answer into the selected target language for a school student.
+
+Selected target language: ${params.targetLanguage}
+Detected input language: ${params.inputLanguage}
+Subject context: ${params.subjectContext || 'Not provided'}
+
+Student question:
+${params.originalQuestion}
+
+Bangla source answer:
+${params.banglaAnswer}
+
+Return only the student-facing answer in ${params.targetLanguage}.
+For Garo, write in the Latin-script A.chik/Garo style used by students.
+For Marma, write in Myanmar script.
+Keep formulas, symbols, and school science terms if there is no reliable local equivalent.
+Do not return an English availability warning.`
+
+  try {
+    const generated = await geminiText(prompt)
+    return generated?.trim() || deterministicFallback
+  } catch (err) {
+    console.warn(`/api/ask ${params.targetLanguage} answer generation failed`, err instanceof Error ? err.message : err)
+    return deterministicFallback
+  }
+}
+
+async function translateBanglaAnswerToMarma(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  inputLanguage: string
+  subjectContext: string
+}) {
+  const deterministicFallback = translateBanglaToMarmaScript(params.banglaAnswer)
+  if (!genAI) return deterministicFallback
+
+  const marma = await loadMarmaContext()
+  if (!marma.enabled) return deterministicFallback
+
+  const prompt = `You are VoicePandita's multilingual tutoring translator.
+You are writing for Marma-speaking students in Bangladesh.
+Use Marma language written in Myanmar script.
+The examples below are real Marma text from CLEAR-Global/marmaspeak-text. Use them only as script/style evidence, not as answer content.
+
+Marma corpus examples:
+${formatMarmaExamples(marma.examples)}
+
+Detected input language: ${params.inputLanguage}
+Selected target language: Marma
+Subject context: ${params.subjectContext || 'Not provided'}
+
+Student question:
+${params.originalQuestion}
+
+Bangla educational source answer:
+${params.banglaAnswer}
+
+Rules:
+- Return only the student-facing answer in Marma language using Myanmar script.
+- Keep formulas, symbols, and science terms like CO2, glucose, photosynthesis, F = ma if there is no reliable Marma equivalent.
+- Keep it simple for a school student.
+- Do not output Bangla or English paragraphs.
+- Do not return an English availability warning.`
+
+  try {
+    const generated = await geminiText(prompt)
+    const answer = generated?.trim() || ''
+    if (!answer) return deterministicFallback
+    if (!hasMarmaScript(answer)) return deterministicFallback
+    return answer
+  } catch (err) {
+    console.warn('/api/ask Marma answer generation failed', err instanceof Error ? err.message : err)
+    return deterministicFallback
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -306,7 +633,9 @@ export async function POST(req: NextRequest) {
     if (!originalQuestion) return NextResponse.json({ error: 'Question required' }, { status: 400 })
 
     const outputMode = String(body.outputMode || 'whiteboard') as OutputMode
-    const language = String(body.language || 'bn')
+    const targetLanguage = normalizeTargetLanguage(body.selected_target_language || body.target_language || body.language || 'Bangla')
+    const language = targetLanguageToCode(targetLanguage)
+    const inputLanguage = detectInputLanguage(originalQuestion)
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
     const bridge = await prepareChakmaBridge(originalQuestion, language)
@@ -329,7 +658,8 @@ export async function POST(req: NextRequest) {
           selectedSubject,
           outputMode,
           emotion,
-          language,
+          inputLanguage,
+          targetLanguage,
           conceptMemory,
         })
         answer = dynamic.answer
@@ -347,11 +677,12 @@ ${lesson.facts.join('\n')}
 
 Student question: ${question}
 Emotion: ${emotion}
-Language: ${language}
+Detected input language: ${inputLanguage}
+Selected target language: ${targetLanguage}
 Mode: ${outputMode}
 
 Rules:
-- Answer in Bangla.
+- Answer in Bangla first. A separate language router will convert it or safely fall back.
 - Must answer the exact question. Do not switch to another bonding/concept.
 - Max 120 words unless exam mode.
 - If confused, use an analogy first.
@@ -368,22 +699,45 @@ Rules:
       if (!answer) answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
     }
 
-    const finalAnswer = bridge.enabled
-      ? await translateBanglaAnswerToChakma(answer, bridge)
-      : answer
-    const finalDiagram = bridge.enabled
-      ? translateBanglaWithDataset(diagram, bridge.pairs)
-      : diagram
+    let finalAnswer = answer
+    let finalDiagram: string | null = diagram
+    let languageSource = source
+
+    if (targetLanguage === 'Chakma') {
+      finalAnswer = await translateBanglaAnswerToChakma(answer, bridge)
+      finalDiagram = localizeDiagram(diagram, targetLanguage, bridge)
+      languageSource = `${source}+chakma-${bridge.source}`
+    } else if (targetLanguage === 'Marma') {
+      finalAnswer = await translateBanglaAnswerToMarma({
+        banglaAnswer: answer,
+        originalQuestion,
+        inputLanguage,
+        subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
+      })
+      finalDiagram = localizeDiagram(diagram, targetLanguage, bridge)
+      languageSource = `${source}+marma-corpus-bridge`
+    } else if (targetLanguage === 'Garo') {
+      finalAnswer = await maybeGenerateLowResourceAnswer({
+        banglaAnswer: answer,
+        originalQuestion,
+        inputLanguage,
+        targetLanguage,
+        subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
+      })
+      finalDiagram = localizeDiagram(diagram, targetLanguage, bridge)
+      languageSource = `${source}+${targetLanguage.toLowerCase()}-safe-routing`
+    }
 
     return NextResponse.json({
       answer: finalAnswer,
       diagram: outputMode === 'simple' || outputMode === 'exam' ? null : finalDiagram,
       detectedEmotion,
-      detectedLanguage: bridge.enabled ? 'ccp' : language,
+      detectedLanguage: inputLanguage,
+      selectedTargetLanguage: targetLanguage,
       translatedQuestion: bridge.enabled && question !== originalQuestion ? question : null,
       graphPath,
       pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
-      source: bridge.enabled ? `${source}+chakma-${bridge.source}` : source,
+      source: languageSource,
     })
   } catch (err) {
     console.error('/api/ask error:', err)

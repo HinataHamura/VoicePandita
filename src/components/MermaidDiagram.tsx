@@ -21,7 +21,7 @@ export default function MermaidDiagram({ chart }: Props) {
           primaryBorderColor:'#D4A843',
           lineColor:       '#2A5C45',
           fontSize:        '14px',
-          fontFamily:      'var(--font-bangla), sans-serif',
+          fontFamily:      'var(--font-bangla), "Noto Sans Chakma", "Noto Sans Myanmar", "Myanmar Text", sans-serif',
         },
       })
 
@@ -43,6 +43,6 @@ export default function MermaidDiagram({ chart }: Props) {
   }, [chart])
 
   return (
-    <div ref={ref} className="overflow-x-auto w-full flex justify-center [&>svg]:max-w-full" />
+    <div ref={ref} className="mermaid overflow-x-auto w-full flex justify-center [&>svg]:max-w-full" />
   )
 }

@@ -24,6 +24,104 @@ npm run dev
 
 ---
 
+## Text Multilingual Support
+
+The `/learn` chat now treats the selected language tab as the answer language. A student can type in Bangla, English, Chakma, Marma, or Garo, and the API sends this routing payload:
+
+```json
+{
+  "user_text": "<student question>",
+  "input_language": "<detected language>",
+  "target_language": "<selected tab language>",
+  "subject_context": "<optional subject or topic>"
+}
+```
+
+The selected tab has higher priority than the input language. Bangla answers use the existing tutor path. Chakma uses the dataset-backed Bangla/Chakma bridge. Garo and Marma return a safe fallback unless you enable a verified fine-tuned model or explicitly opt into unverified generation with `ALLOW_UNVERIFIED_LOW_RESOURCE_GENERATION=1`.
+
+### Build JSONL datasets
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-ml.txt
+
+python ml/multilingual_data.py --output-dir data
+```
+
+Optional local MELD import:
+
+```bash
+python ml/multilingual_data.py --output-dir data --meld-path /path/to/meld_folder_or_file
+```
+
+The builder loads:
+
+| Language | Source |
+|----------|--------|
+| Chakma | `amlan107/chakma-nmt-base-parallel-dev-set` |
+| Garo | `MWirelabs/garo-english-parallel-corpus` |
+| Marma | `CLEAR-Global/marmaspeak-text` |
+| MELD | local CSV, Excel, JSON, or JSONL when provided |
+| Bangla | local educational seed explanations |
+
+It writes:
+
+```text
+data/language_detection.jsonl
+data/chakma_instruction.jsonl
+data/garo_instruction.jsonl
+data/marma_instruction.jsonl
+data/bangla_to_chakma_instruction.jsonl
+data/bangla_to_garo_instruction.jsonl
+data/bangla_to_marma_instruction.jsonl
+data/combined_multilingual_instruction.jsonl
+```
+
+The script removes empty rows, deduplicates rows, normalizes whitespace, preserves Unicode, tracks `source_dataset`, and prints columns plus sample rows for every loaded source. It does not synthesize fake Garo, Marma, or Chakma text. Bangla-to-Garo and Bangla-to-Marma files stay empty until verified Bangla-paired translations are available.
+
+### Fine-tune with LoRA or QLoRA
+
+```bash
+python ml/finetune_lora.py \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --data data/combined_multilingual_instruction.jsonl \
+  --output-dir models/voicepandita-multilingual-lora
+```
+
+For QLoRA on a CUDA machine:
+
+```bash
+python ml/finetune_lora.py --qlora --bf16 --model Qwen/Qwen2.5-3B-Instruct
+```
+
+You can also experiment separately with `google/mt5-base` or `facebook/nllb-200-distilled-600M` for translation-style tasks, but the provided LoRA script targets chat-style causal instruction models.
+
+### Text-only inference
+
+```bash
+export VP_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+export VP_LORA_ADAPTER=models/voicepandita-multilingual-lora
+
+python ml/inference.py "আয়নিক বন্ধন সহজ করে বুঝাও" --target-language Chakma
+python ml/inference.py "আয়নিক বন্ধন সহজ করে বুঝাও" --target-language Garo
+```
+
+Programmatic functions:
+
+```python
+from ml.inference import detect_input_language, generate_answer
+
+language = detect_input_language("আয়নিক বন্ধন সহজ করে বুঝাও")
+answer = generate_answer(
+    "আয়নিক বন্ধন সহজ করে বুঝাও",
+    selected_target_language="Garo",
+    subject_context="Chemistry -> Chemical Bonding -> Ionic Bond",
+)
+```
+
+---
+
 ## Pages
 
 | Route | Description |

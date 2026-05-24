@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, Loader2, Mic, MicOff, Plus, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Globe, Loader2, Plus, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
@@ -14,12 +14,27 @@ type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ccp' | 'mrm' | 'gnk'
 
+const LANGUAGE_TABS: { code: LanguageMode; label: string }[] = [
+  { code: 'bn', label: 'Bangla' },
+  { code: 'ccp', label: 'Chakma' },
+  { code: 'mrm', label: 'Marma' },
+  { code: 'gnk', label: 'Garo' },
+]
+
+const LANGUAGE_LABEL_BY_CODE: Record<LanguageMode, string> = {
+  bn: 'Bangla',
+  ccp: 'Chakma',
+  mrm: 'Marma',
+  gnk: 'Garo',
+}
+
 interface Message {
   id: string
   role: 'user' | 'ai'
   text: string
   diagram?: string | null
   emotion?: EmotionState
+  targetLanguage?: string
   pwnMessage?: string
   graphPath?: string[]
   loading?: boolean
@@ -39,18 +54,6 @@ const OFFLINE_ANSWERS: Record<string, string> = {
   math: 'Offline pack: ax²+bx+c=0 হলে x = (-b ± √(b²-4ac)) / 2a সূত্রে মান বসাও।',
   bangla: 'Offline pack: সৃজনশীল উত্তরে মূল ভাব, ব্যাখ্যা, উদাহরণ - এই তিন ধাপ রাখো।',
   english: 'Offline pack: Start with one short correct sentence, then add details.',
-}
-
-function speakText(text: string, emotion?: EmotionState) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'bn-BD'
-  utterance.rate = emotion === 'frustrated' ? 0.82 : emotion === 'confused' ? 0.9 : 1
-  utterance.pitch = 1
-  const banglaVoice = window.speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('bn'))
-  if (banglaVoice) utterance.voice = banglaVoice
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
 }
 
 function getSessionId() {
@@ -213,7 +216,7 @@ export default function LearnPage() {
     setInput('')
 
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', text: question }
-    const loadingMsg: Message = { id: crypto.randomUUID(), role: 'ai', text: '', loading: true }
+    const loadingMsg: Message = { id: crypto.randomUUID(), role: 'ai', text: '', targetLanguage: LANGUAGE_LABEL_BY_CODE[language], loading: true }
     setMessages(prev => [...prev, userMsg, loadingMsg])
     setIsLoading(true)
 
@@ -221,7 +224,7 @@ export default function LearnPage() {
       const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
-          ? { ...msg, text: `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`, emotion: localEmotion, loading: false }
+          ? { ...msg, text: `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`, emotion: localEmotion, targetLanguage: LANGUAGE_LABEL_BY_CODE[language], loading: false }
           : msg
       ))
       recordPractice(subject, question)
@@ -239,6 +242,7 @@ export default function LearnPage() {
           outputMode,
           emotion: localEmotion,
           language,
+          selected_target_language: LANGUAGE_LABEL_BY_CODE[language],
           repeatCount,
           conceptMemory: getConceptMemory().slice(0, 6),
         }),
@@ -253,13 +257,13 @@ export default function LearnPage() {
               text: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
               diagram: data.diagram,
               emotion: nextEmotion,
+              targetLanguage: data.selectedTargetLanguage || LANGUAGE_LABEL_BY_CODE[language],
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
               loading: false,
             }
           : msg
       ))
-      if (data.answer && language === 'bn') speakText(data.answer, nextEmotion)
       recordPractice(subject, question)
       recordConceptMemory(question, subject, data.graphPath)
       logPeerWisdom(question)
@@ -275,7 +279,6 @@ export default function LearnPage() {
   }
 
   function startNewChat() {
-    window.speechSynthesis?.cancel()
     localStorage.setItem('vp_session_id', crypto.randomUUID())
     setMessages([])
     setInput('')
@@ -313,17 +316,12 @@ export default function LearnPage() {
         <div className="space-y-2 border-b border-forest/10 bg-white/45 px-4 py-2 backdrop-blur-xl">
           <OutputModeSelector value={outputMode} onChange={setOutputMode} />
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-            {[
-              ['bn', 'Bangla'],
-              ['ccp', 'Chakma'],
-              ['mrm', 'Marma'],
-              ['gnk', 'Garo'],
-            ].map(([value, label]) => (
+            {LANGUAGE_TABS.map(({ code, label }) => (
               <button
-                key={value}
-                onClick={() => setLanguage(value as LanguageMode)}
+                key={code}
+                onClick={() => setLanguage(code)}
                 className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs ${
-                  language === value ? 'border-forest bg-forest text-white shadow-sm shadow-forest/15' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-forest/24 hover:text-ink/75'
+                  language === code ? 'border-forest bg-forest text-white shadow-sm shadow-forest/15' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-forest/24 hover:text-ink/75'
                 }`}
               >
                 {label}
@@ -337,6 +335,9 @@ export default function LearnPage() {
             >
               <Accessibility size={12} /> BdSL
             </button>
+            <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full bg-saffron/10 px-3 py-1.5 text-xs font-medium text-saffron">
+              <Globe size={12} /> Answering in {LANGUAGE_LABEL_BY_CODE[language]}
+            </span>
           </div>
         </div>
 
@@ -350,11 +351,11 @@ export default function LearnPage() {
           {messages.length === 0 && (
             <div className="flex min-h-full flex-col items-center justify-center py-12 text-center">
               <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-forest to-indigo shadow-xl shadow-forest/20">
-                <Mic size={32} className="text-white" />
+                <Globe size={32} className="text-white" />
               </div>
               <h1 className="bangla mb-2 font-display text-2xl font-bold">কী জানতে চাও?</h1>
               <p className="bangla max-w-md text-sm leading-relaxed text-ink/55">
-                Bangla voice, typed question, textbook photo, mother-tongue mode, emotion adaptation, and BdSL avatar - এক জায়গায়।
+                Bangla, English, Chakma, Marma, or Garo text লিখে প্রশ্ন করো. উত্তর সবসময় selected language tab অনুযায়ী আসবে।
               </p>
               <div className="mt-5 grid max-w-2xl grid-cols-2 gap-2 text-left text-xs text-ink/58 md:grid-cols-4">
                 {['GraphRAG NCTB', 'ONNX emotion stub', 'MELD bridge', 'PWN hotspot'].map(item => (
@@ -389,7 +390,7 @@ export default function LearnPage() {
                     {msg.loading ? (
                       <div className="card space-y-3 p-5">
                         <div className="flex items-center gap-2 text-xs text-ink/50">
-                          <Loader2 size={14} className="animate-spin" /> TutorAgent traversing NCTB graph...
+                          <Loader2 size={14} className="animate-spin" /> TutorAgent answering in {msg.targetLanguage || LANGUAGE_LABEL_BY_CODE[language]}...
                         </div>
                         <div className="skeleton h-4 w-3/4" />
                         <div className="skeleton h-4 w-full" />
@@ -400,6 +401,11 @@ export default function LearnPage() {
                         <div className="card p-5">
                           <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
                             {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
+                            {msg.targetLanguage && (
+                              <span className="rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs font-medium text-saffron">
+                                Answering in {msg.targetLanguage}
+                              </span>
+                            )}
                             {msg.graphPath && (
                               <span className="rounded-full bg-forest/8 px-2.5 py-0.5 text-xs text-forest">
                                 {msg.graphPath.join(' -> ')}
@@ -435,31 +441,6 @@ export default function LearnPage() {
 
         <div className="border-t border-forest/10 bg-cream/82 px-4 pb-4 pb-safe pt-3 backdrop-blur-xl">
           <div className="mx-auto flex max-w-3xl items-end gap-2">
-            <button
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onTouchStart={startRecording}
-              onTouchEnd={stopRecording}
-              className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full ${
-                isRecording
-                  ? 'mic-recording scale-105 bg-saffron text-white shadow-lg shadow-saffron/20'
-                  : 'border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-saffron/35 hover:text-saffron'
-              }`}
-              aria-label={isRecording ? 'Stop recording' : 'Start recording'}
-            >
-              {isRecording ? <Mic size={20} /> : <MicOff size={20} />}
-            </button>
-
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => handleImage(e.target.files?.[0])} />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={isOcrLoading}
-              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50"
-              aria-label="Upload textbook photo"
-            >
-              {isOcrLoading ? <Loader2 size={19} className="animate-spin" /> : <Camera size={19} />}
-            </button>
-
             <div className="relative flex-1">
               <textarea
                 value={input}

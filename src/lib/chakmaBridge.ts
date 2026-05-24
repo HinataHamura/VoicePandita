@@ -106,6 +106,7 @@ const BANGLA_TO_CHAKMA_SCRIPT: Record<string, string> = {
   ড়: '𑄢',
   ঢ়: '𑄢',
   য়: '𑄠',
+  '়': '',
   'ং': '𑄁',
   'ঃ': '𑄂',
   'ঁ': '𑄀',
@@ -372,7 +373,7 @@ function transliterateRemainingBangla(value: string) {
   for (const char of value) {
     const codePoint = char.codePointAt(0) || 0
     if (codePoint >= BENGALI_BLOCK_START && codePoint <= BENGALI_BLOCK_END) {
-      output += BANGLA_TO_CHAKMA_SCRIPT[char] || char
+      output += BANGLA_TO_CHAKMA_SCRIPT[char] ?? char
     } else {
       output += char
     }

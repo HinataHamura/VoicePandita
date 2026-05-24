@@ -26,7 +26,13 @@ export default function ChakmaPage() {
       const res = await fetch('/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, subject: 'physics', outputMode: 'simple', language }),
+        body: JSON.stringify({
+          question,
+          subject: 'physics',
+          outputMode: 'simple',
+          language,
+          selected_target_language: language === 'ccp' ? 'Chakma' : 'Bangla',
+        }),
       })
       const data = await res.json()
       setAnswer(data.answer)
