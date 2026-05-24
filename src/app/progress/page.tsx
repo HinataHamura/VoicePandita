@@ -19,10 +19,10 @@ export default function ProgressPage() {
   const data = progress || getStudentProgress(student?.id)
 
   return (
-    <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 border-b border-forest/10 bg-cream/82 px-4 py-4 backdrop-blur-xl">
+    <div className="ai-shell min-h-dvh">
+      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <Link href="/learn" className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80" aria-label="Back to learn">
+          <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Back to learn">
             <ArrowLeft size={18} />
           </Link>
           <div>
@@ -40,7 +40,7 @@ export default function ProgressPage() {
             ['Focus', `${data.focusTopics} topics`],
           ].map(([label, value]) => (
             <div key={label} className="card p-4 text-center">
-              <div className="font-display text-2xl font-bold text-forest">{value}</div>
+              <div className="font-display text-2xl font-bold bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">{value}</div>
               <div className="text-xs text-ink/50">{label}</div>
             </div>
           ))}
@@ -65,12 +65,12 @@ export default function ProgressPage() {
                     <h3 className="font-semibold mt-0.5">{topic.topic}</h3>
                     <p className="text-xs text-ink/45 mt-1">{topic.sessions} practice sessions completed</p>
                   </div>
-                  <span className="text-2xl font-display font-bold text-clay">{topic.score}%</span>
+                  <span className="font-display text-2xl font-bold text-clay">{topic.score}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-forest/8">
+                <div className="h-2 overflow-hidden rounded-full bg-forest/10">
                   <motion.div initial={{ width: 0 }} animate={{ width: `${topic.score}%` }} transition={{ delay: index * 0.06 + 0.2, duration: 0.6 }} className="h-full rounded-full bg-gradient-to-r from-clay to-saffron" />
                 </div>
-                <Link href={`/learn?q=${encodeURIComponent(topic.query)}`} className="mt-3 inline-flex items-center gap-1 text-xs text-saffron font-medium hover:underline">
+                <Link href={`/learn?q=${encodeURIComponent(topic.query)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-forest hover:underline">
                   <Target size={12} /> Practice this topic
                 </Link>
               </motion.div>
@@ -95,7 +95,7 @@ export default function ProgressPage() {
                   <span className="text-xs text-ink/45">{topic.subject}</span>
                   <div className="font-semibold text-sm mt-0.5">{topic.topic}</div>
                 </div>
-                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-forest/8">
+                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-forest/10">
                   <div className="h-full rounded-full bg-gradient-to-r from-forest to-aqua" style={{ width: `${topic.score}%` }} />
                 </div>
                 <span className="text-sm font-mono font-bold text-forest">{topic.score}%</span>

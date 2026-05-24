@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   title: 'VoicePandita - Learn. Understand. Belong.',
   description: 'Bangladesh voice-first AI tutor for Bangla, Chakma, Marma, Garo and accessible student learning.',
   manifest: '/manifest.json',
-  icons: { apple: '/icon-192.png' },
+  icons: { icon: '/icon.svg' },
   openGraph: {
     title: 'VoicePandita',
     description: 'Voice-first AI tutoring for every Bangladeshi student',

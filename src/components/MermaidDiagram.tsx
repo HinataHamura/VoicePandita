@@ -16,10 +16,14 @@ export default function MermaidDiagram({ chart }: Props) {
         startOnLoad: false,
         theme:       'base',
         themeVariables: {
-          primaryColor:    '#E8893A',
-          primaryTextColor:'#0D0D0D',
-          primaryBorderColor:'#D4A843',
-          lineColor:       '#2A5C45',
+          primaryColor:    '#EEF2FF',
+          secondaryColor:  '#ECFEFF',
+          tertiaryColor:   '#FFF7ED',
+          primaryTextColor:'#1E293B',
+          primaryBorderColor:'#C4B5FD',
+          lineColor:       '#6366F1',
+          clusterBkg:      '#FFFFFF',
+          clusterBorder:   '#C4B5FD',
           fontSize:        '14px',
           fontFamily:      'var(--font-bangla), sans-serif',
         },
@@ -36,13 +40,13 @@ export default function MermaidDiagram({ chart }: Props) {
     render().catch(err => {
       console.warn('Mermaid render error (non-fatal):', err)
       if (ref.current) {
-        ref.current.innerHTML = '<p style="color:#888;font-size:12px">Diagram unavailable</p>'
+        ref.current.innerHTML = '<p style="color:#64748b;font-size:12px">Diagram unavailable</p>'
       }
     })
     return () => { cancelled = true }
   }, [chart])
 
   return (
-    <div ref={ref} className="overflow-x-auto w-full flex justify-center [&>svg]:max-w-full" />
+    <div ref={ref} className="w-full overflow-x-auto rounded-2xl bg-white/42 p-3 flex justify-center [&>svg]:max-w-full" />
   )
 }

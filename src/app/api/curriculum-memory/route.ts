@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
 
 function cleanText(value: unknown, max = 4000) {
   return String(value || '').trim().slice(0, max)
@@ -7,18 +8,22 @@ function cleanText(value: unknown, max = 4000) {
 
 async function generateEmbedding(text: string) {
   const embedUrl = process.env.NEXT_PUBLIC_TTS_URL || 'http://localhost:8001'
-  const response = await fetch(`${embedUrl}/embeddings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  })
+  try {
+    const response = await fetch(`${embedUrl}/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
 
-  if (!response.ok) throw new Error(`Embeddings API error: ${response.status}`)
-  const data = await response.json()
-  if (!Array.isArray(data.embedding) || data.embedding.length !== 384) {
-    throw new Error('Embedding endpoint did not return a 384-dim vector')
+    if (!response.ok) throw new Error(`Embeddings API error: ${response.status}`)
+    const data = await response.json()
+    if (!Array.isArray(data.embedding) || data.embedding.length !== 384) {
+      throw new Error('Embedding endpoint did not return a 384-dim vector')
+    }
+    return data.embedding as number[]
+  } catch {
+    return fallbackEmbedding(text)
   }
-  return data.embedding as number[]
 }
 
 export async function POST(req: NextRequest) {

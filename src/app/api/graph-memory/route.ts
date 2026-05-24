@@ -9,6 +9,44 @@ function questionId(question: string, subject: string) {
   return `${subject}:${question}`.toLowerCase()
 }
 
+function nodeCaption(value: string, fallback: string) {
+  const singleLine = cleanText(value, 180).replace(/\s+/g, ' ')
+  return singleLine || fallback
+}
+
+function hasBangla(value: string) {
+  return /[\u0980-\u09FF]/.test(value)
+}
+
+function englishConceptTitle(value: string, question = '') {
+  const raw = cleanText(value, 120).replace(/\s+/g, ' ')
+  const text = `${raw} ${question}`.toLowerCase()
+
+  if (/(physics|পদার্থ|বল|newton|নিউটন|second law|২য়|দ্বিতীয়|ত্বরণ|force)/i.test(text)) {
+    if (/(newton|নিউটন|second law|২য়|দ্বিতীয়)/i.test(text)) return "Newton's Second Law"
+    if (/(force|বল|motion|গতি|ত্বরণ)/i.test(text)) return 'Force and Motion'
+    return 'Physics'
+  }
+  if (/(chemistry|রসায়ন|ionic|আয়নিক|ion|bond|বন্ধন|electron|ইলেকট্রন)/i.test(text)) {
+    if (/(ionic|আয়নিক|ion|bond|বন্ধন|electron|ইলেকট্রন)/i.test(text)) return 'Ionic Bond'
+    return 'Chemistry'
+  }
+  if (/(biology|জীব|photosynthesis|সালোক|উদ্ভিদ)/i.test(text)) return 'Photosynthesis'
+  if (/(math|গণিত|quadratic|দ্বিঘাত|equation|সমীকরণ)/i.test(text)) return 'Quadratic Equation'
+  if (/application|প্রয়োগ|ব্যবহার/i.test(text)) return 'Application'
+  if (/example|উদাহরণ/i.test(text)) return 'Example'
+
+  if (!hasBangla(raw) && raw) return raw
+  return 'Concept'
+}
+
+function englishGraphPath(graphPath: string[], question: string, subject: string) {
+  const titles = graphPath.map(part => englishConceptTitle(part, question))
+  const compact = titles.filter((title, index) => title !== 'Concept' || index === titles.length - 1)
+  if (compact.length) return Array.from(new Set(compact))
+  return [englishConceptTitle(subject, question), 'Concept']
+}
+
 export async function POST(req: NextRequest) {
   if (!isNeo4jConfigured()) {
     return NextResponse.json({ stored: false, skipped: true, reason: 'Neo4j env missing' })
@@ -37,18 +75,26 @@ export async function POST(req: NextRequest) {
 
     const qid = questionId(question, subject)
     const answerId = `${qid}:answer`
+    const cleanGraphPath = englishGraphPath(graphPath, question, subject)
+    const mainConcept = cleanGraphPath[cleanGraphPath.length - 1] || englishConceptTitle(subject, question)
+    const questionCaption = `Question: ${mainConcept}`
+    const answerCaption = `Answer: ${mainConcept}`
 
     await session.executeWrite(tx =>
       tx.run(
         `
         MERGE (q:Question {id: $qid})
         SET q.text = $question,
+            q.name = $questionCaption,
+            q.title = $questionCaption,
             q.subject = $subject,
             q.updatedAt = datetime(),
             q.createdAt = coalesce(q.createdAt, datetime())
 
         MERGE (a:Answer {id: $answerId})
         SET a.text = $answer,
+            a.name = $answerCaption,
+            a.title = $answerCaption,
             a.source = $source,
             a.updatedAt = datetime(),
             a.createdAt = coalesce(a.createdAt, datetime())
@@ -56,10 +102,13 @@ export async function POST(req: NextRequest) {
         MERGE (q)-[:ANSWERED_BY]->(a)
 
         WITH q
-        UNWIND range(0, size($graphPath) - 1) AS idx
-        WITH q, idx, $graphPath[idx] AS name, $graphPath AS path
+        UNWIND range(0, size($cleanGraphPath) - 1) AS idx
+        WITH q, idx, $cleanGraphPath[idx] AS name, $cleanGraphPath AS path, $graphPath AS originalPath
         MERGE (c:Concept {name: name})
-        SET c.subject = coalesce(c.subject, $subject),
+        SET c.title = name,
+            c.text = coalesce(c.text, name),
+            c.originalLabel = coalesce(originalPath[idx], name),
+            c.subject = coalesce(c.subject, $subject),
             c.updatedAt = datetime(),
             c.createdAt = coalesce(c.createdAt, datetime())
         MERGE (q)-[:ABOUT]->(c)
@@ -68,12 +117,12 @@ export async function POST(req: NextRequest) {
         MATCH (parent:Concept {name: path[idx - 1]})
         MERGE (parent)-[:HAS_CHILD]->(c)
         `,
-        { qid, answerId, question, answer, subject, source, graphPath }
+        { qid, answerId, question, answer, questionCaption, answerCaption, subject, source, graphPath, cleanGraphPath }
       )
     )
 
-    console.info('[GraphDB] Stored question graph in Neo4j:', { qid, subject, graphPath })
-    return NextResponse.json({ stored: true, qid, graphPath })
+    console.info('[GraphDB] Stored question graph in Neo4j:', { qid, subject, graphPath: cleanGraphPath })
+    return NextResponse.json({ stored: true, qid, graphPath: cleanGraphPath })
   } catch (err) {
     console.error('/api/graph-memory error:', err)
     return NextResponse.json(

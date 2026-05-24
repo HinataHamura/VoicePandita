@@ -1,9 +1,7 @@
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const embedUrl = process.env.NEXT_PUBLIC_TTS_URL || 'http://localhost:8001'
-
   try {
     console.info('[VectorRAG] Generating embedding for question:', text)
-    const response = await fetch(`${embedUrl}/embeddings`, {
+    const response = await fetch('/api/embeddings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -36,7 +34,7 @@ export async function searchCurriculum(
     }
 
     console.info('[VectorRAG] Calling Supabase RPC search_curriculum', { threshold, limit })
-    let { data, error } = await supabase.rpc('search_curriculum', {
+    const { data, error } = await supabase.rpc('search_curriculum', {
       query_embedding: embedding,
       similarity_threshold: threshold,
       match_count: limit,
@@ -47,23 +45,13 @@ export async function searchCurriculum(
       return []
     }
 
-    if (!data?.length && threshold > -1) {
-      console.warn('[VectorRAG] No chunks above threshold; retrying with threshold -1 for diagnostics')
-      const retry = await supabase.rpc('search_curriculum', {
-        query_embedding: embedding,
-        similarity_threshold: -1,
-        match_count: limit,
-      })
-      data = retry.data
-      error = retry.error
-      if (error) {
-        console.error('[VectorRAG] Curriculum retry search error:', error)
-        return []
-      }
-    }
+    const cleanData = (data || []).filter((chunk: any) =>
+      typeof chunk.content === 'string' &&
+      !chunk.content.trim().toLowerCase().startsWith('student question:')
+    )
 
-    console.info(`[VectorRAG] Vector search found ${data?.length || 0} curriculum chunks for question:`, query, data)
-    return data || []
+    console.info(`[VectorRAG] Vector search found ${cleanData.length} curriculum chunks for question:`, query, cleanData)
+    return cleanData
   } catch (e) {
     console.error('[VectorRAG] Failed to search curriculum:', e)
     return []

@@ -386,19 +386,19 @@ export default function LearnPage() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-cream">
+    <div className="ai-shell flex h-dvh overflow-hidden">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-forest/10 bg-cream/82 px-4 py-3 backdrop-blur-xl">
+        <header className="glass-panel flex items-center justify-between gap-3 border-x-0 border-t-0 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80" aria-label="Open menu">
-              <span className="mb-1 block h-0.5 w-5 rounded bg-ink" />
-              <span className="block h-0.5 w-3 rounded bg-ink/50" />
+            <button onClick={() => setSidebarOpen(true)} className="rounded-2xl border border-white/60 bg-white/72 p-2.5 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Open menu">
+              <span className="mb-1 block h-0.5 w-5 rounded bg-forest" />
+              <span className="block h-0.5 w-3 rounded bg-indigo/70" />
             </button>
             <div className="min-w-0">
-              <div className="font-display text-lg font-bold leading-tight">Voice<span className="text-saffron">Pandita</span></div>
-              <div className="truncate text-[11px] text-ink/45">SSC/HSC voice-first GraphRAG tutor</div>
+              <div className="font-display text-lg font-bold leading-tight">Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span></div>
+              <div className="truncate text-[11px] text-ink/45">AI tutor studio for calm learning</div>
             </div>
           </div>
 
@@ -409,7 +409,7 @@ export default function LearnPage() {
           </div>
         </header>
 
-        <div className="space-y-2 border-b border-forest/10 bg-white/45 px-4 py-2 backdrop-blur-xl">
+        <div className="glass-panel space-y-2 border-x-0 border-t-0 px-4 py-3">
           <OutputModeSelector value={outputMode} onChange={setOutputMode} />
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {[
@@ -422,7 +422,7 @@ export default function LearnPage() {
                 key={value}
                 onClick={() => setLanguage(value as LanguageMode)}
                 className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs ${
-                  language === value ? 'border-forest bg-forest text-white shadow-sm shadow-forest/15' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-forest/24 hover:text-ink/75'
+                  language === value ? 'border-forest bg-gradient-to-r from-forest to-indigo text-white shadow-sm shadow-forest/15' : 'border-white/60 bg-white/66 text-ink/55 hover:border-forest/24 hover:bg-white hover:text-ink/75'
                 }`}
               >
                 {label}
@@ -431,7 +431,7 @@ export default function LearnPage() {
             <button
               onClick={() => setDeafMode(prev => !prev)}
               className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-                deafMode ? 'border-indigo bg-indigo text-white' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-indigo/25'
+                deafMode ? 'border-indigo bg-indigo text-white' : 'border-white/60 bg-white/66 text-ink/55 hover:border-indigo/25 hover:bg-white'
               }`}
             >
               <Accessibility size={12} /> BdSL
@@ -448,7 +448,7 @@ export default function LearnPage() {
         <main className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
           {messages.length === 0 && (
             <div className="flex min-h-full flex-col items-center justify-center py-12 text-center">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-forest to-indigo shadow-xl shadow-forest/20">
+              <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-forest via-indigo to-aqua shadow-2xl shadow-forest/25">
                 <Mic size={32} className="text-white" />
               </div>
               <h1 className="bangla mb-2 font-display text-2xl font-bold">কী জানতে চাও?</h1>
@@ -457,12 +457,12 @@ export default function LearnPage() {
               </p>
               <div className="mt-5 grid max-w-2xl grid-cols-2 gap-2 text-left text-xs text-ink/58 md:grid-cols-4">
                 {['GraphRAG NCTB', 'ONNX emotion stub', 'MELD bridge', 'PWN hotspot'].map(item => (
-                  <div key={item} className="rounded-lg border border-forest/10 bg-white/72 px-3 py-2 shadow-sm">{item}</div>
+                  <div key={item} className="rounded-2xl border border-white/60 bg-white/66 px-3 py-2 shadow-sm shadow-forest/5 backdrop-blur-xl">{item}</div>
                 ))}
               </div>
               <div className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
                 {QUICK_QUESTIONS.map(q => (
-                  <button key={q} onClick={() => sendMessage(q)} className="bangla rounded-full border border-forest/10 bg-white/82 px-4 py-2 text-xs shadow-sm hover:border-saffron/35 hover:bg-saffron/5">
+                  <button key={q} onClick={() => sendMessage(q)} className="bangla rounded-full border border-white/60 bg-white/76 px-4 py-2 text-xs shadow-sm shadow-forest/5 hover:-translate-y-0.5 hover:border-forest/30 hover:bg-white">
                     {q}
                   </button>
                 ))}
@@ -480,7 +480,7 @@ export default function LearnPage() {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.role === 'user' ? (
-                  <div className="bangla max-w-[84%] rounded-2xl rounded-br-md bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-lg shadow-forest/15">
+                  <div className="bangla max-w-[84%] rounded-[1.4rem] rounded-br-md bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-xl shadow-forest/20">
                     {msg.text}
                   </div>
                 ) : (
@@ -500,12 +500,12 @@ export default function LearnPage() {
                           <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
                             {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
                             {msg.graphPath && (
-                              <span className="rounded-full bg-forest/8 px-2.5 py-0.5 text-xs text-forest">
+                              <span className="rounded-full bg-forest/10 px-3 py-1 text-xs font-medium text-forest">
                                 {msg.graphPath.join(' -> ')}
                               </span>
                             )}
                             {msg.pwnMessage && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs text-saffron">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-saffron/20 px-3 py-1 text-xs font-medium text-orange-600">
                                 <Sparkles size={12} /> {msg.pwnMessage}
                               </span>
                             )}
@@ -514,7 +514,7 @@ export default function LearnPage() {
                         </div>
                         {msg.diagram && (
                           <div className="card p-4">
-                            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-forest">
+                            <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-forest">
                               <Zap size={12} />
                               <span>Concept Diagram</span>
                             </div>
@@ -532,7 +532,7 @@ export default function LearnPage() {
           <div ref={bottomRef} />
         </main>
 
-        <div className="border-t border-forest/10 bg-cream/82 px-4 pb-4 pb-safe pt-3 backdrop-blur-xl">
+        <div className="glass-panel border-x-0 border-b-0 px-4 pb-4 pb-safe pt-3">
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <button
               onMouseDown={startRecording}
@@ -541,8 +541,8 @@ export default function LearnPage() {
               onTouchEnd={stopRecording}
               className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full ${
                 isRecording
-                  ? 'mic-recording scale-105 bg-saffron text-white shadow-lg shadow-saffron/20'
-                  : 'border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-saffron/35 hover:text-saffron'
+                  ? 'mic-recording scale-105 bg-gradient-to-br from-forest to-indigo text-white shadow-lg shadow-forest/25'
+                  : 'border border-white/60 bg-white/78 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest'
               }`}
               aria-label={isRecording ? 'Stop recording' : 'Start recording'}
             >
@@ -553,7 +553,7 @@ export default function LearnPage() {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={isOcrLoading}
-              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50"
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-white/60 bg-white/78 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50"
               aria-label="Upload textbook photo"
             >
               {isOcrLoading ? <Loader2 size={19} className="animate-spin" /> : <Camera size={19} />}
@@ -570,14 +570,14 @@ export default function LearnPage() {
                   }
                 }}
                 placeholder="বাংলায় প্রশ্ন লেখো... Enter চাপলে পাঠাবে"
-                className="bangla w-full resize-none rounded-2xl border border-forest/10 bg-white/92 px-4 py-3 pr-12 text-sm leading-relaxed shadow-sm focus:border-saffron/40 focus:outline-none"
+                className="bangla w-full resize-none rounded-[1.35rem] border border-white/70 bg-white/84 px-4 py-3 pr-12 text-sm leading-relaxed shadow-lg shadow-forest/5 backdrop-blur-xl focus:border-forest/35 focus:outline-none"
                 rows={1}
                 style={{ minHeight: 48, maxHeight: 160 }}
               />
               <button
                 onClick={() => sendMessage()}
                 disabled={!input.trim() || isLoading}
-                className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-saffron text-white shadow-sm hover:bg-saffron/90 disabled:opacity-30"
+                className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-forest to-indigo text-white shadow-sm hover:scale-105 disabled:opacity-30"
                 aria-label="Send question"
               >
                 <Send size={14} />

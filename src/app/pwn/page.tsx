@@ -36,15 +36,15 @@ export default function PwnPage() {
   const filtered = filter === 'all' ? hotspots : hotspots.filter(item => item.subject === filter)
 
   return (
-    <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 bg-cream/85 backdrop-blur-sm border-b border-black/5 px-4 py-4">
+    <div className="ai-shell min-h-dvh">
+      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <Link href="/learn" className="p-2 hover:bg-black/5 rounded-lg" aria-label="Back to learn">
+          <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Back to learn">
             <ArrowLeft size={18} />
           </Link>
           <div>
             <h1 className="font-display font-bold text-lg flex items-center gap-2">
-              <Users size={18} className="text-saffron" /> Peer Wisdom Network
+              <Users size={18} className="text-forest" /> Peer Wisdom Network
             </h1>
             <p className="text-xs text-ink/45">Common confusion hotspots from anonymous student questions</p>
           </div>
@@ -52,7 +52,7 @@ export default function PwnPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-5 bg-forest/5 border-forest/10">
+        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-5">
           <p className="text-sm text-ink/70 leading-relaxed">
             Same concept niye koto bar question hocche seta ekhane dekha jay. Example: Ionic Bond niye 10 ta question hole eta hotspot hisebe upore ashbe.
           </p>
@@ -65,8 +65,8 @@ export default function PwnPage() {
               onClick={() => setFilter(item)}
               className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-all capitalize ${
                 filter === item
-                  ? 'bg-saffron/10 border-saffron/30 text-saffron font-medium'
-                  : 'bg-white border-black/8 text-ink/50 hover:border-saffron/20'
+                  ? 'border-forest bg-forest/10 text-forest font-medium'
+                  : 'border-white/60 bg-white/70 text-ink/50 hover:border-forest/20 hover:bg-white'
               }`}
             >
               {item}
@@ -91,12 +91,12 @@ export default function PwnPage() {
                     </span>
                     <h2 className="font-semibold truncate">{hotspot.topic}</h2>
                   </div>
-                  <div className="flex items-center gap-1 text-saffron flex-shrink-0">
+                  <div className="flex items-center gap-1 text-forest flex-shrink-0">
                     <Flame size={14} />
                     <span className="text-xs font-bold">{hotspot.count}x</span>
                   </div>
                 </div>
-                <div className="bg-paper rounded-lg p-3 space-y-3">
+                <div className="space-y-3 rounded-2xl bg-paper/70 p-3">
                   <p className="text-sm font-medium text-ink">
                     {hotspot.topic} niye {hotspot.count} bar question kora hoyeche.
                   </p>
@@ -105,14 +105,14 @@ export default function PwnPage() {
                     <div className="space-y-1.5">
                       {hotspot.samples.slice(0, 3).map((sample, sampleIndex) => (
                         <div key={`${hotspot.topic}-${sampleIndex}`} className="flex gap-2 text-xs text-ink/55">
-                          <MessageCircleQuestion size={13} className="mt-0.5 flex-shrink-0 text-saffron" />
+                          <MessageCircleQuestion size={13} className="mt-0.5 flex-shrink-0 text-forest" />
                           <span className="line-clamp-2">{sample}</span>
                         </div>
                       ))}
                     </div>
                   ) : null}
                 </div>
-                <Link href={`/learn?q=${encodeURIComponent(hotspot.topic)}`} className="mt-3 inline-flex items-center gap-1 text-xs text-saffron font-medium hover:underline">
+                <Link href={`/learn?q=${encodeURIComponent(hotspot.topic)}`} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-forest hover:underline">
                   <BookOpen size={12} /> Study this concept
                 </Link>
               </motion.article>

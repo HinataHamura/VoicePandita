@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import Groq from 'groq-sdk'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated'
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
+const groqKey = process.env.GROQ_API_KEY?.trim()
+const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
 
 const LESSONS = {
   newton_second_law: {
@@ -128,26 +131,74 @@ function answerFromLesson(lessonKey: LessonKey, mode: OutputMode, emotion: Emoti
   return `${introFor(emotion)} ${cultural}${lesson.facts.join(' ')} Socratic check: এই concept বুঝতে কোন আগের ধারণাটা জানা দরকার?`
 }
 
-async function geminiText(prompt: string) {
-  if (!genAI) return null
+function unknownQuestionFallback(question: string, selectedSubject: string, emotion: EmotionState) {
+  const intro = introFor(emotion)
+  return `${intro} এই প্রশ্নের জন্য নির্ভরযোগ্য curriculum context পাচ্ছি না, তাই ভুল concept ধরে উত্তর দিচ্ছি না। প্রশ্নটা "${question.slice(0, 80)}"। যদি এটা তরলের চাপ/প্রবাহ নিয়ে হয়, মূল ধারণা হলো: তরল পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়, আর গভীরতা বাড়লে চাপ বাড়ে। তুমি কি "তরলের চাপ" বোঝাতে চেয়েছ, নাকি "তরলের প্রবাহ"?`
+}
 
+function directFallbackAnswer(question: string, emotion: EmotionState) {
+  const intro = introFor(emotion)
+  return `${intro} প্রশ্নটা "${question.slice(0, 80)}"। যদি এটা তরলের চাপ/প্রবাহ নিয়ে হয়, মূল ধারণা হলো: তরল পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়, আর গভীরতা বাড়লে চাপ বাড়ে। তরল সবদিকে চাপ প্রয়োগ করে, তাই পাত্রের আকার ও গভীরতা চাপের প্রভাব বদলায়। তুমি কি "তরলের চাপ" বোঝাতে চেয়েছ, নাকি "তরলের প্রবাহ"?`
+}
+
+function safeFallbackAnswer(question: string, emotion: EmotionState) {
+  const intro = introFor(emotion)
+  const normalized = question.toLowerCase()
+
+  if (/খনিজ|ধনিজ|mineral/.test(normalized)) {
+    return `${intro} খনিজ পদার্থ হলো মাটি বা ভূ-পৃষ্ঠের নিচ থেকে পাওয়া প্রাকৃতিক পদার্থ, যেগুলো মানুষের কাজে লাগে। উদাহরণ: লোহা, তামা, সোনা, রূপা, কয়লা, চুনাপাথর, লবণ, প্রাকৃতিক গ্যাস ও পেট্রোলিয়াম। এগুলো দিয়ে ঘরবাড়ি, যন্ত্রপাতি, গয়না, জ্বালানি ও রাসায়নিক দ্রব্য তৈরি করা হয়। Socratic check: খনিজ পদার্থের মধ্যে কোনগুলো জ্বালানি হিসেবে ব্যবহার হয়?`
+  }
+
+  if (/তরল|liquid|fluid/.test(normalized)) {
+    return `${intro} তরল পদার্থের নির্দিষ্ট আয়তন থাকে, কিন্তু নির্দিষ্ট আকার থাকে না; যে পাত্রে রাখা হয় তার আকার ধারণ করে। পানি, তেল, দুধ, কেরোসিন এগুলো তরল পদার্থের উদাহরণ। তরল সহজে প্রবাহিত হয় এবং পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়। Socratic check: পানি গ্লাসে রাখলে কেন গ্লাসের আকার নেয়?`
+  }
+
+  return `${intro} প্রশ্নটা "${question.slice(0, 80)}"। সহজভাবে বললে, এই প্রশ্নের মূল শব্দগুলো আগে চিহ্নিত করতে হবে, তারপর সংজ্ঞা, উদাহরণ এবং ব্যবহার লিখতে হবে। তুমি প্রশ্নটা আরেকটু নির্দিষ্ট করে লিখলে আমি exact chapter অনুযায়ী উত্তর সাজিয়ে দেব। Socratic check: প্রশ্নে কোন শব্দটা সবচেয়ে গুরুত্বপূর্ণ মনে হচ্ছে?`
+}
+
+function safeFallbackGraphPath(question: string, selectedSubject: string) {
+  const normalized = question.toLowerCase()
+  if (/খনিজ|ধনিজ|mineral/.test(normalized)) return ['Geography', 'Natural Resources', 'Minerals']
+  if (/তরল|liquid|fluid/.test(normalized)) return ['Physics', 'Matter', 'Liquid']
+  return [selectedSubject || 'Curriculum', 'General Question']
+}
+
+async function geminiText(prompt: string) {
   const requested = process.env.GEMINI_MODEL?.trim()
   const models = requested
     ? [requested, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
     : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
 
   let lastError: unknown = null
-  for (const modelName of models) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName })
-      const result = await model.generateContent(prompt)
-      return result.response.text().trim()
-    } catch (err) {
-      lastError = err
-      console.warn(`/api/ask Gemini model failed: ${modelName}`, err instanceof Error ? err.message : err)
+  if (genAI) {
+    for (const modelName of models) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName })
+        const result = await model.generateContent(prompt)
+        return result.response.text().trim()
+      } catch (err) {
+        lastError = err
+        console.warn(`/api/ask Gemini model failed: ${modelName}`, err instanceof Error ? err.message : err)
+      }
     }
   }
 
+  if (groq) {
+    try {
+      const result = await groq.chat.completions.create({
+        model: process.env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 700,
+      })
+      return result.choices[0]?.message?.content?.trim() || null
+    } catch (err) {
+      lastError = err
+      console.warn('/api/ask Groq fallback failed:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  if (!lastError) return null
   throw lastError
 }
 
@@ -162,6 +213,17 @@ function extractJson(text: string) {
 function safeDiagram(value: unknown, fallbackTitle: string) {
   if (typeof value === 'string' && /^(graph|flowchart)\s+/i.test(value.trim())) return value.trim()
   return `graph LR\n  A[প্রশ্ন] --> B[${fallbackTitle || 'Concept'}]\n  B --> C[কারণ]\n  C --> D[ফলাফল]\n  D --> E[বোঝা]`
+}
+
+function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
+  const normalized = question.toLowerCase()
+  if (/খনিজ|ধনিজ|mineral/.test(normalized)) {
+    return 'graph LR\n  A[প্রাকৃতিক উৎস] --> B[খনিজ পদার্থ]\n  B --> C[ধাতব খনিজ]\n  B --> D[অধাতব খনিজ]\n  B --> E[জ্বালানি খনিজ]\n  C --> F[লোহা ও তামা]\n  D --> G[লবণ ও চুনাপাথর]\n  E --> H[কয়লা ও গ্যাস]'
+  }
+  if (/তরল|liquid|fluid/.test(normalized)) {
+    return 'graph LR\n  A[তরল পদার্থ] --> B[নির্দিষ্ট আয়তন]\n  A --> C[নির্দিষ্ট আকার নেই]\n  A --> D[প্রবাহিত হয়]\n  A --> E[চাপ প্রয়োগ করে]\n  C --> F[পাত্রের আকার নেয়]'
+  }
+  return safeDiagram(null, fallbackTitle)
 }
 
 async function dynamicGeminiNode(params: {
@@ -233,6 +295,67 @@ Rules:
   }
 }
 
+async function directGeminiAnswer(params: {
+  question: string
+  selectedSubject: string
+  outputMode: OutputMode
+  emotion: EmotionState
+  language: string
+}) {
+  const prompt = `You are VoicePandita, a careful Bangla tutor and concept-map builder for SSC/HSC/admission students in Bangladesh.
+
+Student question: ${params.question}
+Selected subject from UI (weak hint only, may be wrong): ${params.selectedSubject}
+Emotion: ${params.emotion}
+Language: ${params.language}
+Output mode: ${params.outputMode}
+
+Return ONLY valid JSON with this shape:
+{
+  "subject": "best inferred subject in English",
+  "conceptTitle": "short English concept title",
+  "graphPath": ["Subject", "Chapter/Unit", "Concept"],
+  "answer": "Bangla answer, exact to the question, 4-6 clear sentences",
+  "diagram": "valid Mermaid graph LR diagram with 5-8 Bangla-labeled nodes, specific to the answer"
+}
+
+Rules:
+- Do not say curriculum context is missing.
+- Do not switch to Newton's law, bonding, or another unrelated concept.
+- Infer the true subject from the question; ignore the selected subject if it is wrong.
+- If the question has typo/mixed Bangla-English, infer the likely intended school concept.
+- If the question is ambiguous, give the most likely answer first, then ask one short clarifying question.
+- Answer should usually be 70-130 words unless simple mode.
+- Diagram must not be generic like Question -> Cause -> Result -> Understand.
+- Diagram nodes must name the actual concept, types, examples, properties, or process steps.
+- Diagram must use this Mermaid style: graph LR\\n  A[মূল ধারণা] --> B[প্রকার]\\n  B --> C[উদাহরণ]
+- End with one Socratic follow-up question.`
+
+  const raw = await geminiText(prompt)
+  if (!raw) throw new Error('Gemini unavailable')
+
+  try {
+    const parsed = extractJson(raw)
+    const conceptTitle = String(parsed.conceptTitle || params.question.slice(0, 30) || 'Concept')
+    const graphPath = Array.isArray(parsed.graphPath) && parsed.graphPath.length >= 2
+      ? parsed.graphPath.map((part: unknown) => String(part)).slice(0, 6)
+      : [String(parsed.subject || params.selectedSubject || 'Curriculum'), conceptTitle]
+
+    return {
+      answer: String(parsed.answer || raw).trim(),
+      diagram: safeDiagram(parsed.diagram, conceptTitle),
+      graphPath,
+    }
+  } catch {
+    const conceptTitle = params.question.slice(0, 30) || 'Concept'
+    return {
+      answer: raw,
+      diagram: fallbackDiagramForQuestion(params.question, conceptTitle),
+      graphPath: safeFallbackGraphPath(params.question, params.selectedSubject),
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -249,35 +372,35 @@ export async function POST(req: NextRequest) {
     const emotion = (body.emotion || detectedEmotion) as EmotionState
     const conceptMemory = body.conceptMemory
 
-    let lesson = lessonKey ? LESSONS[lessonKey] : LESSONS[defaultBySubject[selectedSubject] || 'newton_second_law']
+    let lesson = lessonKey ? LESSONS[lessonKey] : null
     let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
-    let diagram: string = lesson.diagram
-    let graphPath: string[] = [...lesson.path]
+    let diagram: string = lesson?.diagram || safeDiagram(null, question.slice(0, 30) || 'Concept')
+    let graphPath: string[] = lesson ? [...lesson.path] : [selectedSubject || 'Curriculum', 'Needs Clarification']
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
 
     try {
       if (!lessonKey) {
-        const dynamic = await dynamicGeminiNode({
+        const dynamic = await directGeminiAnswer({
           question,
           selectedSubject,
           outputMode,
           emotion,
           language,
-          conceptMemory,
-          curriculumChunks,
         })
         answer = dynamic.answer
         diagram = dynamic.diagram
         graphPath = dynamic.graphPath
-        source = 'gemini-dynamic-graphrag'
+        source = 'gemini-direct-answer'
       } else {
+        const activeLesson = lesson
+        if (!activeLesson) throw new Error('Lesson not found')
         const prompt = `You are VoicePandita, a Bangla tutor for SSC/HSC/admission students.
 Answer the student's exact question using ONLY this curriculum node.
 
-Graph path: ${lesson.path.join(' -> ')}
-Lesson title: ${lesson.title}
+Graph path: ${activeLesson.path.join(' -> ')}
+Lesson title: ${activeLesson.title}
 Facts:
-${lesson.facts.join('\n')}
+${activeLesson.facts.join('\n')}
 
 Student question: ${question}
 Emotion: ${emotion}
@@ -298,8 +421,10 @@ Rules:
         }
       }
     } catch (err) {
-      console.warn('/api/ask Gemini unavailable; deterministic curriculum fallback used', err instanceof Error ? err.message : err)
-      if (!answer) answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
+      console.warn('/api/ask Gemini unavailable', err instanceof Error ? err.message : err)
+      if (!answer) {
+        throw err
+      }
     }
 
     return NextResponse.json({
@@ -312,6 +437,15 @@ Rules:
     })
   } catch (err) {
     console.error('/api/ask error:', err)
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json(
+      {
+        answer: 'দুঃখিত, এখন উত্তর তৈরি করা যাচ্ছে না। আবার চেষ্টা করো।',
+        diagram: null,
+        error: process.env.NODE_ENV === 'development' ? message : undefined,
+      },
+      { status: 500 }
+    )
     return NextResponse.json({ answer: 'দুঃখিত, এখন উত্তর তৈরি করা যাচ্ছে না। আবার চেষ্টা করো।', diagram: null }, { status: 500 })
   }
 }
