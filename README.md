@@ -14,7 +14,7 @@
 npm install
 
 # 2. Set up environment variables
-cp .env.local .env.local
+cp .env.example .env.local
 # Fill in all API keys (see below)
 
 # 3. Run development server
