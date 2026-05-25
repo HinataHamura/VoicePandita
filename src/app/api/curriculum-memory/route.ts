@@ -60,6 +60,13 @@ export async function POST(req: NextRequest) {
       subject,
       chapter: graphPath[1] || graphPath[0] || 'Student Questions',
       topic: graphPath[graphPath.length - 1] || question.slice(0, 80),
+      source_doc_id: `student-question:${subject}`,
+      chunk_index: 0,
+      chunk_type: 'student-memory',
+      token_count: content.split(/\s+/).filter(Boolean).length,
+      contextual_summary: 'Student-generated question and tutor answer memory. Used for analytics/memory, not curriculum grounding.',
+      embedding_text: content,
+      source_type: 'student',
       embedding,
     }
 

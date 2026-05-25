@@ -268,7 +268,16 @@ async function dynamicGeminiNode(params: {
   emotion: EmotionState
   language: string
   conceptMemory: unknown
-  curriculumChunks?: Array<{ content: string; topic: string; similarity: number }>
+  curriculumChunks?: Array<{
+    content: string
+    contextText?: string
+    context_text?: string
+    contextual_summary?: string
+    topic: string
+    chapter?: string
+    chunk_type?: string
+    similarity: number
+  }>
 }) {
   const memoryText = Array.isArray(params.conceptMemory)
     ? params.conceptMemory
@@ -281,7 +290,11 @@ async function dynamicGeminiNode(params: {
   const curriculumContext = Array.isArray(params.curriculumChunks) && params.curriculumChunks.length > 0
     ? '\n\nCurriculum context (from vector search):\n' +
       params.curriculumChunks
-        .map((chunk, i) => `${i + 1}. [${chunk.topic}] ${chunk.content}`)
+        .map((chunk, i) => {
+          const contextText = chunk.contextText || chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n')
+          const chunkMeta = [chunk.chapter, chunk.topic, chunk.chunk_type].filter(Boolean).join(' / ')
+          return `${i + 1}. [${chunkMeta || chunk.topic}] ${contextText}`
+        })
         .join('\n')
     : ''
 

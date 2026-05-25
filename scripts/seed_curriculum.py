@@ -8,7 +8,7 @@ Usage:
   python seed_curriculum.py
 """
 
-import os, json, time
+import os, json, re, time
 from dotenv import load_dotenv
 from supabase import create_client
 from sentence_transformers import SentenceTransformer
@@ -51,12 +51,82 @@ CURRICULUM = [
   {"content": "লগারিদম: log(ab) = log(a) + log(b)। log(aⁿ) = n·log(a)।", "subject": "math", "chapter": "লগারিদম", "topic": "লগারিদমের সূত্র"},
 ]
 
+def token_count(text):
+  return len(re.findall(r"\S+", text))
+
+def split_sentences(text):
+  parts = re.split(r"(?<=[।.!?])\s+", text.strip())
+  return [part.strip() for part in parts if part.strip()]
+
+def semantic_variable_chunks(items, min_tokens=14, max_tokens=52):
+  """
+  Variable / semantic chunking:
+  - keeps one semantic topic/chapter together where possible
+  - splits by sentence boundaries
+  - chunk sizes vary by concept length instead of fixed character windows
+  """
+  chunks = []
+  for item in items:
+    source_doc_id = f"{item['subject']}::{item['chapter']}::{item['topic']}"
+    sentences = split_sentences(item["content"])
+    current = []
+    current_tokens = 0
+    chunk_index = 0
+
+    for sentence in sentences:
+      sentence_tokens = token_count(sentence)
+      should_flush = current and current_tokens + sentence_tokens > max_tokens
+      if should_flush:
+        chunks.append({
+          **item,
+          "content": " ".join(current),
+          "source_doc_id": source_doc_id,
+          "chunk_index": chunk_index,
+          "chunk_type": "semantic-variable",
+          "token_count": current_tokens,
+        })
+        chunk_index += 1
+        overlap = current[-1:] if current_tokens >= min_tokens else []
+        current = overlap[:]
+        current_tokens = token_count(" ".join(current))
+
+      current.append(sentence)
+      current_tokens += sentence_tokens
+
+    if current:
+      chunks.append({
+        **item,
+        "content": " ".join(current),
+        "source_doc_id": source_doc_id,
+        "chunk_index": chunk_index,
+        "chunk_type": "semantic-variable",
+        "token_count": current_tokens,
+      })
+
+  return chunks
+
+def contextual_summary(chunk):
+  """
+  Contextual RAG metadata inspired by Anthropic-style chunk context:
+  a short generated context is stored beside every chunk and prepended before embedding.
+  """
+  return (
+    f"This chunk is from {chunk['subject']} curriculum, chapter '{chunk['chapter']}', "
+    f"topic '{chunk['topic']}'. It explains the core concept, formula, definition, "
+    f"or example needed to answer student questions about {chunk['topic']}."
+  )
+
 def seed():
-  print(f"Seeding {len(CURRICULUM)} curriculum entries...")
+  chunks = semantic_variable_chunks(CURRICULUM)
+  print(f"Seeding {len(chunks)} contextual semantic chunks from {len(CURRICULUM)} curriculum entries...")
   batch_size = 8
-  for i in range(0, len(CURRICULUM), batch_size):
-    batch = CURRICULUM[i : i + batch_size]
-    texts = [item["content"] for item in batch]
+  for i in range(0, len(chunks), batch_size):
+    batch = chunks[i : i + batch_size]
+    for item in batch:
+      item["contextual_summary"] = contextual_summary(item)
+      item["embedding_text"] = f"{item['contextual_summary']}\n\n{item['content']}"
+
+    texts = [item["embedding_text"] for item in batch]
     embeddings = model.encode(texts).tolist()
 
     rows = [
@@ -65,6 +135,13 @@ def seed():
         "subject":   item["subject"],
         "chapter":   item["chapter"],
         "topic":     item["topic"],
+        "contextual_summary": item["contextual_summary"],
+        "source_doc_id": item["source_doc_id"],
+        "chunk_index": item["chunk_index"],
+        "chunk_type": item["chunk_type"],
+        "token_count": item["token_count"],
+        "embedding_text": item["embedding_text"],
+        "source_type": "curriculum",
         "embedding": emb,
       }
       for item, emb in zip(batch, embeddings)

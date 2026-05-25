@@ -48,7 +48,10 @@ export async function searchCurriculum(
     const cleanData = (data || []).filter((chunk: any) =>
       typeof chunk.content === 'string' &&
       !chunk.content.trim().toLowerCase().startsWith('student question:')
-    )
+    ).map((chunk: any) => ({
+      ...chunk,
+      contextText: chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n'),
+    }))
 
     console.info(`[VectorRAG] Vector search found ${cleanData.length} curriculum chunks for question:`, query, cleanData)
     return cleanData
