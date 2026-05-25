@@ -1,5 +1,6 @@
 export type Subject = 'physics' | 'chemistry' | 'biology' | 'math' | 'bangla' | 'english'
-export type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
+export type OutputMode = 'whiteboard' | 'animation'
+export type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
 export type EmotionState = 'confident' | 'confused' | 'frustrated'
 export type Language = 'bn' | 'ckm' | 'mrm' | 'gnk'
 export type UserLevel = 'ssc' | 'hsc'
@@ -17,6 +18,7 @@ export interface Message {
   role:        'user' | 'ai'
   text:        string
   diagram?:    string | null
+  animationKey?: AnimationKey | null
   emotion?:    EmotionState | null
   outputMode?: OutputMode
   loading?:    boolean
@@ -34,6 +36,7 @@ export interface AskRequest {
 export interface AskResponse {
   answer:          string
   diagram?:        string | null
+  animationKey?:    AnimationKey | null
   detectedEmotion: EmotionState
 }
 

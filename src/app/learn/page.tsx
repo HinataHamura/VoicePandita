@@ -9,12 +9,14 @@ import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
+import TeachingAnimation from '@/components/animations/TeachingAnimation'
+import type { AnimationKey } from '@/components/animations/types'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { getConceptMemory, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 import { searchCurriculum } from '@/lib/embeddings'
 import { createClient } from '@/lib/supabase/client'
 
-type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
+type OutputMode = 'whiteboard' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
 
@@ -23,6 +25,7 @@ interface Message {
   role: 'user' | 'ai'
   text: string
   diagram?: string | null
+  animationKey?: AnimationKey | null
   emotion?: EmotionState
   pwnMessage?: string
   graphPath?: string[]
@@ -30,11 +33,14 @@ interface Message {
 }
 
 const QUICK_QUESTIONS = [
-  'Newton-er 2nd law bujhai dao',
-  'সালোকসংশ্লেষণ কীভাবে হয়?',
-  'আয়নিক বন্ধন সহজ করে বুঝাও',
-  'দ্বিঘাত সমীকরণের সূত্র কীভাবে ব্যবহার করব?',
+  'Newton-er second law bujhi na',
+  'Photosynthesis process bujhao',
+  'খনিজ পদার্থ কী?',
 ]
+
+function isVisualMode(mode: OutputMode) {
+  return mode === 'animation'
+}
 
 const OFFLINE_ANSWERS: Record<string, string> = {
   physics: 'Offline pack: F = ma মানে বল = ভর × ত্বরণ। একই ভরে বেশি বল দিলে ত্বরণ বেশি হয়।',
@@ -105,7 +111,7 @@ export default function LearnPage() {
     const mode = params.get('mode') as OutputMode | null
     const languageParam = params.get('language') as LanguageMode | null
     if (seededQuestion) setInput(seededQuestion)
-    if (mode && ['whiteboard', 'text', 'exam', 'simple', 'animation'].includes(mode)) setOutputMode(mode)
+    if (mode && ['whiteboard', 'animation'].includes(mode)) setOutputMode(mode)
     if (languageParam && ['bn', 'ckm', 'mrm', 'gnk'].includes(languageParam)) setLanguage(languageParam)
     if (params.get('deaf') === '1') setDeafMode(true)
     const update = () => setIsOnline(navigator.onLine)
@@ -334,6 +340,7 @@ export default function LearnPage() {
               ...msg,
               text: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
               diagram: data.diagram,
+              animationKey: isVisualMode(outputMode) ? data.animationKey : null,
               emotion: nextEmotion,
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
@@ -512,13 +519,17 @@ export default function LearnPage() {
                           </div>
                           <p className="bangla whitespace-pre-line leading-relaxed text-ink">{msg.text}</p>
                         </div>
-                        {msg.diagram && (
+                        {(msg.animationKey || msg.diagram) && (
                           <div className="card p-4">
                             <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-forest">
                               <Zap size={12} />
-                              <span>Concept Diagram</span>
+                              <span>{msg.animationKey ? 'Visual Teaching Animation' : 'Whiteboard Concept Map'}</span>
                             </div>
-                            <MermaidDiagram chart={msg.diagram} />
+                            {msg.animationKey ? (
+                              <TeachingAnimation animationKey={msg.animationKey} question={msg.text} graphPath={msg.graphPath} fallbackDiagram={msg.diagram} />
+                            ) : (
+                              msg.diagram && <MermaidDiagram chart={msg.diagram} />
+                            )}
                           </div>
                         )}
                         <BdslAvatar active={deafMode} text={msg.text} />

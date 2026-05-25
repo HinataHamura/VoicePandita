@@ -27,6 +27,11 @@ export default function MermaidDiagram({ chart }: Props) {
           fontSize:        '14px',
           fontFamily:      'var(--font-bangla), sans-serif',
         },
+        flowchart: {
+          curve: 'basis',
+          htmlLabels: true,
+          padding: 18,
+        },
       })
 
       if (cancelled || !ref.current) return
@@ -47,6 +52,6 @@ export default function MermaidDiagram({ chart }: Props) {
   }, [chart])
 
   return (
-    <div ref={ref} className="w-full overflow-x-auto rounded-2xl bg-white/42 p-3 flex justify-center [&>svg]:max-w-full" />
+    <div ref={ref} className="w-full overflow-x-auto rounded-2xl border border-white/70 bg-gradient-to-br from-white/72 via-indigo-50/38 to-cyan-50/42 p-4 flex justify-center shadow-inner shadow-indigo/5 [&>svg]:max-w-full" />
   )
 }

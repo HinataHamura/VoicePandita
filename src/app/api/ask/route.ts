@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
+type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
 type EmotionState = 'confident' | 'confused' | 'frustrated'
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
@@ -101,6 +102,40 @@ function inferLesson(question: string): LessonKey | null {
   return (Object.keys(LESSONS) as LessonKey[]).find(key =>
     LESSONS[key].keywords.some(keyword => lc.includes(keyword.toLowerCase()))
   ) || null
+}
+
+function selectedAnimationKey(question: string, mode: OutputMode, lessonKey: LessonKey | null): AnimationKey | null {
+  if (mode !== 'animation') return null
+  if (lessonKey === 'newton_second_law' || lessonKey === 'photosynthesis') return lessonKey
+
+  const normalized = question.toLowerCase()
+  if (/(খনিজ|খনিজ|mineral|khonij|crystal)/i.test(normalized)) return 'minerals'
+  if (/(photosynthesis|সালোক|chlorophyll|co2|oxygen)/i.test(normalized)) return 'photosynthesis'
+  if (/(newton|2nd law|second law|f\s*=\s*ma|force)/i.test(normalized)) return 'newton_second_law'
+
+  return 'generic_concept'
+}
+
+function polishMermaidDiagram(diagram: string) {
+  const trimmed = diagram.trim()
+  if (!/^(graph|flowchart)\s+/i.test(trimmed)) return trimmed
+  if (/classDef\s+/i.test(trimmed)) return trimmed
+
+  const nodeIds = Array.from(trimmed.matchAll(/^\s*([A-Za-z][\w-]*)\[/gm)).map(match => match[1])
+  const [root, ...rest] = nodeIds
+  const last = rest.slice(-2)
+  const middle = rest.slice(0, Math.max(0, rest.length - 2))
+
+  const classLines = [
+    'classDef root fill:#EEF2FF,stroke:#6366F1,stroke-width:2px,color:#1E293B;',
+    'classDef idea fill:#ECFEFF,stroke:#14B8A6,stroke-width:1.6px,color:#164E63;',
+    'classDef result fill:#FFF7ED,stroke:#FDBA74,stroke-width:1.8px,color:#7C2D12;',
+  ]
+  if (root) classLines.push(`class ${root} root;`)
+  if (middle.length) classLines.push(`class ${middle.join(',')} idea;`)
+  if (last.length) classLines.push(`class ${last.join(',')} result;`)
+
+  return `${trimmed}\n  ${classLines.join('\n  ')}`
 }
 
 function detectEmotion(question: string, previousCount = 0): EmotionState {
@@ -371,6 +406,7 @@ export async function POST(req: NextRequest) {
     const detectedEmotion = detectEmotion(question, repeatCount)
     const emotion = (body.emotion || detectedEmotion) as EmotionState
     const conceptMemory = body.conceptMemory
+    const animationKey = selectedAnimationKey(question, outputMode, lessonKey)
 
     let lesson = lessonKey ? LESSONS[lessonKey] : null
     let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
@@ -429,7 +465,8 @@ Rules:
 
     return NextResponse.json({
       answer,
-      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : diagram,
+      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : polishMermaidDiagram(diagram),
+      animationKey,
       detectedEmotion,
       graphPath,
       pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',

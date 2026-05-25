@@ -1,13 +1,13 @@
 'use client'
 
-type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
+import { Bot, PenTool } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const MODES: { val: OutputMode; label: string }[] = [
-  { val: 'whiteboard', label: 'Whiteboard' },
-  { val: 'animation', label: 'Animation' },
-  { val: 'text', label: 'Step-by-step' },
-  { val: 'exam', label: 'Exam style' },
-  { val: 'simple', label: 'Simple mode' },
+type OutputMode = 'whiteboard' | 'animation'
+
+const MODES: { val: OutputMode; label: string; Icon: LucideIcon }[] = [
+  { val: 'whiteboard', label: 'Whiteboard', Icon: PenTool },
+  { val: 'animation', label: 'Visual', Icon: Bot },
 ]
 
 interface Props { value: OutputMode; onChange: (v: OutputMode) => void }
@@ -19,12 +19,13 @@ export default function OutputModeSelector({ value, onChange }: Props) {
         <button
           key={mode.val}
           onClick={() => onChange(mode.val)}
-          className={`bangla flex-shrink-0 rounded-full border px-4 py-2 text-xs shadow-sm ${
+          className={`bangla inline-flex flex-shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-xs shadow-sm ${
             value === mode.val
               ? 'border-forest bg-gradient-to-r from-forest to-indigo text-white font-medium shadow-forest/20'
               : 'border-white/60 bg-white/66 text-ink/55 backdrop-blur-xl hover:border-forest/24 hover:bg-white hover:text-ink/75'
           }`}
         >
+          <mode.Icon size={13} />
           {mode.label}
         </button>
       ))}
