@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Clock, MessageSquare, Trash2 } from 'lucide-react'
-import { clearChatHistory, getChatHistory, type ChatHistoryItem } from '@/lib/studentStore'
+import { motion } from 'framer-motion'
+import { ArrowLeft, Clock, Edit3, MessageSquare, Trash2 } from 'lucide-react'
+import { useChatHistory } from '@/hooks/useChatHistory'
+import type { ChatSessionSummary } from '@/lib/services/chatHistory'
 
 function formatTime(value: string) {
   try {
     return new Intl.DateTimeFormat('en', {
-      dateStyle: 'medium',
       timeStyle: 'short',
     }).format(new Date(value))
   } catch {
@@ -16,82 +17,139 @@ function formatTime(value: string) {
   }
 }
 
+function groupFor(value: string) {
+  const date = new Date(value)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+
+  if (date.toDateString() === today.toDateString()) return 'Today'
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
+  return 'Older'
+}
+
+function groupedSessions(sessions: ChatSessionSummary[]) {
+  return sessions.reduce<Record<string, ChatSessionSummary[]>>((groups, session) => {
+    const group = groupFor(session.updated_at)
+    groups[group] = groups[group] || []
+    groups[group].push(session)
+    return groups
+  }, {})
+}
+
 export default function HistoryPage() {
-  const [history, setHistory] = useState<ChatHistoryItem[]>([])
+  const { sessions, loading, source, rename, remove } = useChatHistory()
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftTitle, setDraftTitle] = useState('')
+  const groups = useMemo(() => groupedSessions(sessions), [sessions])
 
-  useEffect(() => {
-    setHistory(getChatHistory())
-  }, [])
-
-  function clearAll() {
-    clearChatHistory()
-    setHistory([])
+  async function saveRename(id: string) {
+    await rename(id, draftTitle)
+    setEditingId(null)
+    setDraftTitle('')
   }
 
   return (
     <div className="ai-shell min-h-dvh">
       <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Back to learn">
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <h1 className="font-display text-lg font-bold">Chat History</h1>
-              <p className="text-xs text-ink/45">This device keeps a separate history for each signed-in student.</p>
+              <h1 className="font-display text-lg font-bold">Learning Memory</h1>
+              <p className="text-xs text-ink/45">
+                {source === 'supabase' ? 'Synced across your signed-in devices.' : 'Sign in to sync history across devices.'}
+              </p>
             </div>
           </div>
-          {history.length > 0 && (
-            <button onClick={clearAll} className="inline-flex items-center gap-2 rounded-full border border-clay/20 bg-white/70 px-4 py-2 text-sm font-medium text-clay hover:bg-red-50">
-              <Trash2 size={15} />
-              Clear
-            </button>
-          )}
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-6">
-        {history.length === 0 ? (
-          <div className="flex min-h-[50dvh] flex-col items-center justify-center text-center">
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map(item => <div key={item} className="skeleton h-24 rounded-2xl" />)}
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="flex min-h-[52dvh] flex-col items-center justify-center text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[1.4rem] bg-gradient-to-br from-forest/12 to-aqua/25 text-forest">
               <MessageSquare size={24} />
             </div>
-            <h2 className="font-display text-xl font-bold">No saved chats yet</h2>
-            <p className="mt-2 max-w-sm text-sm text-ink/55">Ask a question on the Learn page and the answer will appear here.</p>
+            <h2 className="font-display text-xl font-bold">No cloud history yet</h2>
+            <p className="mt-2 max-w-sm text-sm text-ink/55">Ask from Learn and VoicePandita will save the conversation to your learning memory.</p>
             <Link href="/learn" className="soft-button mt-5 px-5 py-2.5 text-sm font-semibold">
               Ask a question
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
-            {history.map(item => (
-              <article key={item.id} className="card p-5">
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-ink/45">
-                  <span className="inline-flex items-center gap-1">
-                    <Clock size={13} />
-                    {formatTime(item.createdAt)}
-                  </span>
-                  <span className="rounded-full bg-forest/10 px-2 py-0.5 text-forest">{item.subject}</span>
-                  <span className="rounded-full bg-saffron/20 px-2 py-0.5 text-orange-600">{item.outputMode}</span>
-                  {item.source && <span className="rounded-full bg-black/5 px-2 py-0.5">{item.source}</span>}
+          <div className="space-y-7">
+            {['Today', 'Yesterday', 'Older'].filter(group => groups[group]?.length).map(group => (
+              <section key={group}>
+                <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
+                  <Clock size={13} />
+                  {group}
                 </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink/40">Question</div>
-                    <p className="bangla rounded-2xl bg-forest/10 px-3 py-2 text-sm leading-relaxed text-ink">{item.question}</p>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink/40">Answer</div>
-                    <p className="bangla whitespace-pre-line text-sm leading-relaxed text-ink/78">{item.answer}</p>
-                  </div>
-                  {item.graphPath?.length ? (
-                    <div className="rounded-2xl border border-white/60 bg-white/60 px-3 py-2 text-xs text-forest">
-                      {item.graphPath.join(' -> ')}
-                    </div>
-                  ) : null}
+                <div className="grid gap-3">
+                  {groups[group].map((session, index) => (
+                    <motion.article
+                      key={session.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.04 }}
+                      className="card group p-4 hover:border-forest/25"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <Link href={`/learn?session=${session.id}`} className="min-w-0 flex-1">
+                          {editingId === session.id ? (
+                            <input
+                              value={draftTitle}
+                              onChange={event => setDraftTitle(event.target.value)}
+                              onClick={event => event.preventDefault()}
+                              onKeyDown={event => {
+                                if (event.key === 'Enter') saveRename(session.id)
+                                if (event.key === 'Escape') setEditingId(null)
+                              }}
+                              className="w-full rounded-xl border border-forest/20 bg-white/80 px-3 py-2 text-sm font-semibold focus:outline-none"
+                              autoFocus
+                            />
+                          ) : (
+                            <h2 className="bangla truncate text-sm font-semibold text-slate-950">{session.title}</h2>
+                          )}
+                          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink/55">
+                            {session.last_message || 'Open this saved learning session.'}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-ink/45">
+                            <span>{formatTime(session.updated_at)}</span>
+                            {session.subject && <span className="rounded-full bg-forest/10 px-2 py-0.5 text-forest">{session.subject}</span>}
+                            {session.output_mode && <span className="rounded-full bg-saffron/20 px-2 py-0.5 text-orange-600">{session.output_mode}</span>}
+                          </div>
+                        </Link>
+                        <div className="flex flex-shrink-0 items-center gap-1 opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
+                          <button
+                            onClick={() => {
+                              setEditingId(session.id)
+                              setDraftTitle(session.title)
+                            }}
+                            className="rounded-full border border-white/70 bg-white/74 p-2 text-ink/55 hover:text-forest"
+                            aria-label="Rename session"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            onClick={() => remove(session.id)}
+                            className="rounded-full border border-white/70 bg-white/74 p-2 text-ink/45 hover:bg-red-50 hover:text-clay"
+                            aria-label="Delete session"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.article>
+                  ))}
                 </div>
-              </article>
+              </section>
             ))}
           </div>
         )}

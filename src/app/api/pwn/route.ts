@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
 
 type SimilarQuestion = {
@@ -38,8 +39,32 @@ const FALLBACK_HOTSPOTS = [
   },
 ]
 
+const geminiKey = process.env.GEMINI_API_KEY?.trim()
+const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
+
 function cleanText(value: unknown, max = 500) {
   return String(value || '').trim().slice(0, max)
+}
+
+function normalizeQuestionText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^\w\u0980-\u09FF\s]/g, ' ')
+    .replace(/\b(my name is|ami|amar|from|phone|device|location)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180)
+}
+
+function keywordsFrom(value: string) {
+  const stop = new Set(['what', 'why', 'how', 'the', 'and', 'with', 'this', 'that', 'কী', 'কেন', 'কিভাবে', 'কি', 'হলো', 'মানে'])
+  return Array.from(new Set(
+    value
+      .replace(/[^\w\u0980-\u09FF\s]/g, ' ')
+      .split(/\s+/)
+      .map(item => item.trim())
+      .filter(item => item.length > 2 && !stop.has(item.toLowerCase()))
+  )).slice(0, 8)
 }
 
 function topicFrom(question: string, graphPath: string[]) {
@@ -68,6 +93,47 @@ function questionWord(count: number) {
 
 function clarificationFor(topic: string, count: number) {
   return `${topic} niye ${count} ta ${questionWord(count)} hoyeche. Ei concept-e students mostly definition, formula/application, ba step-by-step explanation niye confused hocche.`
+}
+
+function bestExplanationFor(topic: string, count: number) {
+  if (/newton|force/i.test(topic)) return 'Force, mass, and acceleration are connected: more force increases acceleration, while more mass needs more force for the same acceleration.'
+  if (/photosynthesis|salok/i.test(topic)) return 'Plants use sunlight, water, and carbon dioxide to make glucose, and oxygen comes out as a result.'
+  if (/mineral|খনিজ/i.test(topic)) return 'Minerals are natural substances from Earth, useful for metals, fuel, construction, and industry.'
+  return clarificationFor(topic, count)
+}
+
+async function generateCommunityExplanation(params: {
+  topic: string
+  subject: string
+  count: number
+  samples: string[]
+}) {
+  if (!genAI || params.count < 3) return bestExplanationFor(params.topic, params.count)
+
+  try {
+    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash' })
+    const prompt = `You are VoicePandita's Peer Wisdom Network.
+Create a better community clarification in Bangla for students.
+
+Subject: ${params.subject}
+Concept: ${params.topic}
+Number of similar student asks: ${params.count}
+Sample anonymous questions:
+${params.samples.slice(0, 5).map((sample, index) => `${index + 1}. ${sample}`).join('\n')}
+
+Rules:
+- Max 80 words.
+- Explain the common confusion directly.
+- Use warm student-friendly Bangla.
+- No personal data, no markdown.`
+
+    const result = await model.generateContent(prompt)
+    const text = result.response.text().trim()
+    return text || bestExplanationFor(params.topic, params.count)
+  } catch (err) {
+    console.warn('[PWN] Gemini clarification fallback:', err instanceof Error ? err.message : err)
+    return bestExplanationFor(params.topic, params.count)
+  }
 }
 
 async function generateEmbedding(text: string) {
@@ -111,58 +177,59 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    let query = supabase
+    let aggregateQuery = supabase
       .from('pwn_questions')
-      .select('subject, topic, question_text, created_at')
-      .order('created_at', { ascending: false })
-      .limit(1000)
+      .select('id, subject, concept, topic, normalized_question, total_asks, last_asked_at, top_keywords, sample_questions, emotion_pattern')
+      .order('total_asks', { ascending: false })
+      .order('last_asked_at', { ascending: false })
+      .limit(50)
 
-    if (subject) query = query.eq('subject', subject)
+    if (subject) aggregateQuery = aggregateQuery.eq('subject', subject)
 
-    const { data, error } = await query
+    const { data, error } = await aggregateQuery
     if (error) throw error
 
-    const clusters = new Map<string, {
-      topic: string
-      subject: string
-      count: number
-      latest: string
-      samples: string[]
-    }>()
+    const questionIds = (data || []).map(item => item.id).filter(Boolean)
+    const insightMap = new Map<string, { best_explanation?: string | null; common_confusion?: string | null }>()
+    if (questionIds.length) {
+      const insights = await supabase
+        .from('pwn_insights')
+        .select('question_id,best_explanation,common_confusion')
+        .in('question_id', questionIds)
 
-    for (const item of data || []) {
-      const topic = normalizeTopic(item.question_text || '', item.topic)
-      const key = `${item.subject || 'unknown'}:${topic}`.toLowerCase()
-      const current = clusters.get(key)
-      if (!current) {
-        clusters.set(key, {
-          topic,
-          subject: item.subject || 'unknown',
-          count: 1,
-          latest: item.created_at,
-          samples: item.question_text ? [item.question_text] : [],
-        })
-      } else {
-        current.count += 1
-        if (item.question_text && current.samples.length < 3) current.samples.push(item.question_text)
-        if (item.created_at > current.latest) {
-          current.latest = item.created_at
+      if (!insights.error) {
+        for (const insight of insights.data || []) {
+          insightMap.set(insight.question_id, insight)
         }
       }
     }
 
-    const hotspots = Array.from(clusters.values())
-      .sort((a, b) => b.count - a.count || b.latest.localeCompare(a.latest))
+    const hotspots = (data || [])
+      .filter(item => Number(item.total_asks || 0) > 0)
       .slice(0, 20)
       .map(item => ({
-        topic: item.topic,
-        subject: item.subject,
-        count: item.count,
-        clarification: clarificationFor(item.topic, item.count),
-        samples: item.samples,
+        id: item.id,
+        topic: item.concept || item.topic || item.normalized_question || 'Learning concept',
+        subject: item.subject || 'unknown',
+        count: Number(item.total_asks || 1),
+        clarification: insightMap.get(item.id)?.best_explanation ||
+          bestExplanationFor(item.concept || item.topic || 'Learning concept', Number(item.total_asks || 1)),
+        samples: item.sample_questions || [],
+        topKeywords: item.top_keywords || [],
+        emotionPattern: item.emotion_pattern || 'mixed',
+        lastAskedAt: item.last_asked_at,
       }))
 
-    return NextResponse.json({ hotspots, total: hotspots.length, source: 'supabase' })
+    const subjectCounts = new Map<string, number>()
+    hotspots.forEach(item => subjectCounts.set(item.subject, (subjectCounts.get(item.subject) || 0) + item.count))
+    const topSubject = Array.from(subjectCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'all'
+    const stats = {
+      totalAsks: hotspots.reduce((sum, item) => sum + item.count, 0),
+      trendingCount: hotspots.filter(item => item.count >= 3).length,
+      topSubject,
+    }
+
+    return NextResponse.json({ hotspots, total: hotspots.length, stats, source: 'supabase' })
   } catch (err) {
     console.error('/api/pwn GET error:', err)
     const hotspots = subject ? FALLBACK_HOTSPOTS.filter(item => item.subject === subject) : FALLBACK_HOTSPOTS
@@ -180,6 +247,8 @@ export async function POST(req: NextRequest) {
       ? body.graphPath.map((part: unknown) => cleanText(part, 80)).filter(Boolean)
       : []
     const topic = topicFrom(question, graphPath)
+    const normalizedQuestion = normalizeQuestionText(topic || question)
+    const topKeywords = keywordsFrom(`${question} ${topic} ${graphPath.join(' ')}`)
 
     if (!question) {
       return NextResponse.json({ stored: false, error: 'Question required' }, { status: 400 })
@@ -207,20 +276,88 @@ export async function POST(req: NextRequest) {
     }
 
     const clusterId = similarQuestions[0]?.cluster_id || crypto.randomUUID()
-    const { data, error } = await supabase
+    const existing = await supabase
+      .from('pwn_questions')
+      .select('id,total_asks,sample_questions,top_keywords')
+      .eq('subject', subject)
+      .eq('normalized_question', normalizedQuestion)
+      .maybeSingle()
+
+    let data
+    let error
+
+    if (existing.data) {
+      const samples = Array.isArray(existing.data.sample_questions) ? existing.data.sample_questions : []
+      const mergedSamples = Array.from(new Set([question, ...samples])).slice(0, 5)
+      const keywords = Array.from(new Set([...(existing.data.top_keywords || []), ...topKeywords])).slice(0, 10)
+      const result = await supabase
+        .from('pwn_questions')
+        .update({
+          question_text: question,
+          embedding,
+          topic,
+          concept: topic,
+          cluster_id: clusterId,
+          total_asks: Number(existing.data.total_asks || 0) + 1,
+          last_asked_at: new Date().toISOString(),
+          sample_questions: mergedSamples,
+          top_keywords: keywords,
+          session_id: sessionId,
+        })
+        .eq('id', existing.data.id)
+        .select('id, subject, concept, topic, cluster_id, total_asks, last_asked_at')
+        .single()
+      data = result.data
+      error = result.error
+    } else {
+      const result = await supabase
       .from('pwn_questions')
       .insert({
+        normalized_question: normalizedQuestion,
         question_text: question,
         embedding,
         subject,
         topic,
+        concept: topic,
+        total_asks: Math.max(1, similarQuestions.length + 1),
+        last_asked_at: new Date().toISOString(),
+        top_keywords: topKeywords,
+        sample_questions: [question],
+        emotion_pattern: cleanText(body.emotion, 40) || 'mixed',
         cluster_id: clusterId,
         session_id: sessionId,
       })
-      .select('id, subject, topic, cluster_id, created_at')
+      .select('id, subject, concept, topic, cluster_id, total_asks, last_asked_at')
       .single()
+      data = result.data
+      error = result.error
+    }
 
     if (error) throw error
+
+    if (data?.id) {
+      const insightTopic = data.concept || data.topic || topic
+      const count = Number(data.total_asks || 1)
+      const samples = existing.data
+        ? Array.from(new Set([question, ...((existing.data.sample_questions as string[] | null) || [])])).slice(0, 5)
+        : [question]
+      const bestExplanation = await generateCommunityExplanation({
+        topic: insightTopic,
+        subject,
+        count,
+        samples,
+      })
+      await supabase
+        .from('pwn_insights')
+        .upsert({
+          question_id: data.id,
+          common_confusion: clarificationFor(insightTopic, count),
+          best_explanation: bestExplanation,
+          top_keywords: topKeywords,
+          emotion_pattern: cleanText(body.emotion, 40) || 'mixed',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'question_id' })
+    }
 
     console.info('[PWN] Stored student question vector:', data)
     return NextResponse.json({
@@ -228,6 +365,7 @@ export async function POST(req: NextRequest) {
       row: data,
       similarCount: similarQuestions.length,
       anonymized: true,
+      message: `${Number(data?.total_asks || 1)} students were confused about this concept`,
     })
   } catch (err) {
     console.error('/api/pwn POST error:', err)

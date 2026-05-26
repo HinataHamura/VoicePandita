@@ -4,21 +4,19 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Globe, Moon, Sun, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
+import { ArrowLeft, Globe, Moon, Sun, Wifi, WifiOff } from 'lucide-react'
 import { clearDemoAuthCookie } from '@/lib/authFlow'
 import { createClient } from '@/lib/supabase/client'
 
 interface Settings {
   lang: string
   offline: boolean
-  sound: boolean
   dark: boolean
 }
 
 const defaultSettings: Settings = {
   lang: 'bn',
   offline: false,
-  sound: true,
   dark: false,
 }
 
@@ -110,12 +108,9 @@ export default function SettingsPage() {
         </motion.section>
 
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="card p-5">
-          <h2 className="text-xs font-semibold text-ink/45 uppercase tracking-wider mb-2">Connection and sound</h2>
+          <h2 className="text-xs font-semibold text-ink/45 uppercase tracking-wider mb-2">Connection</h2>
           <Row icon={settings.offline ? WifiOff : Wifi} label="Prefer offline pack" sub="Use cached answers first on weak networks">
             <Toggle on={settings.offline} onToggle={() => update('offline', !settings.offline)} />
-          </Row>
-          <Row icon={settings.sound ? Volume2 : VolumeX} label="Voice output" sub="Read tutor answers aloud in the browser">
-            <Toggle on={settings.sound} onToggle={() => update('sound', !settings.sound)} />
           </Row>
         </motion.section>
 

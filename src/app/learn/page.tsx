@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, Loader2, Mic, MicOff, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, Loader2, Mic, MicOff, Send, Sparkles, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
@@ -15,6 +15,7 @@ import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { getConceptMemory, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 import { searchCurriculum } from '@/lib/embeddings'
 import { createClient } from '@/lib/supabase/client'
+import { appendChatMessages, createChatSession, fetchChatMessages, migrateLocalHistoryToSupabase, recordOfflineChat } from '@/lib/services/chatHistory'
 
 type OutputMode = 'whiteboard' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -51,16 +52,36 @@ const OFFLINE_ANSWERS: Record<string, string> = {
   english: 'Offline pack: Start with one short correct sentence, then add details.',
 }
 
+function bestVoice() {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
+  const voices = window.speechSynthesis.getVoices()
+  return (
+    voices.find(v => v.lang.toLowerCase().startsWith('bn')) ||
+    voices.find(v => /bangla|bengali/i.test(v.name)) ||
+    voices.find(v => v.lang.toLowerCase().startsWith('hi')) ||
+    voices.find(v => v.lang.toLowerCase().startsWith('en')) ||
+    voices[0] ||
+    null
+  )
+}
+
 function speakText(text: string, emotion?: EmotionState) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'bn-BD'
-  utterance.rate = emotion === 'frustrated' ? 0.82 : emotion === 'confused' ? 0.9 : 1
-  utterance.pitch = 1
-  const banglaVoice = window.speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('bn'))
-  if (banglaVoice) utterance.voice = banglaVoice
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean) return
+
   window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
+  const voice = bestVoice()
+  const chunks = clean.match(/.{1,180}(?:[।.!?]\s|$)/g) || [clean]
+
+  chunks.forEach(chunk => {
+    const utterance = new SpeechSynthesisUtterance(chunk.trim())
+    utterance.lang = voice?.lang || 'bn-BD'
+    utterance.rate = emotion === 'frustrated' ? 0.82 : emotion === 'confused' ? 0.9 : 1
+    utterance.pitch = 1
+    if (voice) utterance.voice = voice
+    window.speechSynthesis.speak(utterance)
+  })
 }
 
 function getSessionId() {
@@ -86,12 +107,15 @@ export default function LearnPage() {
   const [outputMode, setOutputMode] = useState<OutputMode>('whiteboard')
   const [language, setLanguage] = useState<LanguageMode>('bn')
   const [emotion, setEmotion] = useState<EmotionState>(null)
+  const [voiceOutput, setVoiceOutput] = useState(true)
   const [deafMode, setDeafMode] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isOcrLoading, setIsOcrLoading] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [questionHistory, setQuestionHistory] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -108,12 +132,51 @@ export default function LearnPage() {
     setIsOnline(navigator.onLine)
     const params = new URLSearchParams(window.location.search)
     const seededQuestion = params.get('q')
+    const seededSession = params.get('session')
     const mode = params.get('mode') as OutputMode | null
     const languageParam = params.get('language') as LanguageMode | null
     if (seededQuestion) setInput(seededQuestion)
     if (mode && ['whiteboard', 'animation'].includes(mode)) setOutputMode(mode)
     if (languageParam && ['bn', 'ckm', 'mrm', 'gnk'].includes(languageParam)) setLanguage(languageParam)
     if (params.get('deaf') === '1') setDeafMode(true)
+    try {
+      const savedVoice = localStorage.getItem('vp_voice_output')
+      const savedSettings = localStorage.getItem('vp_settings')
+      if (savedVoice !== null) {
+        setVoiceOutput(savedVoice === '1')
+      } else if (savedSettings) {
+        const parsed = JSON.parse(savedSettings)
+        if (typeof parsed.sound === 'boolean') setVoiceOutput(parsed.sound)
+      }
+    } catch {
+      setVoiceOutput(true)
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.getVoices()
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices()
+    }
+    migrateLocalHistoryToSupabase()
+    if (seededSession) {
+      setHistoryLoading(true)
+      setActiveChatSessionId(seededSession)
+      fetchChatMessages(seededSession)
+        .then(rows => {
+          const restored: Message[] = rows
+            .filter(row => row.role === 'user' || row.role === 'assistant')
+            .map(row => ({
+              id: row.id,
+              role: row.role === 'user' ? 'user' : 'ai',
+              text: row.content,
+              diagram: row.diagram,
+              animationKey: (row.metadata?.animationKey as AnimationKey | undefined) || null,
+              emotion: (row.emotion as EmotionState) || null,
+              pwnMessage: row.metadata?.pwnMessage as string | undefined,
+              graphPath: row.graph_path || undefined,
+            }))
+          setMessages(restored)
+        })
+        .finally(() => setHistoryLoading(false))
+    }
     const update = () => setIsOnline(navigator.onLine)
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
@@ -122,6 +185,20 @@ export default function LearnPage() {
       window.removeEventListener('offline', update)
     }
   }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vp_voice_output', voiceOutput ? '1' : '0')
+      const savedSettings = localStorage.getItem('vp_settings')
+      const settings = savedSettings ? JSON.parse(savedSettings) : {}
+      localStorage.setItem('vp_settings', JSON.stringify({ ...settings, sound: voiceOutput }))
+    } catch {
+      // Voice preference is local convenience only.
+    }
+    if (!voiceOutput && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }, [voiceOutput])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -205,12 +282,12 @@ export default function LearnPage() {
     }
   }
 
-  async function logPeerWisdom(question: string, graphPath?: string[]) {
+  async function logPeerWisdom(question: string, graphPath?: string[], emotionState?: EmotionState) {
     try {
       await fetch('/api/pwn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, subject, sessionId: getSessionId(), graphPath }),
+        body: JSON.stringify({ question, subject, sessionId: getSessionId(), graphPath, emotion: emotionState }),
       })
     } catch {
       // Community logging is helpful, not required for answering.
@@ -290,6 +367,12 @@ export default function LearnPage() {
     const loadingMsg: Message = { id: crypto.randomUUID(), role: 'ai', text: '', loading: true }
     setMessages(prev => [...prev, userMsg, loadingMsg])
     setIsLoading(true)
+    let cloudSessionId = activeChatSessionId
+    if (!cloudSessionId && navigator.onLine) {
+      const session = await createChatSession({ firstQuestion: question, subject, outputMode })
+      cloudSessionId = session?.id || null
+      if (cloudSessionId) setActiveChatSessionId(cloudSessionId)
+    }
 
     if (!navigator.onLine) {
       const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
@@ -300,7 +383,7 @@ export default function LearnPage() {
           : msg
       ))
       recordPractice(subject, question)
-      recordChatHistory({
+      recordOfflineChat({
         question,
         answer: offlineAnswer,
         subject,
@@ -333,14 +416,16 @@ export default function LearnPage() {
       })
       const data = await res.json()
       const nextEmotion = (data.detectedEmotion ?? localEmotion) as EmotionState
+      const answerText = data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।'
+      const answerAnimationKey = isVisualMode(outputMode) ? data.animationKey : null
       setEmotion(nextEmotion)
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
           ? {
               ...msg,
-              text: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
+              text: answerText,
               diagram: data.diagram,
-              animationKey: isVisualMode(outputMode) ? data.animationKey : null,
+              animationKey: answerAnimationKey,
               emotion: nextEmotion,
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
@@ -348,30 +433,48 @@ export default function LearnPage() {
             }
           : msg
       ))
-      if (data.answer) speakText(data.answer, nextEmotion)
+      if (data.answer && voiceOutput) speakText(data.answer, nextEmotion)
+      const savedToCloud = await appendChatMessages(cloudSessionId, [
+        { role: 'user', content: question },
+        {
+          role: 'assistant',
+          content: answerText,
+          emotion: nextEmotion,
+          diagram: data.diagram,
+          graphPath: data.graphPath,
+          metadata: {
+            subject,
+            outputMode,
+            language,
+            source: data.source,
+            pwnMessage: data.pwnMessage,
+            animationKey: answerAnimationKey,
+          },
+        },
+      ])
       recordPractice(subject, question)
       recordConceptMemory(question, subject, data.graphPath)
       storeQuestionEmbedding({
         question,
-        answer: data.answer || '',
+        answer: answerText,
         graphPath: data.graphPath,
       })
       storeQuestionGraph({
         question,
-        answer: data.answer || '',
+        answer: answerText,
         graphPath: data.graphPath,
         source: data.source,
       })
-      recordChatHistory({
+      if (!savedToCloud) recordChatHistory({
         question,
-        answer: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
+        answer: answerText,
         subject,
         outputMode,
         language,
         graphPath: data.graphPath,
         source: data.source,
       })
-      logPeerWisdom(question, data.graphPath)
+      logPeerWisdom(question, data.graphPath, nextEmotion)
     } catch {
       const errorAnswer = 'দুঃখিত, সার্ভারে সমস্যা হচ্ছে। একটু পরে আবার চেষ্টা করো।'
       setMessages(prev => prev.map(msg =>
@@ -379,7 +482,7 @@ export default function LearnPage() {
           ? { ...msg, text: errorAnswer, loading: false }
           : msg
       ))
-      recordChatHistory({
+      recordOfflineChat({
         question,
         answer: errorAnswer,
         subject,
@@ -412,6 +515,19 @@ export default function LearnPage() {
           <div className="flex items-center gap-2">
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
+            <button
+              onClick={() => setVoiceOutput(prev => !prev)}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                voiceOutput
+                  ? 'border-forest/25 bg-forest/10 text-forest'
+                  : 'border-white/60 bg-white/66 text-ink/50 hover:text-ink/70'
+              }`}
+              aria-pressed={voiceOutput}
+              aria-label={voiceOutput ? 'Turn voice output off' : 'Turn voice output on'}
+            >
+              {voiceOutput ? <Volume2 size={13} /> : <VolumeX size={13} />}
+              Voice {voiceOutput ? 'On' : 'Off'}
+            </button>
             <SubjectSelector value={subject} onChange={setSubject} />
           </div>
         </header>
@@ -453,7 +569,14 @@ export default function LearnPage() {
         )}
 
         <main className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-          {messages.length === 0 && (
+          {historyLoading && (
+            <div className="mx-auto max-w-3xl space-y-3">
+              <div className="skeleton h-20 rounded-2xl" />
+              <div className="skeleton h-36 rounded-2xl" />
+            </div>
+          )}
+
+          {!historyLoading && messages.length === 0 && (
             <div className="flex min-h-full flex-col items-center justify-center py-12 text-center">
               <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-forest via-indigo to-aqua shadow-2xl shadow-forest/25">
                 <Mic size={32} className="text-white" />
