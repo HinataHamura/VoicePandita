@@ -176,12 +176,15 @@ export default function GenericConceptAnimation({ question, graphPath, fallbackD
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.35, duration: 0.55 }}
-            className="absolute bottom-4 left-4 right-4 rounded-2xl border border-white/80 bg-slate-950/82 px-4 py-3 text-xs text-white shadow-2xl shadow-slate-900/20 backdrop-blur-xl"
+            className="absolute bottom-5 left-5 z-20 w-[min(420px,calc(100%-2.5rem))] rounded-2xl border border-cyan-100 bg-white/94 px-4 py-3 text-xs text-slate-800 shadow-2xl shadow-indigo/12 backdrop-blur-xl"
           >
-            <div className="bangla font-semibold">Teaching flow</div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/15">
+            <div className="flex items-center justify-between gap-3">
+              <div className="bangla font-bold text-slate-900">Teaching flow</div>
+              <div className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo">concept reveal</div>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200/80">
               <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-aqua via-white to-saffron"
+                className="h-full rounded-full bg-gradient-to-r from-aqua via-forest to-saffron"
                 initial={{ width: '0%' }}
                 animate={{ width: ['0%', '42%', '72%', '100%'] }}
                 transition={{ duration: 4.2, repeat: Infinity, repeatDelay: 0.8, ease: 'easeInOut' }}
