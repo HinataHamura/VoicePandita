@@ -1,7 +1,22 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { access, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const root = path.resolve('public/data/isharakotha')
+const preferredRoots = ['public/data/Sections', 'public/data/sections', 'public/data/isharakotha']
+
+const findRoot = async () => {
+  for (const candidate of preferredRoots.map((item) => path.resolve(item))) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try the next known dataset location.
+    }
+  }
+
+  throw new Error(`No IsharaKotha dataset folder found. Tried: ${preferredRoots.join(', ')}`)
+}
+
+const root = await findRoot()
 const output = path.join(root, 'dataset.json')
 
 const walk = async (dir) => {

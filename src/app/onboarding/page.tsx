@@ -83,14 +83,14 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-cream px-4 py-12">
+    <div className="ai-shell flex min-h-dvh flex-col items-center justify-center px-4 py-12">
       <div className="mb-10 w-full max-w-md">
         <div className="mb-2 flex items-center justify-between">
           <span className="font-mono text-xs text-ink/40">{step + 1} / {steps.length}</span>
-          <span className="text-xs font-medium text-forest">SSC/HSC setup</span>
+          <span className="text-xs font-semibold text-forest">SSC/HSC setup</span>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-forest/8">
-          <motion.div className="h-full rounded-full bg-gradient-to-r from-saffron to-gold" animate={{ width: `${progress}%` }} transition={{ duration: 0.4, ease: 'easeOut' }} />
+        <div className="h-2 overflow-hidden rounded-full bg-forest/10">
+          <motion.div className="h-full rounded-full bg-gradient-to-r from-forest to-indigo" animate={{ width: `${progress}%` }} transition={{ duration: 0.4, ease: 'easeOut' }} />
         </div>
       </div>
 
@@ -115,14 +115,14 @@ export default function OnboardingPage() {
                 <button
                   key={opt.val}
                   onClick={() => pick(opt.val)}
-                  className={`w-full rounded-lg border-2 p-4 text-left shadow-sm ${
+                  className={`w-full rounded-2xl border p-4 text-left shadow-sm ${
                     selected === opt.val
-                      ? 'border-saffron bg-saffron/7 shadow-md shadow-saffron/10'
-                      : 'border-forest/10 bg-white/82 hover:border-saffron/35 hover:bg-paper/70'
+                      ? 'border-forest bg-forest/10 shadow-md shadow-forest/10'
+                      : 'border-white/60 bg-white/82 hover:border-forest/30 hover:bg-white'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${selected === opt.val ? 'border-saffron bg-saffron' : 'border-forest/20'}`}>
+                    <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${selected === opt.val ? 'border-forest bg-forest' : 'border-forest/20'}`}>
                       {selected === opt.val && <div className="h-2 w-2 rounded-full bg-white" />}
                     </div>
                     <div>
@@ -146,7 +146,7 @@ export default function OnboardingPage() {
           disabled={!selected}
           className={`flex flex-1 items-center justify-center gap-2 rounded-full py-4 text-base font-semibold ${
             selected
-              ? 'bg-saffron text-white shadow-lg shadow-saffron/20 hover:-translate-y-0.5 hover:bg-saffron/90'
+              ? 'soft-button hover:-translate-y-0.5'
               : 'cursor-not-allowed bg-forest/8 text-ink/30'
           }`}
         >

@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import {
+  DEMO_STUDENT,
   getCurrentStudent,
   getStudentProfile,
   isStudentProfileComplete,
@@ -9,74 +10,45 @@ import {
   type StudentIdentity,
 } from '@/lib/studentStore'
 
-const DEMO_COOKIE_NAME = 'vp_demo_session'
-const DEMO_COOKIE_VALUE = '1'
-const DEMO_COOKIE_OPTIONS = 'path=/;max-age=31536000;samesite=lax'
-
-function isBrowser() {
-  return typeof window !== 'undefined' && typeof document !== 'undefined'
-}
-
-function getCookie(name: string) {
-  if (!isBrowser()) return null
-  return document.cookie
-    .split('; ')
-    .find(cookie => cookie.startsWith(`${name}=`))
-    ?.split('=')[1] || null
-}
-
-function setCookie(name: string, value: string) {
-  if (!isBrowser()) return
-  document.cookie = `${name}=${value}; ${DEMO_COOKIE_OPTIONS}`
-}
-
-function clearCookie(name: string) {
-  if (!isBrowser()) return
-  document.cookie = `${name}=; path=/; max-age=0; samesite=lax`
-}
+const DEMO_COOKIE = 'vp_demo_session'
 
 export function setDemoAuthCookie() {
-  setCookie(DEMO_COOKIE_NAME, DEMO_COOKIE_VALUE)
+  document.cookie = `${DEMO_COOKIE}=1; path=/; max-age=2592000; samesite=lax`
 }
 
 export function clearDemoAuthCookie() {
-  clearCookie(DEMO_COOKIE_NAME)
+  document.cookie = `${DEMO_COOKIE}=; path=/; max-age=0; samesite=lax`
+}
+
+export function hasDemoAuthCookie() {
+  return document.cookie.split(';').some(item => item.trim() === `${DEMO_COOKIE}=1`)
 }
 
 export async function getAuthenticatedStudent(): Promise<StudentIdentity | null> {
-  if (!isBrowser()) return null
+  try {
+    const current = getCurrentStudent()
+    if (current.isDemo || hasDemoAuthCookie()) {
+      if (!current.isDemo) setCurrentStudent(DEMO_STUDENT)
+      return current.isDemo ? current : DEMO_STUDENT
+    }
 
-  if (getCookie(DEMO_COOKIE_NAME) === DEMO_COOKIE_VALUE) {
-    return getCurrentStudent()
-  }
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data.user) return null
 
-  const supabase = createClient()
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data.user) return null
-
-  const currentStudent = getCurrentStudent()
-  const user = data.user
-  const student: StudentIdentity = {
-    id: user.id,
-    email: user.email || currentStudent.email || 'student@voicepandita.app',
-    name:
-      (user.user_metadata as any)?.full_name ||
-      user.email?.split('@')[0] ||
-      currentStudent.name ||
-      'Student',
-  }
-
-  if (currentStudent.id.startsWith('guest-') || currentStudent.isGuest) {
+    const student = {
+      id: data.user.id,
+      email: data.user.email || 'student@voicepandita.local',
+      name: data.user.email?.split('@')[0] || 'Student',
+    }
     setCurrentStudent(student)
+    return student
+  } catch {
+    return null
   }
-
-  return student
 }
 
-export function nextRouteForStudent(studentId: string, fallback = '/learn') {
+export function nextRouteForStudent(studentId?: string, fallback = '/onboarding') {
   const profile = getStudentProfile(studentId)
-  if (!isStudentProfileComplete(profile)) {
-    return '/onboarding'
-  }
-  return fallback
+  return isStudentProfileComplete(profile) ? '/learn' : fallback
 }

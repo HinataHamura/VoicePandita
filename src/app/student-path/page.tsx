@@ -47,11 +47,11 @@ export default function StudentPathPage() {
   }, [router])
 
   return (
-    <div className="min-h-dvh bg-cream px-4 py-10">
+    <div className="ai-shell min-h-dvh px-4 py-10">
       <main className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-4xl flex-col justify-center">
         <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mb-8 text-center">
           <Link href="/" className="font-display text-2xl font-bold">
-            Voice<span className="text-saffron">Pandita</span>
+            Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span>
           </Link>
           <div className="mx-auto mt-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-forest to-indigo text-white shadow-xl shadow-forest/20">
             <Globe size={24} />
@@ -67,14 +67,14 @@ export default function StudentPathPage() {
             <motion.div key={path.title} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }}>
               <Link href={path.href} className="card group flex h-full flex-col p-5 hover:-translate-y-1">
                 <div className="mb-5 flex items-start justify-between gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-forest/8 text-forest group-hover:bg-saffron/10 group-hover:text-saffron">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-forest/12 to-aqua/25 text-forest group-hover:scale-105 group-hover:bg-forest group-hover:text-white">
                     <path.icon size={22} />
                   </div>
-                  <span className="rounded-full bg-saffron/10 px-2.5 py-1 text-xs font-semibold text-saffron">{path.badge}</span>
+                  <span className="rounded-full bg-forest/10 px-2.5 py-1 text-xs font-semibold text-forest">{path.badge}</span>
                 </div>
                 <h2 className="text-lg font-semibold">{path.title}</h2>
                 <p className="mt-2 flex-1 text-sm leading-relaxed text-ink/58">{path.sub}</p>
-                <div className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-forest group-hover:text-saffron">
+                <div className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-forest">
                   Continue <ArrowRight size={15} className="group-hover:translate-x-0.5" />
                 </div>
               </Link>

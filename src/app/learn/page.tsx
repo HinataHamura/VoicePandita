@@ -2,19 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, Loader2, Mic, MicOff, Send, Sparkles, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, Loader2, Mic, MicOff, Send, Sparkles, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
+import TeachingAnimation from '@/components/animations/TeachingAnimation'
+import type { AnimationKey } from '@/components/animations/types'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { getConceptMemory, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 import { searchCurriculum } from '@/lib/embeddings'
 import { createClient } from '@/lib/supabase/client'
+import { appendChatMessages, createChatSession, fetchChatMessages, migrateLocalHistoryToSupabase, recordOfflineChat } from '@/lib/services/chatHistory'
 
-type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
+type OutputMode = 'whiteboard' | 'animation'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
 
@@ -23,6 +26,7 @@ interface Message {
   role: 'user' | 'ai'
   text: string
   diagram?: string | null
+  animationKey?: AnimationKey | null
   emotion?: EmotionState
   pwnMessage?: string
   graphPath?: string[]
@@ -30,11 +34,14 @@ interface Message {
 }
 
 const QUICK_QUESTIONS = [
-  'Newton-er 2nd law bujhai dao',
-  'সালোকসংশ্লেষণ কীভাবে হয়?',
-  'আয়নিক বন্ধন সহজ করে বুঝাও',
-  'দ্বিঘাত সমীকরণের সূত্র কীভাবে ব্যবহার করব?',
+  'Newton-er second law bujhi na',
+  'Photosynthesis process bujhao',
+  'খনিজ পদার্থ কী?',
 ]
+
+function isVisualMode(mode: OutputMode) {
+  return mode === 'animation'
+}
 
 const OFFLINE_ANSWERS: Record<string, string> = {
   physics: 'Offline pack: F = ma মানে বল = ভর × ত্বরণ। একই ভরে বেশি বল দিলে ত্বরণ বেশি হয়।',
@@ -45,16 +52,36 @@ const OFFLINE_ANSWERS: Record<string, string> = {
   english: 'Offline pack: Start with one short correct sentence, then add details.',
 }
 
+function bestVoice() {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
+  const voices = window.speechSynthesis.getVoices()
+  return (
+    voices.find(v => v.lang.toLowerCase().startsWith('bn')) ||
+    voices.find(v => /bangla|bengali/i.test(v.name)) ||
+    voices.find(v => v.lang.toLowerCase().startsWith('hi')) ||
+    voices.find(v => v.lang.toLowerCase().startsWith('en')) ||
+    voices[0] ||
+    null
+  )
+}
+
 function speakText(text: string, emotion?: EmotionState) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'bn-BD'
-  utterance.rate = emotion === 'frustrated' ? 0.82 : emotion === 'confused' ? 0.9 : 1
-  utterance.pitch = 1
-  const banglaVoice = window.speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('bn'))
-  if (banglaVoice) utterance.voice = banglaVoice
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean) return
+
   window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
+  const voice = bestVoice()
+  const chunks = clean.match(/.{1,180}(?:[।.!?]\s|$)/g) || [clean]
+
+  chunks.forEach(chunk => {
+    const utterance = new SpeechSynthesisUtterance(chunk.trim())
+    utterance.lang = voice?.lang || 'bn-BD'
+    utterance.rate = emotion === 'frustrated' ? 0.82 : emotion === 'confused' ? 0.9 : 1
+    utterance.pitch = 1
+    if (voice) utterance.voice = voice
+    window.speechSynthesis.speak(utterance)
+  })
 }
 
 function getSessionId() {
@@ -80,12 +107,15 @@ export default function LearnPage() {
   const [outputMode, setOutputMode] = useState<OutputMode>('whiteboard')
   const [language, setLanguage] = useState<LanguageMode>('bn')
   const [emotion, setEmotion] = useState<EmotionState>(null)
+  const [voiceOutput, setVoiceOutput] = useState(true)
   const [deafMode, setDeafMode] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isOcrLoading, setIsOcrLoading] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [questionHistory, setQuestionHistory] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -102,12 +132,51 @@ export default function LearnPage() {
     setIsOnline(navigator.onLine)
     const params = new URLSearchParams(window.location.search)
     const seededQuestion = params.get('q')
+    const seededSession = params.get('session')
     const mode = params.get('mode') as OutputMode | null
     const languageParam = params.get('language') as LanguageMode | null
     if (seededQuestion) setInput(seededQuestion)
-    if (mode && ['whiteboard', 'text', 'exam', 'simple', 'animation'].includes(mode)) setOutputMode(mode)
+    if (mode && ['whiteboard', 'animation'].includes(mode)) setOutputMode(mode)
     if (languageParam && ['bn', 'ckm', 'mrm', 'gnk'].includes(languageParam)) setLanguage(languageParam)
     if (params.get('deaf') === '1') setDeafMode(true)
+    try {
+      const savedVoice = localStorage.getItem('vp_voice_output')
+      const savedSettings = localStorage.getItem('vp_settings')
+      if (savedVoice !== null) {
+        setVoiceOutput(savedVoice === '1')
+      } else if (savedSettings) {
+        const parsed = JSON.parse(savedSettings)
+        if (typeof parsed.sound === 'boolean') setVoiceOutput(parsed.sound)
+      }
+    } catch {
+      setVoiceOutput(true)
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.getVoices()
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices()
+    }
+    migrateLocalHistoryToSupabase()
+    if (seededSession) {
+      setHistoryLoading(true)
+      setActiveChatSessionId(seededSession)
+      fetchChatMessages(seededSession)
+        .then(rows => {
+          const restored: Message[] = rows
+            .filter(row => row.role === 'user' || row.role === 'assistant')
+            .map(row => ({
+              id: row.id,
+              role: row.role === 'user' ? 'user' : 'ai',
+              text: row.content,
+              diagram: row.diagram,
+              animationKey: (row.metadata?.animationKey as AnimationKey | undefined) || null,
+              emotion: (row.emotion as EmotionState) || null,
+              pwnMessage: row.metadata?.pwnMessage as string | undefined,
+              graphPath: row.graph_path || undefined,
+            }))
+          setMessages(restored)
+        })
+        .finally(() => setHistoryLoading(false))
+    }
     const update = () => setIsOnline(navigator.onLine)
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
@@ -116,6 +185,20 @@ export default function LearnPage() {
       window.removeEventListener('offline', update)
     }
   }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vp_voice_output', voiceOutput ? '1' : '0')
+      const savedSettings = localStorage.getItem('vp_settings')
+      const settings = savedSettings ? JSON.parse(savedSettings) : {}
+      localStorage.setItem('vp_settings', JSON.stringify({ ...settings, sound: voiceOutput }))
+    } catch {
+      // Voice preference is local convenience only.
+    }
+    if (!voiceOutput && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }, [voiceOutput])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -199,12 +282,12 @@ export default function LearnPage() {
     }
   }
 
-  async function logPeerWisdom(question: string, graphPath?: string[]) {
+  async function logPeerWisdom(question: string, graphPath?: string[], emotionState?: EmotionState) {
     try {
       await fetch('/api/pwn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, subject, sessionId: getSessionId(), graphPath }),
+        body: JSON.stringify({ question, subject, sessionId: getSessionId(), graphPath, emotion: emotionState }),
       })
     } catch {
       // Community logging is helpful, not required for answering.
@@ -284,6 +367,12 @@ export default function LearnPage() {
     const loadingMsg: Message = { id: crypto.randomUUID(), role: 'ai', text: '', loading: true }
     setMessages(prev => [...prev, userMsg, loadingMsg])
     setIsLoading(true)
+    let cloudSessionId = activeChatSessionId
+    if (!cloudSessionId && navigator.onLine) {
+      const session = await createChatSession({ firstQuestion: question, subject, outputMode })
+      cloudSessionId = session?.id || null
+      if (cloudSessionId) setActiveChatSessionId(cloudSessionId)
+    }
 
     if (!navigator.onLine) {
       const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
@@ -294,7 +383,7 @@ export default function LearnPage() {
           : msg
       ))
       recordPractice(subject, question)
-      recordChatHistory({
+      recordOfflineChat({
         question,
         answer: offlineAnswer,
         subject,
@@ -327,13 +416,16 @@ export default function LearnPage() {
       })
       const data = await res.json()
       const nextEmotion = (data.detectedEmotion ?? localEmotion) as EmotionState
+      const answerText = data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।'
+      const answerAnimationKey = isVisualMode(outputMode) ? data.animationKey : null
       setEmotion(nextEmotion)
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
           ? {
               ...msg,
-              text: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
+              text: answerText,
               diagram: data.diagram,
+              animationKey: answerAnimationKey,
               emotion: nextEmotion,
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
@@ -341,30 +433,48 @@ export default function LearnPage() {
             }
           : msg
       ))
-      if (data.answer) speakText(data.answer, nextEmotion)
+      if (data.answer && voiceOutput) speakText(data.answer, nextEmotion)
+      const savedToCloud = await appendChatMessages(cloudSessionId, [
+        { role: 'user', content: question },
+        {
+          role: 'assistant',
+          content: answerText,
+          emotion: nextEmotion,
+          diagram: data.diagram,
+          graphPath: data.graphPath,
+          metadata: {
+            subject,
+            outputMode,
+            language,
+            source: data.source,
+            pwnMessage: data.pwnMessage,
+            animationKey: answerAnimationKey,
+          },
+        },
+      ])
       recordPractice(subject, question)
       recordConceptMemory(question, subject, data.graphPath)
       storeQuestionEmbedding({
         question,
-        answer: data.answer || '',
+        answer: answerText,
         graphPath: data.graphPath,
       })
       storeQuestionGraph({
         question,
-        answer: data.answer || '',
+        answer: answerText,
         graphPath: data.graphPath,
         source: data.source,
       })
-      recordChatHistory({
+      if (!savedToCloud) recordChatHistory({
         question,
-        answer: data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।',
+        answer: answerText,
         subject,
         outputMode,
         language,
         graphPath: data.graphPath,
         source: data.source,
       })
-      logPeerWisdom(question, data.graphPath)
+      logPeerWisdom(question, data.graphPath, nextEmotion)
     } catch {
       const errorAnswer = 'দুঃখিত, সার্ভারে সমস্যা হচ্ছে। একটু পরে আবার চেষ্টা করো।'
       setMessages(prev => prev.map(msg =>
@@ -372,7 +482,7 @@ export default function LearnPage() {
           ? { ...msg, text: errorAnswer, loading: false }
           : msg
       ))
-      recordChatHistory({
+      recordOfflineChat({
         question,
         answer: errorAnswer,
         subject,
@@ -386,30 +496,43 @@ export default function LearnPage() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-cream">
+    <div className="ai-shell flex h-dvh overflow-hidden">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-forest/10 bg-cream/82 px-4 py-3 backdrop-blur-xl">
+        <header className="glass-panel flex items-center justify-between gap-3 border-x-0 border-t-0 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80" aria-label="Open menu">
-              <span className="mb-1 block h-0.5 w-5 rounded bg-ink" />
-              <span className="block h-0.5 w-3 rounded bg-ink/50" />
+            <button onClick={() => setSidebarOpen(true)} className="rounded-2xl border border-white/60 bg-white/72 p-2.5 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Open menu">
+              <span className="mb-1 block h-0.5 w-5 rounded bg-forest" />
+              <span className="block h-0.5 w-3 rounded bg-indigo/70" />
             </button>
             <div className="min-w-0">
-              <div className="font-display text-lg font-bold leading-tight">Voice<span className="text-saffron">Pandita</span></div>
-              <div className="truncate text-[11px] text-ink/45">SSC/HSC voice-first GraphRAG tutor</div>
+              <div className="font-display text-lg font-bold leading-tight">Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span></div>
+              <div className="truncate text-[11px] text-ink/45">AI tutor studio for calm learning</div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
+            <button
+              onClick={() => setVoiceOutput(prev => !prev)}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                voiceOutput
+                  ? 'border-forest/25 bg-forest/10 text-forest'
+                  : 'border-white/60 bg-white/66 text-ink/50 hover:text-ink/70'
+              }`}
+              aria-pressed={voiceOutput}
+              aria-label={voiceOutput ? 'Turn voice output off' : 'Turn voice output on'}
+            >
+              {voiceOutput ? <Volume2 size={13} /> : <VolumeX size={13} />}
+              Voice {voiceOutput ? 'On' : 'Off'}
+            </button>
             <SubjectSelector value={subject} onChange={setSubject} />
           </div>
         </header>
 
-        <div className="space-y-2 border-b border-forest/10 bg-white/45 px-4 py-2 backdrop-blur-xl">
+        <div className="glass-panel space-y-2 border-x-0 border-t-0 px-4 py-3">
           <OutputModeSelector value={outputMode} onChange={setOutputMode} />
           <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {[
@@ -422,7 +545,7 @@ export default function LearnPage() {
                 key={value}
                 onClick={() => setLanguage(value as LanguageMode)}
                 className={`flex-shrink-0 rounded-full border px-3 py-1.5 text-xs ${
-                  language === value ? 'border-forest bg-forest text-white shadow-sm shadow-forest/15' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-forest/24 hover:text-ink/75'
+                  language === value ? 'border-forest bg-gradient-to-r from-forest to-indigo text-white shadow-sm shadow-forest/15' : 'border-white/60 bg-white/66 text-ink/55 hover:border-forest/24 hover:bg-white hover:text-ink/75'
                 }`}
               >
                 {label}
@@ -431,7 +554,7 @@ export default function LearnPage() {
             <button
               onClick={() => setDeafMode(prev => !prev)}
               className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-                deafMode ? 'border-indigo bg-indigo text-white' : 'border-forest/10 bg-white/80 text-ink/55 hover:border-indigo/25'
+                deafMode ? 'border-indigo bg-indigo text-white' : 'border-white/60 bg-white/66 text-ink/55 hover:border-indigo/25 hover:bg-white'
               }`}
             >
               <Accessibility size={12} /> BdSL
@@ -446,9 +569,16 @@ export default function LearnPage() {
         )}
 
         <main className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-          {messages.length === 0 && (
+          {historyLoading && (
+            <div className="mx-auto max-w-3xl space-y-3">
+              <div className="skeleton h-20 rounded-2xl" />
+              <div className="skeleton h-36 rounded-2xl" />
+            </div>
+          )}
+
+          {!historyLoading && messages.length === 0 && (
             <div className="flex min-h-full flex-col items-center justify-center py-12 text-center">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-forest to-indigo shadow-xl shadow-forest/20">
+              <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-forest via-indigo to-aqua shadow-2xl shadow-forest/25">
                 <Mic size={32} className="text-white" />
               </div>
               <h1 className="bangla mb-2 font-display text-2xl font-bold">কী জানতে চাও?</h1>
@@ -457,12 +587,12 @@ export default function LearnPage() {
               </p>
               <div className="mt-5 grid max-w-2xl grid-cols-2 gap-2 text-left text-xs text-ink/58 md:grid-cols-4">
                 {['GraphRAG NCTB', 'ONNX emotion stub', 'MELD bridge', 'PWN hotspot'].map(item => (
-                  <div key={item} className="rounded-lg border border-forest/10 bg-white/72 px-3 py-2 shadow-sm">{item}</div>
+                  <div key={item} className="rounded-2xl border border-white/60 bg-white/66 px-3 py-2 shadow-sm shadow-forest/5 backdrop-blur-xl">{item}</div>
                 ))}
               </div>
               <div className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
                 {QUICK_QUESTIONS.map(q => (
-                  <button key={q} onClick={() => sendMessage(q)} className="bangla rounded-full border border-forest/10 bg-white/82 px-4 py-2 text-xs shadow-sm hover:border-saffron/35 hover:bg-saffron/5">
+                  <button key={q} onClick={() => sendMessage(q)} className="bangla rounded-full border border-white/60 bg-white/76 px-4 py-2 text-xs shadow-sm shadow-forest/5 hover:-translate-y-0.5 hover:border-forest/30 hover:bg-white">
                     {q}
                   </button>
                 ))}
@@ -480,7 +610,7 @@ export default function LearnPage() {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.role === 'user' ? (
-                  <div className="bangla max-w-[84%] rounded-2xl rounded-br-md bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-lg shadow-forest/15">
+                  <div className="bangla max-w-[84%] rounded-[1.4rem] rounded-br-md bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-xl shadow-forest/20">
                     {msg.text}
                   </div>
                 ) : (
@@ -500,25 +630,29 @@ export default function LearnPage() {
                           <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
                             {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
                             {msg.graphPath && (
-                              <span className="rounded-full bg-forest/8 px-2.5 py-0.5 text-xs text-forest">
+                              <span className="rounded-full bg-forest/10 px-3 py-1 text-xs font-medium text-forest">
                                 {msg.graphPath.join(' -> ')}
                               </span>
                             )}
                             {msg.pwnMessage && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs text-saffron">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-saffron/20 px-3 py-1 text-xs font-medium text-orange-600">
                                 <Sparkles size={12} /> {msg.pwnMessage}
                               </span>
                             )}
                           </div>
                           <p className="bangla whitespace-pre-line leading-relaxed text-ink">{msg.text}</p>
                         </div>
-                        {msg.diagram && (
+                        {(msg.animationKey || msg.diagram) && (
                           <div className="card p-4">
-                            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-forest">
+                            <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-forest">
                               <Zap size={12} />
-                              <span>Concept Diagram</span>
+                              <span>{msg.animationKey ? 'Visual Teaching Animation' : 'Whiteboard Concept Map'}</span>
                             </div>
-                            <MermaidDiagram chart={msg.diagram} />
+                            {msg.animationKey ? (
+                              <TeachingAnimation animationKey={msg.animationKey} question={msg.text} graphPath={msg.graphPath} fallbackDiagram={msg.diagram} />
+                            ) : (
+                              msg.diagram && <MermaidDiagram chart={msg.diagram} />
+                            )}
                           </div>
                         )}
                         <BdslAvatar active={deafMode} text={msg.text} />
@@ -532,7 +666,7 @@ export default function LearnPage() {
           <div ref={bottomRef} />
         </main>
 
-        <div className="border-t border-forest/10 bg-cream/82 px-4 pb-4 pb-safe pt-3 backdrop-blur-xl">
+        <div className="glass-panel border-x-0 border-b-0 px-4 pb-4 pb-safe pt-3">
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <button
               onMouseDown={startRecording}
@@ -541,8 +675,8 @@ export default function LearnPage() {
               onTouchEnd={stopRecording}
               className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full ${
                 isRecording
-                  ? 'mic-recording scale-105 bg-saffron text-white shadow-lg shadow-saffron/20'
-                  : 'border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-saffron/35 hover:text-saffron'
+                  ? 'mic-recording scale-105 bg-gradient-to-br from-forest to-indigo text-white shadow-lg shadow-forest/25'
+                  : 'border border-white/60 bg-white/78 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest'
               }`}
               aria-label={isRecording ? 'Stop recording' : 'Start recording'}
             >
@@ -553,7 +687,7 @@ export default function LearnPage() {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={isOcrLoading}
-              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-forest/10 bg-white/88 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50"
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-white/60 bg-white/78 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50"
               aria-label="Upload textbook photo"
             >
               {isOcrLoading ? <Loader2 size={19} className="animate-spin" /> : <Camera size={19} />}
@@ -570,14 +704,14 @@ export default function LearnPage() {
                   }
                 }}
                 placeholder="বাংলায় প্রশ্ন লেখো... Enter চাপলে পাঠাবে"
-                className="bangla w-full resize-none rounded-2xl border border-forest/10 bg-white/92 px-4 py-3 pr-12 text-sm leading-relaxed shadow-sm focus:border-saffron/40 focus:outline-none"
+                className="bangla w-full resize-none rounded-[1.35rem] border border-white/70 bg-white/84 px-4 py-3 pr-12 text-sm leading-relaxed shadow-lg shadow-forest/5 backdrop-blur-xl focus:border-forest/35 focus:outline-none"
                 rows={1}
                 style={{ minHeight: 48, maxHeight: 160 }}
               />
               <button
                 onClick={() => sendMessage()}
                 disabled={!input.trim() || isLoading}
-                className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-saffron text-white shadow-sm hover:bg-saffron/90 disabled:opacity-30"
+                className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-forest to-indigo text-white shadow-sm hover:scale-105 disabled:opacity-30"
                 aria-label="Send question"
               >
                 <Send size={14} />

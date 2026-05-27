@@ -74,6 +74,20 @@ Free tier: 10,000 commands/day
 
 ---
 
+## Offline MVP Strategy
+
+For the BuildFest MVP, VoicePandita does **not** run an on-device local LLM such as Ollama or Llama 3 inside the PWA. That setup is too heavy for a mobile-first demo and can be unstable on low-end Android devices.
+
+Offline learning is demonstrated with:
+
+- Workbox/next-pwa offline app shell caching
+- pre-generated subject Q&A packs in the Learn page
+- graceful fallback answers when `navigator.onLine === false`
+
+Full local inference is a post-hackathon roadmap item, not part of the live MVP demo path.
+
+---
+
 ## Supabase Setup
 
 ```sql
@@ -98,8 +112,8 @@ python scripts/seed_curriculum.py
 | Database | Supabase PostgreSQL + pgvector | Free tier |
 | LLM | Gemini 1.5 Flash | Free (1,500 req/day) |
 | STT | Groq Whisper | Free (7,200s/day) |
-| TTS | Google Cloud TTS | Free (1M chars/month) |
-| Cache | Upstash Redis | Free |
+| TTS | Browser SpeechSynthesis fallback | Free |
+| Offline | Workbox cache + pre-generated Q&A packs | Free |
 | Deploy | Vercel | Free |
 
 **Total monthly cost at MVP: BDT 0**

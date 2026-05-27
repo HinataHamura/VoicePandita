@@ -37,42 +37,42 @@ export default function Sidebar({ open, onClose }: Props) {
     <AnimatePresence>
       {open && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-40 bg-ink/32 backdrop-blur-sm" />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-40 bg-slate-950/24 backdrop-blur-md" />
           <motion.aside
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed left-0 top-0 z-50 flex h-full w-72 flex-col border-r border-forest/10 bg-cream/95 shadow-2xl shadow-ink/12 backdrop-blur-xl"
+            className="glass-panel fixed left-0 top-0 z-50 flex h-full w-80 max-w-[86vw] flex-col border-r border-white/50"
           >
-            <div className="flex items-center justify-between border-b border-forest/10 p-5">
-              <span className="font-display font-bold text-xl">Voice<span className="text-saffron">Pandita</span></span>
-              <button onClick={onClose} className="rounded-lg border border-forest/10 bg-white/70 p-1.5 hover:bg-paper/80" aria-label="Close menu">
+            <div className="flex items-center justify-between border-b border-white/50 p-5">
+              <span className="font-display text-xl font-bold tracking-tight">Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span></span>
+              <button onClick={onClose} className="rounded-full border border-white/60 bg-white/70 p-2 shadow-sm hover:scale-105 hover:bg-white" aria-label="Close menu">
                 <X size={18} />
               </button>
             </div>
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
               {nav.map(item => (
-                <Link key={item.href} href={item.href} onClick={onClose} className="group flex items-center gap-3 rounded-lg p-3 hover:bg-white/70 hover:shadow-sm">
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-forest/8 group-hover:bg-saffron/10">
-                    <item.icon size={17} className="text-ink/60 group-hover:text-saffron" />
+                <Link key={item.href} href={item.href} onClick={onClose} className="group flex items-center gap-3 rounded-2xl p-3 hover:bg-white/72 hover:shadow-lg hover:shadow-forest/10">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-forest/12 to-aqua/18 group-hover:scale-105 group-hover:from-forest group-hover:to-indigo">
+                    <item.icon size={17} className="text-forest group-hover:text-white" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold group-hover:text-saffron">{item.label}</div>
+                    <div className="text-sm font-semibold group-hover:text-forest">{item.label}</div>
                     <div className="text-xs text-ink/40">{item.sub}</div>
                   </div>
                 </Link>
               ))}
             </nav>
-            <div className="border-t border-forest/10 p-4 space-y-3">
+            <div className="border-t border-white/50 p-4 space-y-3">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 rounded-lg p-3 text-clay font-medium hover:bg-red-50 transition-colors text-sm"
+                className="flex w-full items-center gap-3 rounded-2xl p-3 text-sm font-medium text-clay hover:bg-white/72"
               >
                 <LogOut size={18} />
                 <span>Log out</span>
               </button>
-              <div className="text-xs text-ink/35 text-center">Student-only MVP</div>
+              <div className="text-center text-xs text-ink/35">Calm AI learning space</div>
             </div>
           </motion.aside>
         </>

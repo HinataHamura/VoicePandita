@@ -15,7 +15,7 @@ export default function EmotionBadge({ emotion, small }: Props) {
   const c = cfg[emotion]
   if (!c) return null
   return (
-    <span className={`${c.cls} rounded-full px-2.5 py-0.5 font-medium bangla ${small ? 'text-xs' : 'text-xs'}`}>
+    <span className={`${c.cls} rounded-full px-3 py-1 font-semibold shadow-sm bangla ${small ? 'text-xs' : 'text-xs'}`}>
       {c.label}
     </span>
   )

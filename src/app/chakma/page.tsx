@@ -35,11 +35,11 @@ export default function ChakmaPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 border-b border-forest/10 bg-cream/82 px-4 py-4 backdrop-blur-xl">
+    <div className="ai-shell min-h-dvh">
+      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/learn" className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80">
+            <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white">
               <ArrowLeft size={18} />
             </Link>
             <div>
@@ -52,7 +52,7 @@ export default function ChakmaPage() {
           <button
             onClick={() => setOffline(v => !v)}
             className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-              offline ? 'border-clay/30 bg-clay/10 text-clay' : 'border-forest/10 bg-white/70 text-ink/55'
+              offline ? 'border-clay/30 bg-clay/10 text-clay' : 'border-white/60 bg-white/70 text-ink/55'
             }`}
           >
             {offline ? <WifiOff size={12} /> : <Wifi size={12} />}
@@ -81,7 +81,7 @@ export default function ChakmaPage() {
               <button
                 key={value}
                 onClick={() => setLanguage(value as 'ckm' | 'mrm' | 'gnk')}
-                className={`rounded-full border px-3 py-1.5 text-xs ${language === value ? 'border-forest bg-forest text-white' : 'border-forest/10 bg-white/80 text-ink/55'}`}
+                className={`rounded-full border px-3 py-1.5 text-xs ${language === value ? 'border-forest bg-gradient-to-r from-forest to-indigo text-white' : 'border-white/60 bg-white/80 text-ink/55'}`}
               >
                 {label}
               </button>
@@ -91,10 +91,10 @@ export default function ChakmaPage() {
             value={question}
             onChange={e => setQuestion(e.target.value)}
             placeholder="Mother tongue or Bangla question..."
-            className="bangla w-full resize-none rounded-lg border border-forest/10 bg-white/86 p-4 text-sm shadow-sm focus:border-saffron/40 focus:outline-none"
+            className="bangla w-full resize-none rounded-2xl border border-white/70 bg-white/86 p-4 text-sm shadow-sm focus:border-forest/40 focus:outline-none"
             rows={3}
           />
-          <button onClick={ask} disabled={loading || !question.trim()} className="mt-3 w-full rounded-lg bg-forest py-3 text-sm font-semibold text-white shadow-lg shadow-forest/18 hover:bg-forest/90 disabled:opacity-50">
+          <button onClick={ask} disabled={loading || !question.trim()} className="soft-button mt-3 w-full py-3 text-sm font-semibold disabled:opacity-50">
             {loading ? 'Bridge response তৈরি হচ্ছে...' : 'Ask EthnicAgent'}
           </button>
         </motion.section>

@@ -1,67 +1,62 @@
-'use client'
-
-import type { CurriculumChunk } from '@/types'
-
-const EMBEDDING_API_URL = process.env.NEXT_PUBLIC_TTS_URL || 'http://localhost:8001'
-
-async function generateEmbedding(text: string): Promise<number[] | null> {
+export async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    const response = await fetch(`${EMBEDDING_API_URL}/embeddings`, {
+    console.info('[VectorRAG] Generating embedding for question:', text)
+    const response = await fetch('/api/embeddings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     })
 
-    if (!response.ok) {
-      console.warn('[Embeddings] failed to generate embedding:', response.status)
-      return null
-    }
-
+    if (!response.ok) throw new Error(`Embeddings API error: ${response.status}`)
     const data = await response.json()
-    if (!Array.isArray(data.embedding)) {
-      console.warn('[Embeddings] invalid embedding payload', data)
-      return null
-    }
-
-    return data.embedding as number[]
-  } catch (error) {
-    console.warn('[Embeddings] error generating embedding', error)
-    return null
+    console.info('[VectorRAG] Embedding generated:', {
+      dimension: Array.isArray(data.embedding) ? data.embedding.length : 0,
+      source: data.source || 'unknown',
+    })
+    return data.embedding
+  } catch (e) {
+    console.error('[VectorRAG] Failed to generate embedding:', e)
+    return []
   }
 }
 
 export async function searchCurriculum(
   query: string,
   supabase: any,
-  similarityThreshold = 0.5,
-  matchCount = 3
-): Promise<Array<{ content: string; topic: string; similarity: number }>> {
-  const embedding = await generateEmbedding(query)
-  if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
-    return []
-  }
-
+  threshold = 0.5,
+  limit = 3
+) {
   try {
-    const { data, error } = await supabase
-      .from('curriculum_embeddings')
-      .select('id, content, subject, chapter, topic')
-      .filter('embedding', 'match', embedding)
-      .limit(matchCount)
-
-    if (error) {
-      console.warn('[Embeddings] supabase search error', error)
+    const embedding = await generateEmbedding(query)
+    if (!embedding.length) {
+      console.warn('[VectorRAG] No embedding generated for query')
       return []
     }
 
-    if (!Array.isArray(data)) return []
+    console.info('[VectorRAG] Calling Supabase RPC search_curriculum', { threshold, limit })
+    const { data, error } = await supabase.rpc('search_curriculum', {
+      query_embedding: embedding,
+      similarity_threshold: threshold,
+      match_count: limit,
+    })
 
-    return data.map((item: any) => ({
-      content: String(item.content || ''),
-      topic: String(item.topic || item.chapter || 'Curriculum'),
-      similarity: 0,
+    if (error) {
+      console.error('[VectorRAG] Curriculum search error:', error)
+      return []
+    }
+
+    const cleanData = (data || []).filter((chunk: any) =>
+      typeof chunk.content === 'string' &&
+      !chunk.content.trim().toLowerCase().startsWith('student question:')
+    ).map((chunk: any) => ({
+      ...chunk,
+      contextText: chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n'),
     }))
-  } catch (error) {
-    console.warn('[Embeddings] failed to search curriculum', error)
+
+    console.info(`[VectorRAG] Vector search found ${cleanData.length} curriculum chunks for question:`, query, cleanData)
+    return cleanData
+  } catch (e) {
+    console.error('[VectorRAG] Failed to search curriculum:', e)
     return []
   }
 }
