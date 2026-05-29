@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { getRequiredEnv } from '@/lib/supabase/env'
 
-const protectedRoutes = ['/onboarding', '/student-path', '/learn', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn']
+const protectedRoutes = ['/onboarding', '/student-path', '/learn', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn', '/docs/admin']
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } })
