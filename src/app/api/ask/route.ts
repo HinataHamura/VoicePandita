@@ -248,13 +248,13 @@ function extractJson(text: string) {
 function fallbackConceptDiagram(fallbackTitle: string) {
   const title = (fallbackTitle || 'Concept').replace(/[[\]{}|"`]/g, ' ').slice(0, 36)
   return `flowchart LR
-  A[${title}] --> B[Definition]
-  A --> C[Properties]
-  A --> D[Example]
-  B --> E[Why it happens]
+  A[${title}] --> B[সংজ্ঞা]
+  A --> C[বৈশিষ্ট্য]
+  A --> D[উদাহরণ]
+  B --> E[মূল কারণ]
   C --> E
-  D --> F[Real-life use]
-  E --> G[Key takeaway]
+  D --> F[বাস্তব ব্যবহার]
+  E --> G[মূল শিক্ষা]
   F --> G`
 }
 
@@ -328,7 +328,7 @@ Return ONLY valid JSON with this shape:
   "conceptTitle": "short concept title",
   "graphPath": ["Subject", "Chapter", "Topic", "Subtopic"],
   "answer": "Bangla answer, max 130 words, exact to the question, no unrelated concept",
-  "diagram": "valid Mermaid flowchart LR with 6-9 Bangla-labeled nodes; use at least one branch and one merge, not a straight chain"
+  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; use a natural concept-map shape with branches"
 }
 
 Rules:
@@ -341,7 +341,8 @@ Rules:
 - End answer with one Socratic follow-up question.
 - Do not invent fake textbook references.
 - Diagram must be a concept map, not A -> B -> C -> D only.
-- Good diagram shape: A[main concept] --> B[property]; A --> C[type]; A --> D[example]; B --> E[result]; C --> E.`
+- Do not add generic nodes like Question/Main idea unless those are truly the topic.
+- Good diagram shape: A[main concept] --> B[property]; A --> C[type]; A --> D[example]; C --> E[specific example].`
 
   const raw = await geminiText(prompt)
   if (!raw) throw new Error('Gemini unavailable')
@@ -379,7 +380,7 @@ Return ONLY valid JSON with this shape:
   "conceptTitle": "short English concept title",
   "graphPath": ["Subject", "Chapter/Unit", "Concept"],
   "answer": "Bangla answer, exact to the question, 4-6 clear sentences",
-  "diagram": "valid Mermaid flowchart LR with 6-9 Bangla-labeled nodes; include branches and at least one connection back to a shared result"
+  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; include natural branches"
 }
 
 Rules:
@@ -391,7 +392,7 @@ Rules:
 - Answer should usually be 70-130 words unless simple mode.
 - Diagram must not be generic like Question -> Cause -> Result -> Understand.
 - Diagram nodes must name the actual concept, types, examples, properties, or process steps.
-- Diagram must branch from one main concept into properties/types/examples and reconnect to one shared result.
+- Diagram must branch naturally from one main concept into properties/types/examples; do not force unrelated merge nodes.
 - Diagram must use this Mermaid style: graph LR\\n  A[মূল ধারণা] --> B[প্রকার]\\n  B --> C[উদাহরণ]
 - End with one Socratic follow-up question.`
 

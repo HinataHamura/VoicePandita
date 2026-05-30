@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 
 interface Props { chart: string }
 
-const FALLBACK_LABELS = ['Question', 'Main idea', 'Causes', 'Examples', 'Evidence', 'Pattern', 'Result', 'Check']
+const FALLBACK_LABELS = ['মূল ধারণা', 'সংজ্ঞা', 'বৈশিষ্ট্য', 'উদাহরণ', 'কারণ', 'প্রভাব', 'ব্যবহার', 'সারাংশ']
 
 function cleanLabel(value: string) {
   return value
@@ -53,27 +53,6 @@ function nodeIdsFromChart(source: string) {
   ])
 }
 
-function edgePairsFromChart(source: string) {
-  return Array.from(source.matchAll(/([A-Za-z][\w-]*)\s*(?:-->|---|-.->|==>)\s*([A-Za-z][\w-]*)/g))
-    .map(match => [match[1], match[2]] as const)
-}
-
-function isMostlyLinear(source: string) {
-  const edges = edgePairsFromChart(source)
-  if (edges.length < 4) return true
-
-  const outgoing = new Map<string, number>()
-  const incoming = new Map<string, number>()
-  for (const [from, to] of edges) {
-    outgoing.set(from, (outgoing.get(from) ?? 0) + 1)
-    incoming.set(to, (incoming.get(to) ?? 0) + 1)
-  }
-
-  const hasBranch = Array.from(outgoing.values()).some(count => count > 1)
-  const hasMerge = Array.from(incoming.values()).some(count => count > 1)
-  return !hasBranch && !hasMerge
-}
-
 function enrichClasses(source: string) {
   if (/classDef\s+/i.test(source)) return source
 
@@ -119,10 +98,6 @@ function sanitizeMermaid(source: string) {
     .join('\n')
 
   if (!/^(graph|flowchart)\s+(LR|TD|TB|RL|BT)\b/i.test(clean)) {
-    return conceptMap(labelsFromChart(clean))
-  }
-
-  if (isMostlyLinear(clean)) {
     return conceptMap(labelsFromChart(clean))
   }
 
