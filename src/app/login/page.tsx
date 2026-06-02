@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, hasBrowserSupabaseConfig } from '@/lib/supabase/client'
 import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent, startGuestStudent } from '@/lib/studentStore'
 
 const AFTER_LOGIN_PATH = '/profile'
@@ -28,6 +28,10 @@ export default function LoginPage() {
         startDemoStudent()
         router.push(AFTER_LOGIN_PATH)
         return
+      }
+
+      if (!hasBrowserSupabaseConfig()) {
+        throw new Error('Supabase env missing. Demo login বা Guest mode ব্যবহার করো, অথবা .env.local এ Supabase public keys দাও।')
       }
 
       if (isSignup) {
