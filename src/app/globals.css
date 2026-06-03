@@ -122,6 +122,10 @@ html.vp-dark body {
   color: #ECF6F1;
 }
 
+html.vp-dark {
+  color-scheme: dark;
+}
+
 html.vp-dark body::before {
   background-image:
     linear-gradient(rgba(236,246,241,0.055) 1px, transparent 1px),
@@ -142,18 +146,65 @@ html.vp-dark [class*="bg-black/"] { background-color: rgba(236, 246, 241, 0.1) !
 html.vp-dark [class*="border-forest"],
 html.vp-dark [class*="border-black"] { border-color: rgba(141, 181, 172, 0.2) !important; }
 html.vp-dark [class*="text-ink"] { color: #ECF6F1 !important; }
-html.vp-dark .text-ink\/75 { color: rgba(236, 246, 241, 0.78) !important; }
+html.vp-dark [class*="text-slate-9"],
+html.vp-dark [class*="text-slate-8"] { color: #F8FFFB !important; }
+html.vp-dark [class*="text-slate-7"],
+html.vp-dark [class*="text-slate-6"] { color: rgba(236, 246, 241, 0.82) !important; }
+html.vp-dark [class*="text-transparent"] {
+  color: #8EA2FF !important;
+  -webkit-text-fill-color: #8EA2FF;
+}
+html.vp-dark .text-ink\/75,
+html.vp-dark .text-ink\/76 { color: rgba(236, 246, 241, 0.9) !important; }
 html.vp-dark .text-ink\/65,
 html.vp-dark .text-ink\/64,
-html.vp-dark .text-ink\/60 { color: rgba(236, 246, 241, 0.66) !important; }
+html.vp-dark .text-ink\/62,
+html.vp-dark .text-ink\/60 { color: rgba(236, 246, 241, 0.78) !important; }
 html.vp-dark .text-ink\/58,
 html.vp-dark .text-ink\/55,
 html.vp-dark .text-ink\/54,
-html.vp-dark .text-ink\/50 { color: rgba(236, 246, 241, 0.58) !important; }
+html.vp-dark .text-ink\/50 { color: rgba(236, 246, 241, 0.7) !important; }
 html.vp-dark .text-ink\/45,
 html.vp-dark .text-ink\/40,
 html.vp-dark .text-ink\/35,
-html.vp-dark .text-ink\/30 { color: rgba(236, 246, 241, 0.44) !important; }
+html.vp-dark .text-ink\/30 { color: rgba(236, 246, 241, 0.6) !important; }
+html.vp-dark [class*="text-forest"] { color: #9BA8FF !important; }
+html.vp-dark [class*="text-indigo"] { color: #C4CBFF !important; }
+html.vp-dark [class*="text-saffron"],
+html.vp-dark [class*="text-orange"] { color: #FFC08A !important; }
+html.vp-dark [class*="text-clay"],
+html.vp-dark [class*="text-red"] { color: #FFA39A !important; }
+html.vp-dark [class*="text-cyan"] { color: #9DEEF2 !important; }
+html.vp-dark [class*="bg-forest/"],
+html.vp-dark [class*="bg-indigo/"],
+html.vp-dark [class*="bg-aqua/"],
+html.vp-dark [class*="bg-saffron/"] {
+  background-color: rgba(143, 161, 255, 0.16) !important;
+}
+html.vp-dark [class*="from-white"],
+html.vp-dark [class*="via-white"],
+html.vp-dark [class*="to-white"],
+html.vp-dark [class*="from-sky"],
+html.vp-dark [class*="from-cyan"],
+html.vp-dark [class*="via-emerald"],
+html.vp-dark [class*="to-slate"],
+html.vp-dark [class*="to-orange"] {
+  --tw-gradient-from: rgba(14, 28, 25, 0.96) var(--tw-gradient-from-position) !important;
+  --tw-gradient-via: rgba(20, 43, 38, 0.9) var(--tw-gradient-via-position) !important;
+  --tw-gradient-to: rgba(26, 51, 45, 0.9) var(--tw-gradient-to-position) !important;
+}
+html.vp-dark .soft-button {
+  border-color: rgba(236, 246, 241, 0.28) !important;
+  background: rgba(20, 43, 38, 0.88) !important;
+  color: #F8FFFB !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+html.vp-dark .badge-confident,
+html.vp-dark .badge-confused,
+html.vp-dark .badge-frustrated {
+  background: rgba(143, 161, 255, 0.16);
+  color: #F8FFFB;
+}
 html.vp-dark input,
 html.vp-dark textarea,
 html.vp-dark select {
