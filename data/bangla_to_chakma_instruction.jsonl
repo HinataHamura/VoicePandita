@@ -1,0 +1,50 @@
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "তা কেমন করে ?", "output": "𑄥𑄨𑄠𑄚𑄴 𑄈𑄬𑄚𑄨𑄇𑄴𑄇𑄬 𑄉𑄧𑄢𑄨 ?", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "সহৃদয়", "output": "𑄌𑄨𑄖𑄴 𑄘𑄨𑄊𑄮𑄣𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "সুপ্রভাত", "output": "𑄌𑄨𑄎𑄨 𑄝𑄨𑄚𑄳𑄚𑄬", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "শিক্ষার হার", "output": "𑄥𑄨𑄇𑄴𑄈𑄬 𑄦𑄢𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "থাকা", "output": "𑄗𑄚", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "বাম দিকে ঘুরুন ।", "output": "𑄝𑄟𑄬𑄚𑄴𑄘𑄨 𑄊𑄪𑄢𑄴 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "উন্মুক্ত করা", "output": "𑄝𑄬𑄉𑄧𑄖𑄳𑄠𑄬𑄃𑄨 𑄈𑄪𑄣𑄨 𑄘𑄬𑄚", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "কীভাবে এটা করতে পারলেন ?", "output": "𑄇𑄨𑄋𑄨𑄢𑄨 𑄃𑄨𑄠𑄚𑄴 𑄉𑄧𑄢𑄨 𑄛𑄢𑄴𑄣𑄬 ?", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "স্বতন্ত্র স্তরগুলো পাতলা বা পুরু হতে পারে ।", "output": "𑄈𑄪𑄣𑄧𑄟𑄬𑄣 𑄇𑄧𑄛𑄴 𑄛𑄘𑄧𑄣𑄴 𑄃 𑄘𑄋𑄧𑄢𑄴 𑄃𑄧𑄃𑄨 𑄛𑄢𑄬 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "তোমার কন্ঠস্বর কি ঠিক করা হয়েছে ?", "output": "𑄖𑄧 𑄢𑄧𑄝𑄳𑄠𑄪 𑄇𑄨 𑄒𑄨𑄇𑄴 𑄉𑄧𑄢 𑄦𑄪𑄠𑄬𑄘𑄬 ?", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "শলা পরামর্শ", "output": "𑄥𑄧𑄣𑄴𑄣", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "সুবিধাজনক", "output": "𑄘𑄨𑄏𑄬𑄢𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "টম সারা রাত কেঁদেছিলেন ।", "output": "𑄑𑄧𑄟𑄬 𑄉𑄮𑄘 𑄢𑄬𑄖𑄴𑄮 𑄇𑄚𑄳𑄠𑄧 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "গ ) প্রতিবন্ধী ব্যক্তিদের সক্ষমতা ও অবদান সম্পর্কে সচেতনতা তৈরি করবে ; এ লক্ষ্যে গৃহীত ব্যবস্থাদির মধ্যে থাকবে \"", "output": "𑄉 ) 𑄛𑄳𑄢𑄧𑄖𑄨𑄝𑄧𑄚𑄴𑄙𑄨 𑄟𑄚𑄬𑄠𑄮𑄢𑄴 𑄝𑄧𑄣𑄴 𑄃𑄮 𑄃𑄧𑄝𑄧𑄘𑄚𑄴 𑄛𑄰𑄘𑄳𑄠𑄚𑄬 𑄥𑄧𑄎𑄇𑄴 𑄦𑄧𑄝𑄧 ; 𑄃𑄬𑄣𑄧𑄉𑄴𑄚𑄬 𑄉𑄳𑄢𑄨𑄇𑄨𑄖𑄧 𑄝𑄳𑄠𑄝𑄥𑄴𑄗𑄘𑄨𑄢𑄴 𑄟𑄙𑄳𑄠 𑄗𑄬𑄝𑄧", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "অনুচ্ছেদ -২৫", "output": "𑄃𑄧𑄚𑄪𑄌𑄴𑄍𑄬𑄘𑄴 - 𑄸𑄻", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "ক ) ব্যক্তি হিসেবে তাদের স্বাধীনতা ও নিরাপত্তার অধিকার উপভোগ করে ;", "output": "𑄇 ) 𑄟𑄚𑄬𑄠𑄴𑄦𑄨𑄎𑄬𑄝𑄬 𑄖𑄢𑄴 𑄥𑄙𑄨𑄚𑄧𑄖 𑄃𑄮 𑄚𑄨𑄢𑄛𑄧𑄖𑄴𑄖 𑄃𑄧𑄙𑄨𑄇𑄢𑄴 𑄃𑄪𑄛𑄧𑄞𑄮𑄉𑄴 𑄉𑄧𑄢𑄬 ;", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "আমার জন্য কোন মেইল আছে ?", "output": "𑄟𑄧𑄢𑄧𑄖𑄴𑄖𑄬𑄃𑄨 𑄈𑄧𑄚𑄮 𑄟𑄬𑄃𑄨𑄣𑄴 𑄃𑄉𑄬 𑄚𑄨 ?", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "সজারু", "output": "𑄇𑄪𑄘𑄪𑄇𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "আরে , বুঝলেন ?", "output": "𑄖𑄬 , 𑄝𑄪𑄏𑄨𑄣𑄬 ?", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "৭২ পদাতিক ব্রিগেড", "output": "𑄷𑄸 𑄛𑄧𑄘𑄖𑄨𑄇𑄴 𑄝𑄳𑄢𑄨𑄉𑄬𑄘𑄴 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "একটি বাছিয়া লত্তয়া", "output": "𑄃𑄬𑄇𑄴𑄈𑄚𑄴 𑄝𑄨𑄌𑄴𑄮𑄚𑄴 𑄣𑄧𑄚", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "ধার", "output": "𑄛𑄎𑄢", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "তাই আমি তোমাকে দণ্ডিত করছি ,", "output": "𑄥𑄬𑄚𑄬 𑄖𑄧𑄢𑄬 𑄟𑄪𑄭 𑄥𑄬𑄎 𑄘𑄪𑄠𑄧𑄁 ,", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "ফুলের মালা", "output": "𑄦𑄣𑄧 𑄥𑄧𑄢", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "স্মরণে রাখা", "output": "𑄃𑄨𑄙𑄮𑄖𑄴 𑄉𑄙𑄬 𑄢𑄊𑄧", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "এছাড়াও স্বাস্থ্য অধিকার , প্রতিবন্ধী নারীর অধিকার বিষয়ক ধারাসহ সনদের ভূমিকা একটি অনুচ্ছেদে অবদান রাখে বাংলাদেশ", "output": "𑄃𑄨𑄠𑄚𑄴 𑄝𑄘𑄬𑄠𑄪 𑄥𑄥𑄴𑄗𑄳𑄠 𑄃𑄧𑄙𑄨𑄇𑄢𑄴 , 𑄛𑄳𑄢𑄧𑄖𑄨𑄝𑄧𑄚𑄴𑄙𑄨 𑄟𑄨𑄣𑄬𑄠𑄪𑄚𑄧𑄢𑄴 𑄃𑄧𑄙𑄨𑄇𑄢𑄴 𑄥𑄧𑄚𑄧𑄘𑄧𑄖𑄴 𑄃𑄚𑄨𑄝𑄖𑄳𑄠𑄬 𑄝𑄁𑄣𑄘𑄬𑄥𑄴 𑄥𑄧𑄢𑄴𑄇𑄢𑄬 𑄃𑄧𑄝𑄘𑄚𑄴 𑄢𑄉𑄬𑄠𑄬 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "তুমি কিছু দেখলে , হর্নটা দুইবার বাজাবে ।", "output": "𑄖𑄪𑄃𑄨 𑄎𑄨𑄠𑄬𑄚𑄴𑄛𑄃𑄨 𑄘𑄬𑄊𑄨𑄣𑄬 ,𑄘𑄨 𑄛𑄧𑄣𑄴𑄣 𑄈𑄧𑄢𑄧𑄚𑄴𑄪 𑄓𑄧𑄉𑄧𑄢𑄬𑄝𑄬 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "সৌরভ শুকলা - ইনস্পেক্টর সুধাংশু দত্ত", "output": "𑄥𑄧𑄭𑄢𑄧𑄞𑄴 𑄥𑄪𑄇𑄴𑄣 𑄃𑄨𑄚𑄴𑄥𑄴𑄛𑄬𑄇𑄴𑄑𑄧𑄢𑄴 𑄥𑄪𑄙𑄁𑄥𑄪 𑄘𑄧𑄖𑄴𑄧 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "মামলাটা খালাস হয়ে গেছে ।", "output": "𑄟𑄟𑄣𑄠𑄚𑄴 𑄗𑄪𑄟𑄴 𑄦𑄧𑄃𑄨 𑄎𑄨𑄠𑄬 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "বাসন", "output": "𑄎𑄟𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "এই মেমোটি পরিবর্তন করা হয়েছে ।", "output": "𑄃𑄬 𑄟𑄬𑄟𑄮𑄃𑄚𑄴 𑄝𑄧𑄘𑄧𑄣𑄬 𑄛𑄬𑄣𑄴𑄮𑄚𑄴 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "এটা সত্যি সুন্দর", "output": "𑄃𑄨𑄠𑄚𑄴 𑄃𑄧𑄟𑄧𑄘𑄮 𑄘𑄮𑄣𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "অনুমতি নিয়ে ব্যবহার করা হয়েছে ।", "output": "𑄦𑄪𑄟𑄴 𑄚𑄨𑄚𑄬𑄃𑄨 𑄣𑄢𑄴𑄌𑄢𑄴 𑄉𑄧𑄢𑄚 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "নিপীড়ন করা", "output": "𑄇𑄧𑄎𑄧𑄣 𑄇𑄝𑄚", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "আপনি কি নিয়মিত ব্যায়াম করেন ?", "output": "𑄖𑄪𑄃𑄨 𑄈𑄨 𑄘𑄨𑄟𑄴𑄟𑄖𑄴𑄖𑄬 𑄝𑄬𑄠𑄟𑄴 𑄉𑄧𑄢𑄧𑄎𑄴 ?", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "কাশির শব্দ", "output": "𑄈𑄪𑄇𑄴𑄇𑄪𑄣𑄪𑄁 𑄈𑄪𑄇𑄴𑄇𑄪𑄦𑄳𑄣𑄪𑄁", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "নিয়ে আসা", "output": "𑄈𑄧𑄎", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "রাঁধা", "output": "𑄢𑄚𑄚𑄳𑄦", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "যা", "output": "𑄎𑄨𑄠𑄳𑄦𑄬𑄚𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "আপনার বাচ্চারা খুব ভাল আচরণ করে ।", "output": "𑄖𑄧 𑄛𑄮𑄝𑄃𑄪𑄚𑄴 𑄘𑄧 𑄥𑄨𑄞𑄨𑄣𑄴 𑄃𑄉𑄧𑄚𑄴 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "বাঁকা", "output": "𑄛𑄘𑄢𑄳𑄦𑄨", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "বলিষ্ঠ", "output": "𑄝𑄚𑄴 𑄝𑄚𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "পিসী", "output": "𑄛𑄨𑄎𑄬𑄋𑄳𑄦", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "শাপশাপান্ত", "output": "𑄈𑄧𑄟𑄴𑄝𑄨𑄇𑄴", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "(৪ পৃষ্ঠার চিত্র )", "output": "( 𑄺 𑄛𑄘𑄢𑄴 𑄍𑄧𑄝𑄨 )", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "ফরাসি ভাষা এবং সাহিত্যে বিভাগ", "output": "𑄜𑄳𑄢𑄚𑄴𑄥𑄨 𑄞𑄌𑄴 𑄃𑄢𑄴 𑄥𑄦𑄨𑄖𑄳𑄠𑄧 𑄇𑄬𑄣 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "কৃশ", "output": "𑄈𑄬𑄋𑄬𑄘", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "অবশেষে বাইবেলের সত্য বোঝা", "output": "𑄝𑄬𑄉𑄧𑄎𑄬𑄢𑄬 𑄝𑄃𑄨𑄝𑄬𑄣𑄧𑄢𑄴 𑄥𑄧𑄖𑄳𑄠𑄧 𑄝𑄪𑄏𑄧𑄚 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "দ্বিতীয় তলায় ।", "output": "𑄘𑄪𑄃𑄨 𑄖𑄣𑄖𑄴 ।", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}
+{"instruction": "Translate or explain this Bangla text in Chakma.", "input": "দামাদামি", "output": "𑄟𑄪𑄣𑄮𑄟𑄪𑄣𑄨", "source_dataset": "amlan107/chakma-nmt-base-parallel-dev-set"}

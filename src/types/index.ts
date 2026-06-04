@@ -1,8 +1,9 @@
 export type Subject = 'physics' | 'chemistry' | 'biology' | 'math' | 'bangla' | 'english'
-export type OutputMode = 'whiteboard' | 'animation'
+export type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 export type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
 export type EmotionState = 'confident' | 'confused' | 'frustrated'
-export type Language = 'bn' | 'ckm' | 'mrm' | 'gnk'
+export type Language = 'bn' | 'ccp' | 'ckm' | 'mrm' | 'gnk'
+export type TargetLanguage = 'Bangla' | 'Chakma' | 'Marma' | 'Garo'
 export type UserLevel = 'ssc' | 'hsc'
 export type StudentGoal = 'board' | 'admission'
 export type StudyGroup = 'science' | 'humanities' | 'business'
@@ -31,6 +32,7 @@ export interface AskRequest {
   outputMode: OutputMode
   emotion?:   EmotionState | null
   language?:  Language
+  selected_target_language?: TargetLanguage
 }
 
 export interface AskResponse {
@@ -38,6 +40,8 @@ export interface AskResponse {
   diagram?:        string | null
   animationKey?:    AnimationKey | null
   detectedEmotion: EmotionState
+  detectedLanguage?: string
+  selectedTargetLanguage?: TargetLanguage
 }
 
 export interface CurriculumChunk {

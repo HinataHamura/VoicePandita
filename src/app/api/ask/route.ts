@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import Groq from 'groq-sdk'
+import {
+  formatChakmaExamples,
+  prepareChakmaBridge,
+  selectChakmaExamples,
+  translateBanglaWithDataset,
+  type ChakmaBridgeContext,
+} from '@/lib/chakmaBridge'
+import {
+  detectInputLanguage,
+  normalizeTargetLanguage,
+  targetLanguageToCode,
+  type TargetLanguage,
+} from '@/lib/multilingualSupport'
+import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/marmaBridge'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
 type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
@@ -8,8 +21,7 @@ type EmotionState = 'confident' | 'confused' | 'frustrated'
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
-const groqKey = process.env.GROQ_API_KEY?.trim()
-const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000)
 
 const LESSONS = {
   newton_second_law: {
@@ -109,7 +121,7 @@ function selectedAnimationKey(question: string, mode: OutputMode, lessonKey: Les
   if (lessonKey === 'newton_second_law' || lessonKey === 'photosynthesis') return lessonKey
 
   const normalized = question.toLowerCase()
-  if (/(খনিজ|খনিজ|mineral|khonij|crystal)/i.test(normalized)) return 'minerals'
+  if (/(খনিজ|ধনিজ|mineral|khonij|crystal)/i.test(normalized)) return 'minerals'
   if (/(photosynthesis|সালোক|chlorophyll|co2|oxygen)/i.test(normalized)) return 'photosynthesis'
   if (/(newton|2nd law|second law|f\s*=\s*ma|force)/i.test(normalized)) return 'newton_second_law'
 
@@ -166,75 +178,94 @@ function answerFromLesson(lessonKey: LessonKey, mode: OutputMode, emotion: Emoti
   return `${introFor(emotion)} ${cultural}${lesson.facts.join(' ')} Socratic check: এই concept বুঝতে কোন আগের ধারণাটা জানা দরকার?`
 }
 
-function unknownQuestionFallback(question: string, selectedSubject: string, emotion: EmotionState) {
-  const intro = introFor(emotion)
-  return `${intro} এই প্রশ্নের জন্য নির্ভরযোগ্য curriculum context পাচ্ছি না, তাই ভুল concept ধরে উত্তর দিচ্ছি না। প্রশ্নটা "${question.slice(0, 80)}"। যদি এটা তরলের চাপ/প্রবাহ নিয়ে হয়, মূল ধারণা হলো: তরল পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়, আর গভীরতা বাড়লে চাপ বাড়ে। তুমি কি "তরলের চাপ" বোঝাতে চেয়েছ, নাকি "তরলের প্রবাহ"?`
-}
-
-function directFallbackAnswer(question: string, emotion: EmotionState) {
-  const intro = introFor(emotion)
-  return `${intro} প্রশ্নটা "${question.slice(0, 80)}"। যদি এটা তরলের চাপ/প্রবাহ নিয়ে হয়, মূল ধারণা হলো: তরল পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়, আর গভীরতা বাড়লে চাপ বাড়ে। তরল সবদিকে চাপ প্রয়োগ করে, তাই পাত্রের আকার ও গভীরতা চাপের প্রভাব বদলায়। তুমি কি "তরলের চাপ" বোঝাতে চেয়েছ, নাকি "তরলের প্রবাহ"?`
-}
-
-function safeFallbackAnswer(question: string, emotion: EmotionState) {
-  const intro = introFor(emotion)
-  const normalized = question.toLowerCase()
-
-  if (/খনিজ|ধনিজ|mineral/.test(normalized)) {
-    return `${intro} খনিজ পদার্থ হলো মাটি বা ভূ-পৃষ্ঠের নিচ থেকে পাওয়া প্রাকৃতিক পদার্থ, যেগুলো মানুষের কাজে লাগে। উদাহরণ: লোহা, তামা, সোনা, রূপা, কয়লা, চুনাপাথর, লবণ, প্রাকৃতিক গ্যাস ও পেট্রোলিয়াম। এগুলো দিয়ে ঘরবাড়ি, যন্ত্রপাতি, গয়না, জ্বালানি ও রাসায়নিক দ্রব্য তৈরি করা হয়। Socratic check: খনিজ পদার্থের মধ্যে কোনগুলো জ্বালানি হিসেবে ব্যবহার হয়?`
-  }
-
-  if (/তরল|liquid|fluid/.test(normalized)) {
-    return `${intro} তরল পদার্থের নির্দিষ্ট আয়তন থাকে, কিন্তু নির্দিষ্ট আকার থাকে না; যে পাত্রে রাখা হয় তার আকার ধারণ করে। পানি, তেল, দুধ, কেরোসিন এগুলো তরল পদার্থের উদাহরণ। তরল সহজে প্রবাহিত হয় এবং পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়। Socratic check: পানি গ্লাসে রাখলে কেন গ্লাসের আকার নেয়?`
-  }
-
-  return `${intro} প্রশ্নটা "${question.slice(0, 80)}"। সহজভাবে বললে, এই প্রশ্নের মূল শব্দগুলো আগে চিহ্নিত করতে হবে, তারপর সংজ্ঞা, উদাহরণ এবং ব্যবহার লিখতে হবে। তুমি প্রশ্নটা আরেকটু নির্দিষ্ট করে লিখলে আমি exact chapter অনুযায়ী উত্তর সাজিয়ে দেব। Socratic check: প্রশ্নে কোন শব্দটা সবচেয়ে গুরুত্বপূর্ণ মনে হচ্ছে?`
-}
-
-function safeFallbackGraphPath(question: string, selectedSubject: string) {
-  const normalized = question.toLowerCase()
-  if (/খনিজ|ধনিজ|mineral/.test(normalized)) return ['Geography', 'Natural Resources', 'Minerals']
-  if (/তরল|liquid|fluid/.test(normalized)) return ['Physics', 'Matter', 'Liquid']
-  return [selectedSubject || 'Curriculum', 'General Question']
-}
-
 async function geminiText(prompt: string) {
+  if (!genAI) return null
+
   const requested = process.env.GEMINI_MODEL?.trim()
   const models = requested
     ? [requested, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
     : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
 
   let lastError: unknown = null
-  if (genAI) {
-    for (const modelName of models) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName })
-        const result = await model.generateContent(prompt)
-        return result.response.text().trim()
-      } catch (err) {
-        lastError = err
-        console.warn(`/api/ask Gemini model failed: ${modelName}`, err instanceof Error ? err.message : err)
-      }
-    }
-  }
-
-  if (groq) {
+  for (const modelName of models) {
     try {
-      const result = await groq.chat.completions.create({
-        model: process.env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 700,
-      })
-      return result.choices[0]?.message?.content?.trim() || null
+      const model = genAI.getGenerativeModel({ model: modelName })
+      const result = await withTimeout(model.generateContent(prompt), GEMINI_TIMEOUT_MS, modelName)
+      return result.response.text().trim()
     } catch (err) {
       lastError = err
-      console.warn('/api/ask Groq fallback failed:', err instanceof Error ? err.message : err)
+      console.warn(`/api/ask Gemini model failed: ${modelName}`, err instanceof Error ? err.message : err)
     }
   }
 
-  if (!lastError) return null
   throw lastError
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timer = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  })
+
+  return Promise.race([promise, timer]).finally(() => {
+    if (timeout) clearTimeout(timeout)
+  })
+}
+
+async function translateChakmaQuestionWithGemini(question: string, bridge: ChakmaBridgeContext) {
+  if (!bridge.enabled || bridge.detectedLanguage !== 'ccp') return bridge.questionForTutor
+  if (bridge.inputMatch && bridge.inputMatch.score >= 0.82) return bridge.questionForTutor
+
+  const prompt = `You are translating a student question from Chakma to Bangla for VoicePandita.
+Use the parallel Chakma/Bangla examples from the Hugging Face dataset as guidance.
+
+Examples:
+${formatChakmaExamples(bridge.examples)}
+
+Chakma student question:
+${question}
+
+Return ONLY the Bangla translation. Do not answer the question. Preserve formulas and English scientific terms.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translated?.trim() || bridge.questionForTutor
+  } catch (err) {
+    console.warn('/api/ask Chakma question translation failed', err instanceof Error ? err.message : err)
+    return bridge.questionForTutor
+  }
+}
+
+async function translateBanglaAnswerToChakma(answer: string, bridge: ChakmaBridgeContext) {
+  if (!bridge.enabled) return answer
+
+  const datasetFallback = translateBanglaWithDataset(answer, bridge.pairs)
+  const answerExamples = selectChakmaExamples(answer, bridge.pairs, 16)
+
+  if (!genAI) return datasetFallback
+
+  const prompt = `Translate this Bangla tutoring answer into Chakma language using Chakma script (ISO 639-3: ccp).
+Use the parallel examples from the Hugging Face dataset as style and vocabulary guidance.
+
+Examples:
+${formatChakmaExamples(answerExamples)}
+
+Bangla answer:
+${answer}
+
+Rules:
+- Return ONLY the Chakma translation.
+- Preserve formulas, symbols, English science terms, and Mermaid-independent wording.
+- Keep the Socratic follow-up question as a question in Chakma.
+- If a school term has no reliable Chakma equivalent, keep that term in Bangla/English inside the Chakma sentence.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translateBanglaWithDataset(translated?.trim() || datasetFallback, bridge.pairs)
+  } catch (err) {
+    console.warn('/api/ask Chakma answer translation failed', err instanceof Error ? err.message : err)
+    return datasetFallback
+  }
 }
 
 function extractJson(text: string) {
@@ -245,33 +276,238 @@ function extractJson(text: string) {
   return JSON.parse(cleaned.slice(start, end + 1))
 }
 
-function fallbackConceptDiagram(fallbackTitle: string) {
-  const title = (fallbackTitle || 'Concept').replace(/[[\]{}|"`]/g, ' ').slice(0, 36)
-  return `flowchart LR
-  A[${title}] --> B[সংজ্ঞা]
-  A --> C[বৈশিষ্ট্য]
-  A --> D[উদাহরণ]
-  B --> E[মূল কারণ]
-  C --> E
-  D --> F[বাস্তব ব্যবহার]
-  E --> G[মূল শিক্ষা]
-  F --> G`
-}
-
 function safeDiagram(value: unknown, fallbackTitle: string) {
   if (typeof value === 'string' && /^(graph|flowchart)\s+/i.test(value.trim())) return value.trim()
-  return fallbackConceptDiagram(fallbackTitle)
+  return `graph LR\n  A[প্রশ্ন] --> B[${fallbackTitle || 'Concept'}]\n  B --> C[কারণ]\n  C --> D[ফলাফল]\n  D --> E[বোঝা]`
 }
 
-function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
-  const normalized = question.toLowerCase()
-  if (/খনিজ|ধনিজ|mineral/.test(normalized)) {
-    return 'graph LR\n  A[প্রাকৃতিক উৎস] --> B[খনিজ পদার্থ]\n  B --> C[ধাতব খনিজ]\n  B --> D[অধাতব খনিজ]\n  B --> E[জ্বালানি খনিজ]\n  C --> F[লোহা ও তামা]\n  D --> G[লবণ ও চুনাপাথর]\n  E --> H[কয়লা ও গ্যাস]'
+const BANGLA_TO_MARMA_SCRIPT: Record<string, string> = {
+  অ: 'အ',
+  আ: 'အာ',
+  ই: 'ဣ',
+  ঈ: 'ဤ',
+  উ: 'ဥ',
+  ঊ: 'ဦ',
+  ঋ: 'ရီ',
+  এ: 'အေ',
+  ঐ: 'အိုက်',
+  ও: 'အို',
+  ঔ: 'အောက်',
+  ক: 'က',
+  খ: 'ခ',
+  গ: 'ဂ',
+  ঘ: 'ဃ',
+  ঙ: 'င',
+  চ: 'စ',
+  ছ: 'ဆ',
+  জ: 'ဇ',
+  ঝ: 'ဈ',
+  ঞ: 'ည',
+  ট: 'တ',
+  ঠ: 'ထ',
+  ড: 'ဒ',
+  ঢ: 'ဓ',
+  ণ: 'န',
+  ত: 'တ',
+  থ: 'သ',
+  দ: 'ဒ',
+  ধ: 'ဓ',
+  ন: 'န',
+  প: 'ပ',
+  ফ: 'ဖ',
+  ব: 'ဗ',
+  ভ: 'ဘ',
+  ম: 'မ',
+  য: 'ယ',
+  র: 'ရ',
+  ল: 'လ',
+  শ: 'ရှ',
+  ষ: 'ရှ',
+  স: 'စ',
+  হ: 'ဟ',
+  ড়: 'ရ',
+  ঢ়: 'ရ',
+  য়: 'ယ',
+  '়': '',
+  'ং': 'ံ',
+  'ঃ': 'း',
+  'ঁ': 'ံ',
+  'া': 'ာ',
+  'ি': 'ိ',
+  'ী': 'ီ',
+  'ু': 'ု',
+  'ূ': 'ူ',
+  'ৃ': 'ြိ',
+  'ে': 'ေ',
+  'ৈ': 'ိုင်',
+  'ো': 'ို',
+  'ৌ': 'ေါ',
+  '্': '်',
+  '০': '၀',
+  '১': '၁',
+  '২': '၂',
+  '৩': '၃',
+  '৪': '၄',
+  '৫': '၅',
+  '৬': '၆',
+  '৭': '၇',
+  '৮': '၈',
+  '৯': '၉',
+  '।': '။',
+}
+
+const BANGLA_TO_LATIN_SCRIPT: Record<string, string> = {
+  অ: 'a',
+  আ: 'a',
+  ই: 'i',
+  ঈ: 'i',
+  উ: 'u',
+  ঊ: 'u',
+  ঋ: 'ri',
+  এ: 'e',
+  ঐ: 'oi',
+  ও: 'o',
+  ঔ: 'ou',
+  ক: 'k',
+  খ: 'kh',
+  গ: 'g',
+  ঘ: 'gh',
+  ঙ: 'ng',
+  চ: 'ch',
+  ছ: 'chh',
+  জ: 'j',
+  ঝ: 'jh',
+  ঞ: 'ny',
+  ট: 't',
+  ঠ: 'th',
+  ড: 'd',
+  ঢ: 'dh',
+  ণ: 'n',
+  ত: 't',
+  থ: 'th',
+  দ: 'd',
+  ধ: 'dh',
+  ন: 'n',
+  প: 'p',
+  ফ: 'ph',
+  ব: 'b',
+  ভ: 'bh',
+  ম: 'm',
+  য: 'y',
+  র: 'r',
+  ল: 'l',
+  শ: 'sh',
+  ষ: 'sh',
+  স: 's',
+  হ: 'h',
+  ড়: 'r',
+  ঢ়: 'rh',
+  য়: 'y',
+  '়': '',
+  'ং': 'ng',
+  'ঃ': 'h',
+  'ঁ': 'n',
+  'া': 'a',
+  'ি': 'i',
+  'ী': 'i',
+  'ু': 'u',
+  'ূ': 'u',
+  'ৃ': 'ri',
+  'ে': 'e',
+  'ৈ': 'oi',
+  'ো': 'o',
+  'ৌ': 'ou',
+  '্': '',
+  '০': '0',
+  '১': '1',
+  '২': '2',
+  '৩': '3',
+  '৪': '4',
+  '৫': '5',
+  '৬': '6',
+  '৭': '7',
+  '৮': '8',
+  '৯': '9',
+  '।': '.',
+}
+
+const GARO_TERM_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/সালোকসংশ্লেষণ/g, 'photosynthesis'],
+  [/উদ্ভিদ/g, 'sam bolrang'],
+  [/আলো/g, 'salni teng.su'],
+  [/পানি/g, 'chi'],
+  [/অক্সিজেন/g, 'oxygen'],
+  [/গ্লুকোজ/g, 'glucose'],
+  [/খাদ্য/g, 'cha.aniko'],
+  [/কার্বন ডাই-অক্সাইড|CO2/g, 'CO2'],
+  [/ক্লোরোফিল/g, 'chlorophyll'],
+  [/বল/g, 'bil'],
+  [/ভর/g, 'jrimani'],
+  [/ত্বরণ/g, 'ta.rake re.ani'],
+  [/গতি/g, 're.ani'],
+  [/ধাতু/g, 'metal'],
+  [/অধাতু/g, 'non-metal'],
+  [/ইলেকট্রন/g, 'electron'],
+  [/আয়ন/g, 'ion'],
+  [/বন্ধন/g, 'bond'],
+  [/আকর্ষণ/g, 'salnapani'],
+  [/প্রশ্ন/g, 'sing.aniko'],
+  [/কারণ/g, 'a.sel'],
+  [/ফলাফল/g, 'bite'],
+  [/বোঝা/g, 'ma.siani'],
+  [/সূত্র/g, 'formula'],
+  [/যাচাই/g, 'nirokani'],
+  [/উদাহরণ/g, 'mesokani'],
+  [/ব্যাখ্যা/g, 'talatani'],
+  [/মূল ভাব/g, 'mongsonggipa miksongani'],
+]
+
+function transliterateBangla(value: string, alphabet: Record<string, string>) {
+  let output = ''
+  for (const char of value) {
+    const codePoint = char.codePointAt(0) || 0
+    output += codePoint >= 0x0980 && codePoint <= 0x09ff ? alphabet[char] ?? char : char
   }
-  if (/তরল|liquid|fluid/.test(normalized)) {
-    return 'graph LR\n  A[তরল পদার্থ] --> B[নির্দিষ্ট আয়তন]\n  A --> C[নির্দিষ্ট আকার নেই]\n  A --> D[প্রবাহিত হয়]\n  A --> E[চাপ প্রয়োগ করে]\n  C --> F[পাত্রের আকার নেয়]'
+  return output
+}
+
+function translateBanglaToGaroText(value: string) {
+  let output = value
+  for (const [pattern, replacement] of GARO_TERM_REPLACEMENTS) {
+    output = output.replace(pattern, replacement)
   }
-  return safeDiagram(null, fallbackTitle)
+  return transliterateBangla(output, BANGLA_TO_LATIN_SCRIPT)
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([?.!,])/g, '$1')
+    .trim()
+}
+
+function translateBanglaToMarmaScript(value: string) {
+  return transliterateBangla(value, BANGLA_TO_MARMA_SCRIPT)
+}
+
+function sanitizeMermaidLabel(label: string) {
+  return label.replace(/[[\]{}<>]/g, '').replace(/\s+/g, ' ').trim() || 'Concept'
+}
+
+function translateMermaidLabels(chart: string, translator: (label: string) => string) {
+  return chart.replace(/\[([^\]]+)\]/g, (_, label: string) => `[${sanitizeMermaidLabel(translator(label))}]`)
+}
+
+function localizeDiagram(
+  chart: string | null,
+  targetLanguage: TargetLanguage,
+  bridge: ChakmaBridgeContext
+) {
+  if (!chart) return null
+  if (targetLanguage === 'Bangla') return chart
+  if (targetLanguage === 'Chakma') {
+    return translateMermaidLabels(chart, label => translateBanglaWithDataset(label, bridge.pairs))
+  }
+  if (targetLanguage === 'Marma') {
+    return translateMermaidLabels(chart, translateBanglaToMarmaScript)
+  }
+  return translateMermaidLabels(chart, translateBanglaToGaroText)
 }
 
 async function dynamicGeminiNode(params: {
@@ -279,7 +515,8 @@ async function dynamicGeminiNode(params: {
   selectedSubject: string
   outputMode: OutputMode
   emotion: EmotionState
-  language: string
+  inputLanguage: string
+  targetLanguage: TargetLanguage
   conceptMemory: unknown
   curriculumChunks?: Array<{
     content: string
@@ -317,7 +554,8 @@ The question may be new and not in the local graph. Create a fresh curriculum-sa
 Student question: ${params.question}
 Selected subject from UI: ${params.selectedSubject}
 Emotion: ${params.emotion}
-Language: ${params.language}
+Detected input language: ${params.inputLanguage}
+Selected target language: ${params.targetLanguage}
 Output mode: ${params.outputMode}
 Recent student concept memory:
 ${memoryText || 'None'}${curriculumContext}
@@ -327,22 +565,20 @@ Return ONLY valid JSON with this shape:
   "subject": "Physics/Chemistry/Biology/Math/Bangla/English",
   "conceptTitle": "short concept title",
   "graphPath": ["Subject", "Chapter", "Topic", "Subtopic"],
-  "answer": "Bangla answer, max 130 words, exact to the question, no unrelated concept",
-  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; use a natural concept-map shape with branches"
+  "answer": "Bangla source answer, max 130 words, exact to the question, no unrelated concept",
+  "diagram": "valid Mermaid graph LR diagram with 4-6 nodes using Bangla labels"
 }
 
 Rules:
 - Infer the true school subject from the question first; the selected subject may be wrong.
+- Create the answer in Bangla first. A separate language router will convert it or safely fall back.
 - Must answer the exact question.
 - If the student asks repeated words like 'করো করো করো', ignore repetition.
 - If emotion is confused, use a simple analogy.
 - If emotion is frustrated, be short and encouraging.
 - Use curriculum context if available to ground your answer.
 - End answer with one Socratic follow-up question.
-- Do not invent fake textbook references.
-- Diagram must be a concept map, not A -> B -> C -> D only.
-- Do not add generic nodes like Question/Main idea unless those are truly the topic.
-- Good diagram shape: A[main concept] --> B[property]; A --> C[type]; A --> D[example]; C --> E[specific example].`
+- Do not invent fake textbook references.`
 
   const raw = await geminiText(prompt)
   if (!raw) throw new Error('Gemini unavailable')
@@ -359,122 +595,154 @@ Rules:
   }
 }
 
-async function directGeminiAnswer(params: {
-  question: string
-  selectedSubject: string
-  outputMode: OutputMode
-  emotion: EmotionState
-  language: string
+async function maybeGenerateLowResourceAnswer(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  inputLanguage: string
+  targetLanguage: Exclude<TargetLanguage, 'Bangla' | 'Chakma'>
+  subjectContext: string
 }) {
-  const prompt = `You are VoicePandita, a careful Bangla tutor and concept-map builder for SSC/HSC/admission students in Bangladesh.
+  const deterministicFallback = params.targetLanguage === 'Garo'
+    ? translateBanglaToGaroText(params.banglaAnswer)
+    : translateBanglaToMarmaScript(params.banglaAnswer)
 
-Student question: ${params.question}
-Selected subject from UI (weak hint only, may be wrong): ${params.selectedSubject}
-Emotion: ${params.emotion}
-Language: ${params.language}
-Output mode: ${params.outputMode}
+  const prompt = `You are VoicePandita's multilingual tutoring translator.
+Translate the Bangla source answer into the selected target language for a school student.
 
-Return ONLY valid JSON with this shape:
-{
-  "subject": "best inferred subject in English",
-  "conceptTitle": "short English concept title",
-  "graphPath": ["Subject", "Chapter/Unit", "Concept"],
-  "answer": "Bangla answer, exact to the question, 4-6 clear sentences",
-  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; include natural branches"
-}
+Selected target language: ${params.targetLanguage}
+Detected input language: ${params.inputLanguage}
+Subject context: ${params.subjectContext || 'Not provided'}
 
-Rules:
-- Do not say curriculum context is missing.
-- Do not switch to Newton's law, bonding, or another unrelated concept.
-- Infer the true subject from the question; ignore the selected subject if it is wrong.
-- If the question has typo/mixed Bangla-English, infer the likely intended school concept.
-- If the question is ambiguous, give the most likely answer first, then ask one short clarifying question.
-- Answer should usually be 70-130 words unless simple mode.
-- Diagram must not be generic like Question -> Cause -> Result -> Understand.
-- Diagram nodes must name the actual concept, types, examples, properties, or process steps.
-- Diagram must branch naturally from one main concept into properties/types/examples; do not force unrelated merge nodes.
-- Diagram must use this Mermaid style: graph LR\\n  A[মূল ধারণা] --> B[প্রকার]\\n  B --> C[উদাহরণ]
-- End with one Socratic follow-up question.`
+Student question:
+${params.originalQuestion}
 
-  const raw = await geminiText(prompt)
-  if (!raw) throw new Error('Gemini unavailable')
+Bangla source answer:
+${params.banglaAnswer}
+
+Return only the student-facing answer in ${params.targetLanguage}.
+For Garo, write in the Latin-script A.chik/Garo style used by students.
+For Marma, write in Myanmar script.
+Keep formulas, symbols, and school science terms if there is no reliable local equivalent.
+Do not return an English availability warning.`
 
   try {
-    const parsed = extractJson(raw)
-    const conceptTitle = String(parsed.conceptTitle || params.question.slice(0, 30) || 'Concept')
-    const graphPath = Array.isArray(parsed.graphPath) && parsed.graphPath.length >= 2
-      ? parsed.graphPath.map((part: unknown) => String(part)).slice(0, 6)
-      : [String(parsed.subject || params.selectedSubject || 'Curriculum'), conceptTitle]
+    const generated = await geminiText(prompt)
+    return generated?.trim() || deterministicFallback
+  } catch (err) {
+    console.warn(`/api/ask ${params.targetLanguage} answer generation failed`, err instanceof Error ? err.message : err)
+    return deterministicFallback
+  }
+}
 
-    return {
-      answer: String(parsed.answer || raw).trim(),
-      diagram: safeDiagram(parsed.diagram, conceptTitle),
-      graphPath,
-    }
-  } catch {
-    const conceptTitle = params.question.slice(0, 30) || 'Concept'
-    return {
-      answer: raw,
-      diagram: fallbackDiagramForQuestion(params.question, conceptTitle),
-      graphPath: safeFallbackGraphPath(params.question, params.selectedSubject),
-    }
+async function translateBanglaAnswerToMarma(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  inputLanguage: string
+  subjectContext: string
+}) {
+  const deterministicFallback = translateBanglaToMarmaScript(params.banglaAnswer)
+  if (!genAI) return deterministicFallback
+
+  const marma = await loadMarmaContext()
+  if (!marma.enabled) return deterministicFallback
+
+  const prompt = `You are VoicePandita's multilingual tutoring translator.
+You are writing for Marma-speaking students in Bangladesh.
+Use Marma language written in Myanmar script.
+The examples below are real Marma text from CLEAR-Global/marmaspeak-text. Use them only as script/style evidence, not as answer content.
+
+Marma corpus examples:
+${formatMarmaExamples(marma.examples)}
+
+Detected input language: ${params.inputLanguage}
+Selected target language: Marma
+Subject context: ${params.subjectContext || 'Not provided'}
+
+Student question:
+${params.originalQuestion}
+
+Bangla educational source answer:
+${params.banglaAnswer}
+
+Rules:
+- Return only the student-facing answer in Marma language using Myanmar script.
+- Keep formulas, symbols, and science terms like CO2, glucose, photosynthesis, F = ma if there is no reliable Marma equivalent.
+- Keep it simple for a school student.
+- Do not output Bangla or English paragraphs.
+- Do not return an English availability warning.`
+
+  try {
+    const generated = await geminiText(prompt)
+    const answer = generated?.trim() || ''
+    if (!answer) return deterministicFallback
+    if (!hasMarmaScript(answer)) return deterministicFallback
+    return answer
+  } catch (err) {
+    console.warn('/api/ask Marma answer generation failed', err instanceof Error ? err.message : err)
+    return deterministicFallback
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const question = String(body.question || '').trim()
-    if (!question) return NextResponse.json({ error: 'Question required' }, { status: 400 })
+    const originalQuestion = String(body.question || '').trim()
+    if (!originalQuestion) return NextResponse.json({ error: 'Question required' }, { status: 400 })
 
     const outputMode = String(body.outputMode || 'whiteboard') as OutputMode
-    const language = String(body.language || 'bn')
+    const targetLanguage = normalizeTargetLanguage(body.selected_target_language || body.target_language || body.language || 'Bangla')
+    const language = targetLanguageToCode(targetLanguage)
+    const inputLanguage = detectInputLanguage(originalQuestion)
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
     const curriculumChunks = Array.isArray(body.curriculumChunks) ? body.curriculumChunks : undefined
+    const bridge = await prepareChakmaBridge(originalQuestion, language)
+    const question = await translateChakmaQuestionWithGemini(originalQuestion, bridge)
     const lessonKey = inferLesson(question)
     const detectedEmotion = detectEmotion(question, repeatCount)
     const emotion = (body.emotion || detectedEmotion) as EmotionState
     const conceptMemory = body.conceptMemory
     const animationKey = selectedAnimationKey(question, outputMode, lessonKey)
 
-    let lesson = lessonKey ? LESSONS[lessonKey] : null
+    let lesson = lessonKey ? LESSONS[lessonKey] : LESSONS[defaultBySubject[selectedSubject] || 'newton_second_law']
     let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
-    let diagram: string = lesson?.diagram || safeDiagram(null, question.slice(0, 30) || 'Concept')
-    let graphPath: string[] = lesson ? [...lesson.path] : [selectedSubject || 'Curriculum', 'Needs Clarification']
+    let diagram: string = lesson.diagram
+    let graphPath: string[] = [...lesson.path]
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
 
     try {
       if (!lessonKey) {
-        const dynamic = await directGeminiAnswer({
+        const dynamic = await dynamicGeminiNode({
           question,
           selectedSubject,
           outputMode,
           emotion,
-          language,
+          inputLanguage,
+          targetLanguage,
+          conceptMemory,
+          curriculumChunks,
         })
         answer = dynamic.answer
         diagram = dynamic.diagram
         graphPath = dynamic.graphPath
-        source = 'gemini-direct-answer'
+        source = 'gemini-dynamic-graphrag'
       } else {
-        const activeLesson = lesson
-        if (!activeLesson) throw new Error('Lesson not found')
         const prompt = `You are VoicePandita, a Bangla tutor for SSC/HSC/admission students.
 Answer the student's exact question using ONLY this curriculum node.
 
-Graph path: ${activeLesson.path.join(' -> ')}
-Lesson title: ${activeLesson.title}
+Graph path: ${lesson.path.join(' -> ')}
+Lesson title: ${lesson.title}
 Facts:
-${activeLesson.facts.join('\n')}
+${lesson.facts.join('\n')}
 
 Student question: ${question}
 Emotion: ${emotion}
-Language: ${language}
+Detected input language: ${inputLanguage}
+Selected target language: ${targetLanguage}
 Mode: ${outputMode}
 
 Rules:
-- Answer in Bangla.
+- Answer in Bangla first. A separate language router will convert it or safely fall back.
 - Must answer the exact question. Do not switch to another bonding/concept.
 - Max 120 words unless exam mode.
 - If confused, use an analogy first.
@@ -487,32 +755,53 @@ Rules:
         }
       }
     } catch (err) {
-      console.warn('/api/ask Gemini unavailable', err instanceof Error ? err.message : err)
-      if (!answer) {
-        throw err
-      }
+      console.warn('/api/ask Gemini unavailable; deterministic curriculum fallback used', err instanceof Error ? err.message : err)
+      if (!answer) answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
+    }
+
+    let finalAnswer = answer
+    let finalDiagram: string | null = diagram
+    let languageSource = source
+
+    if (targetLanguage === 'Chakma') {
+      finalAnswer = await translateBanglaAnswerToChakma(answer, bridge)
+      finalDiagram = localizeDiagram(diagram, targetLanguage, bridge)
+      languageSource = `${source}+chakma-${bridge.source}`
+    } else if (targetLanguage === 'Marma') {
+      finalAnswer = await translateBanglaAnswerToMarma({
+        banglaAnswer: answer,
+        originalQuestion,
+        inputLanguage,
+        subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
+      })
+      finalDiagram = localizeDiagram(diagram, targetLanguage, bridge)
+      languageSource = `${source}+marma-corpus-bridge`
+    } else if (targetLanguage === 'Garo') {
+      finalAnswer = await maybeGenerateLowResourceAnswer({
+        banglaAnswer: answer,
+        originalQuestion,
+        inputLanguage,
+        targetLanguage,
+        subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
+      })
+      finalDiagram = localizeDiagram(diagram, targetLanguage, bridge)
+      languageSource = `${source}+${targetLanguage.toLowerCase()}-safe-routing`
     }
 
     return NextResponse.json({
-      answer,
-      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : polishMermaidDiagram(diagram),
+      answer: finalAnswer,
+      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : (finalDiagram ? polishMermaidDiagram(finalDiagram) : null),
       animationKey,
       detectedEmotion,
+      detectedLanguage: inputLanguage,
+      selectedTargetLanguage: targetLanguage,
+      translatedQuestion: bridge.enabled && question !== originalQuestion ? question : null,
       graphPath,
       pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
-      source,
+      source: languageSource,
     })
   } catch (err) {
     console.error('/api/ask error:', err)
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json(
-      {
-        answer: 'দুঃখিত, এখন উত্তর তৈরি করা যাচ্ছে না। আবার চেষ্টা করো।',
-        diagram: null,
-        error: process.env.NODE_ENV === 'development' ? message : undefined,
-      },
-      { status: 500 }
-    )
     return NextResponse.json({ answer: 'দুঃখিত, এখন উত্তর তৈরি করা যাচ্ছে না। আবার চেষ্টা করো।', diagram: null }, { status: 500 })
   }
 }
