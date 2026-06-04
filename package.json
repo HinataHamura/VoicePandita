@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "dev:tts": "uvicorn scripts.tts_server:app --port 8001 --reload",
+    "dev:tts": "python -m uvicorn scripts.tts_server:app --port 8001 --reload",
     "dev:seed": "python scripts/seed_curriculum.py",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:tts\"",
     "build": "node --max-old-space-size=4096 node_modules/next/dist/bin/next build",
@@ -24,6 +24,7 @@
     "next": "14.2.3",
     "next-pwa": "^5.6.0",
     "onnxruntime-web": "^1.18.0",
+    "pdf-parse": "^1.1.1",
     "react": "^18",
     "react-dom": "^18",
     "tailwind-merge": "^2.3.0",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/three": "^0.184.1",

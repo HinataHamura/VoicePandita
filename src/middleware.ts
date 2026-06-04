@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_URL } from '@/lib/supabase/env'
+import { getRequiredEnv, hasSupabaseConfig } from '@/lib/supabase/env'
 
 const protectedRoutes = ['/onboarding', '/student-path', '/learn', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn', '/docs/admin']
 
@@ -9,10 +9,8 @@ export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl
   const isProtectedRoute = protectedRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))
   const hasDemoSession = request.cookies.get('vp_demo_session')?.value === '1'
-  const supabaseUrl = NEXT_PUBLIC_SUPABASE_URL || SUPABASE_URL
-  const supabaseAnonKey = NEXT_PUBLIC_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!hasSupabaseConfig()) {
     if (isProtectedRoute && !hasDemoSession) {
       const redirectUrl = request.nextUrl.clone()
       redirectUrl.pathname = '/login'
@@ -31,8 +29,8 @@ export async function middleware(request: NextRequest) {
   }
 
   const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL', ['SUPABASE_URL']),
+    getRequiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', ['SUPABASE_ANON_KEY']),
     {
       cookies: {
         get(name: string) { return request.cookies.get(name)?.value },
