@@ -1,18 +1,15 @@
-# VoicePandita MCP Server
+# VoicePandita MCP Servers
 
-VoicePandita includes a small dependency-free MCP-style stdio server for project context, data provenance, AI-DLC notes, native-language reporting, and RAG architecture summaries.
+VoicePandita includes dependency-free MCP-style stdio servers for project context,
+dataset provenance, and quality/audit reporting.
 
-## Server Built
+## Servers Built
 
-```text
-voicepandita-mcp
-```
-
-File:
-
-```text
-mcp/voicepandita_server.py
-```
+| Server | File | Tools | Purpose |
+| --- | --- | ---: | --- |
+| `voicepandita-mcp` | `mcp/voicepandita_server.py` | 4 | Project overview, native-language status, AI-DLC notes, and RAG architecture. |
+| `voicepandita-data-mcp` | `mcp/voicepandita_data_server.py` | 3 | Dataset inventory, data provenance, and BdSL/IsharaKotha asset coverage. |
+| `voicepandita-quality-mcp` | `mcp/voicepandita_quality_server.py` | 4 | API route inventory, env var inventory, TODO/stub scan, and quality snapshot. |
 
 Transport:
 
@@ -20,14 +17,33 @@ Transport:
 stdio with Content-Length JSON-RPC framing
 ```
 
+Methods implemented:
+
+```text
+initialize, tools/list, tools/call
+```
+
+Language/SDK:
+
+```text
+Python, dependency-free MCP-style JSON-RPC
+```
+
 ## Tools Exposed
 
-| Tool | Purpose |
-| --- | --- |
-| `voicepandita_project_overview` | Summarizes project features, pages, and API surfaces. |
-| `voicepandita_native_language_report` | Reports Chakma, Marma, and Garo support with local dataset counts. |
-| `voicepandita_ai_dlc_report` | Summarizes AGENTS.md and AI-DLC process. |
-| `voicepandita_rag_report` | Summarizes contextual RAG, semantic chunking, vector search, PWN, and Neo4j memory. |
+| Tool | Server | Purpose |
+| --- | --- | --- |
+| `voicepandita_project_overview` | `voicepandita-mcp` | Summarizes project features, pages, and API surfaces. |
+| `voicepandita_native_language_report` | `voicepandita-mcp` | Reports Chakma, Marma, and Garo support with local dataset counts. |
+| `voicepandita_ai_dlc_report` | `voicepandita-mcp` | Summarizes AGENTS.md and AI-DLC process. |
+| `voicepandita_rag_report` | `voicepandita-mcp` | Summarizes contextual RAG, semantic chunking, vector search, PWN, and Neo4j memory. |
+| `voicepandita_dataset_inventory` | `voicepandita-data-mcp` | Counts local JSONL/native-language files, Supabase scripts, and BdSL assets. |
+| `voicepandita_provenance_report` | `voicepandita-data-mcp` | Summarizes where project data comes from and which systems store/use it. |
+| `voicepandita_bdsl_asset_report` | `voicepandita-data-mcp` | Reports local IsharaKotha/SiGML coverage and runtime consumers. |
+| `voicepandita_api_route_inventory` | `voicepandita-quality-mcp` | Lists Next.js API routes and exported HTTP methods. |
+| `voicepandita_env_inventory` | `voicepandita-quality-mcp` | Lists `process.env.*` variables and referencing files. |
+| `voicepandita_todo_inventory` | `voicepandita-quality-mcp` | Finds TODO, FIXME, HACK, and stub markers. |
+| `voicepandita_quality_snapshot` | `voicepandita-quality-mcp` | Summarizes API/page/test counts and quality gates. |
 
 ## Smoke Test
 
@@ -37,9 +53,9 @@ python mcp/smoke_client.py
 
 Expected output includes:
 
-- server name/version
-- list of four MCP tools
-- sample native-language report lines
+- all three server names and versions
+- list of eleven MCP tools total
+- sample output from one tool per server
 
 ## Example MCP Host Config
 
@@ -52,6 +68,16 @@ For MCP hosts that support stdio servers, use:
       "command": "python",
       "args": ["mcp/voicepandita_server.py"],
       "cwd": "E:/VoicePandita"
+    },
+    "voicepandita-data": {
+      "command": "python",
+      "args": ["mcp/voicepandita_data_server.py"],
+      "cwd": "E:/VoicePandita"
+    },
+    "voicepandita-quality": {
+      "command": "python",
+      "args": ["mcp/voicepandita_quality_server.py"],
+      "cwd": "E:/VoicePandita"
     }
   }
 }
@@ -62,15 +88,15 @@ For MCP hosts that support stdio servers, use:
 MCP servers built:
 
 ```text
-VoicePandita Project Context MCP
-VoicePandita Native Language Provenance MCP tools
-VoicePandita RAG / AI-DLC Reporting MCP tools
+voicepandita-mcp — 4 tools — stdio — Python — exposes project overview, native-language status, AI-DLC notes, and RAG architecture.
+voicepandita-data-mcp — 3 tools — stdio — Python — exposes dataset inventory, provenance, and BdSL/IsharaKotha asset coverage.
+voicepandita-quality-mcp — 4 tools — stdio — Python — exposes API route inventory, env var inventory, TODO/stub scan, and quality snapshot.
 ```
 
 MCP servers used:
 
 ```text
-Used our local VoicePandita MCP server through the included stdio smoke client.
+Used our local VoicePandita MCP servers through the included stdio smoke client. The client calls initialize, tools/list, and tools/call for each server.
 ```
 
 MCP clients / hosts:
@@ -82,5 +108,5 @@ Custom stdio smoke client in mcp/smoke_client.py; compatible with MCP stdio host
 MCP reuse / architecture notes:
 
 ```text
-The MCP server exposes reusable project-context tools over stdio. It lets AI assistants retrieve VoicePandita project overview, native-language provenance, AI-DLC process, and RAG architecture without scraping README manually. The server is dependency-free Python and uses Content-Length JSON-RPC framing, so it can be reused by MCP-compatible hosts or the included smoke client.
+The MCP layer is split by responsibility: project context, dataset provenance, and quality audit. All servers share the small mcp/mcp_stdio.py framing helper and expose reusable tools over stdio. This lets AI assistants retrieve VoicePandita implementation facts, dataset counts, API inventory, env vars, and unresolved stubs without manually scraping README or source files.
 ```

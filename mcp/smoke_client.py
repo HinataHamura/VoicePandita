@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke-test client for the VoicePandita MCP stdio server."""
+"""Smoke-test client for the VoicePandita MCP stdio servers."""
 
 from __future__ import annotations
 
@@ -11,7 +11,11 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER = ROOT / "mcp" / "voicepandita_server.py"
+SERVERS = [
+    (ROOT / "mcp" / "voicepandita_server.py", "voicepandita_native_language_report"),
+    (ROOT / "mcp" / "voicepandita_data_server.py", "voicepandita_dataset_inventory"),
+    (ROOT / "mcp" / "voicepandita_quality_server.py", "voicepandita_api_route_inventory"),
+]
 
 
 def frame(message: dict[str, Any]) -> bytes:
@@ -41,9 +45,9 @@ def send(proc: subprocess.Popen[bytes], message: dict[str, Any]) -> dict[str, An
     return read_message(proc)
 
 
-def main() -> None:
+def smoke_server(server: Path, sample_tool: str) -> dict[str, Any]:
     proc = subprocess.Popen(
-        [sys.executable, str(SERVER)],
+        [sys.executable, str(server)],
         cwd=str(ROOT),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -59,22 +63,23 @@ def main() -> None:
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "voicepandita_native_language_report", "arguments": {}},
+                "params": {"name": sample_tool, "arguments": {}},
             },
         )
-        print(
-            json.dumps(
-                {
-                    "server": init["result"]["serverInfo"],
-                    "tools": [tool["name"] for tool in tools["result"]["tools"]],
-                    "sample": report["result"]["content"][0]["text"].splitlines()[:6],
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        return {
+            "script": str(server.relative_to(ROOT)),
+            "server": init["result"]["serverInfo"],
+            "tools": [tool["name"] for tool in tools["result"]["tools"]],
+            "sample_tool": sample_tool,
+            "sample": report["result"]["content"][0]["text"].splitlines()[:6],
+        }
     finally:
         proc.kill()
+
+
+def main() -> None:
+    results = [smoke_server(server, sample_tool) for server, sample_tool in SERVERS]
+    print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
