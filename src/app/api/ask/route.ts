@@ -1,88 +1,199 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
 
-type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
-type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
+type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
+type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
 type EmotionState = 'confident' | 'confused' | 'frustrated'
+
+type StudentProfileContext = {
+  level?: string
+  goal?: string
+  group?: string
+}
+
+type RetrievedCurriculumChunk = {
+  content: string
+  contextText?: string
+  context_text?: string
+  contextual_summary?: string
+  subject?: string
+  topic: string
+  chapter?: string
+  chunk_type?: string
+  level?: string
+  source_dataset?: string
+  question_text?: string
+  answer_text?: string
+  correct_answer?: string
+  distractor_answers?: string[] | Record<string, string>
+  hints?: string[] | Record<string, string>
+  convergence?: unknown
+  topic_tags?: string[]
+  similarity: number
+}
+
+type ChatContextItem = {
+  role?: string
+  text?: string
+  graphPath?: string[]
+}
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
 const groqKey = process.env.GROQ_API_KEY?.trim()
 const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
 
+function profileInstruction(profile?: StudentProfileContext) {
+  const level = String(profile?.level || '').toUpperCase()
+  const goal = String(profile?.goal || '')
+  const group = String(profile?.group || '')
+  const parts = [
+    level ? `Level: ${level}` : '',
+    goal ? `Goal: ${goal}` : '',
+    group ? `Group: ${group}` : '',
+  ].filter(Boolean)
+
+  if (!parts.length) return 'Student profile: not set.'
+  const style = goal === 'admission'
+    ? 'Prioritize concept-first reasoning, shortcuts only after intuition, and common traps.'
+    : 'Prioritize board-exam clarity, definition, explanation, example, and marks-friendly wording.'
+  return `Student profile: ${parts.join(', ')}. ${style}`
+}
+
+function curriculumContextText(chunks?: RetrievedCurriculumChunk[]) {
+  if (!Array.isArray(chunks) || chunks.length === 0) return 'None'
+  return chunks.slice(0, 6).map((chunk, i) => {
+    const contextText = chunk.contextText || chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n')
+    const chunkMeta = [chunk.level?.toUpperCase(), chunk.source_dataset, chunk.subject, chunk.chapter, chunk.topic, chunk.chunk_type].filter(Boolean).join(' / ')
+    const score = Number.isFinite(chunk.similarity) ? ` similarity=${chunk.similarity.toFixed(2)}` : ''
+    const hints = Array.isArray(chunk.hints) ? chunk.hints.filter(Boolean).slice(0, 5) : []
+    const distractors = Array.isArray(chunk.distractor_answers) ? chunk.distractor_answers.filter(Boolean).slice(0, 5) : []
+    const extra = [
+      chunk.correct_answer ? `Correct answer: ${chunk.correct_answer}` : '',
+      hints.length ? `Progressive hints: ${hints.join(' | ')}` : '',
+      distractors.length ? `Common distractors/misconceptions: ${distractors.join(' | ')}` : '',
+      chunk.topic_tags?.length ? `Topic tags: ${chunk.topic_tags.join(', ')}` : '',
+    ].filter(Boolean).join('\n')
+    return `${i + 1}. [${chunkMeta || chunk.topic}${score}] ${contextText}${extra ? `\n${extra}` : ''}`
+  }).join('\n')
+}
+
+function groundingInfo(chunks?: RetrievedCurriculumChunk[], profile?: StudentProfileContext) {
+  const valid = Array.isArray(chunks)
+    ? chunks
+        .filter(chunk => Number(chunk.similarity || 0) >= 0.42)
+        .sort((a, b) => Number(b.similarity || 0) - Number(a.similarity || 0))
+    : []
+  const best = valid[0]
+  if (!best) {
+    return { grounded: false, label: null, sourceDataset: null, similarity: null }
+  }
+
+  const dataset = best.source_dataset || null
+  const level = String(best.level || profile?.level || '').toUpperCase()
+  const label = dataset === 'ssc-banglatutor'
+    ? 'SSC-BanglaTutor grounded'
+    : level
+      ? `${level} curriculum grounded`
+      : 'Curriculum grounded'
+
+  return {
+    grounded: true,
+    label,
+    sourceDataset: dataset,
+    similarity: Number(best.similarity || 0),
+  }
+}
+
+function chatContextText(items?: ChatContextItem[]) {
+  if (!Array.isArray(items) || items.length === 0) return 'None'
+  return items.slice(-6).map((item, i) => {
+    const role = item.role === 'user' ? 'Student' : 'Tutor'
+    const path = Array.isArray(item.graphPath) && item.graphPath.length
+      ? ` [topic: ${item.graphPath.join(' -> ')}]`
+      : ''
+    return `${i + 1}. ${role}${path}: ${String(item.text || '').replace(/\s+/g, ' ').slice(0, 900)}`
+  }).join('\n')
+}
+
+function looksLikeFollowUp(question: string) {
+  return /\b(ei|eta|etar|related|previous|prev|same topic|follow up|follow-up)\b/i.test(question) ||
+    /(à¦à¦‡|à¦à¦Ÿà¦¾|à¦à¦Ÿà¦¾à¦°|à¦†à¦—à§‡à¦°|à¦ªà§‚à¦°à§à¦¬à§‡à¦°|à¦“à¦‡|à¦|à¦¸à¦®à§à¦ªà¦°à§à¦•à¦¿à¦¤|à¦°à¦¿à¦²à§‡à¦Ÿà§‡à¦¡|à¦à¦•à¦‡)/.test(question)
+}
+
 const LESSONS = {
   newton_second_law: {
     subject: 'physics',
     title: "Newton's Second Law",
     path: ['Physics', 'Force and Motion', "Newton's Laws", 'Second Law', 'Application'],
-    keywords: ['newton', 'second law', '2nd law', 'f=ma', 'বল', 'ত্বরণ', 'ভর'],
+    keywords: ['newton', 'second law', '2nd law', 'f=ma', 'à¦¬à¦²', 'à¦¤à§à¦¬à¦°à¦£', 'à¦­à¦°'],
     facts: [
-      'নিউটনের দ্বিতীয় সূত্র: বল = ভর × ত্বরণ, অর্থাৎ F = ma।',
-      'একই ভরের বস্তুর উপর বেশি বল দিলে ত্বরণ বেশি হয়। ভর বেশি হলে একই বলেও ত্বরণ কম হয়।',
-      'উদাহরণ: খালি ঠেলাগাড়ি সহজে চলে, কিন্তু বোঝাই ঠেলাগাড়ি ঠেলতে বেশি বল লাগে।',
+      'à¦¨à¦¿à¦‰à¦Ÿà¦¨à§‡à¦° à¦¦à§à¦¬à¦¿à¦¤à§€à¦¯à¦¼ à¦¸à§‚à¦¤à§à¦°: à¦¬à¦² = à¦­à¦° Ã— à¦¤à§à¦¬à¦°à¦£, à¦…à¦°à§à¦¥à¦¾à§Ž F = maà¥¤',
+      'à¦à¦•à¦‡ à¦­à¦°à§‡à¦° à¦¬à¦¸à§à¦¤à§à¦° à¦‰à¦ªà¦° à¦¬à§‡à¦¶à¦¿ à¦¬à¦² à¦¦à¦¿à¦²à§‡ à¦¤à§à¦¬à¦°à¦£ à¦¬à§‡à¦¶à¦¿ à¦¹à¦¯à¦¼à¥¤ à¦­à¦° à¦¬à§‡à¦¶à¦¿ à¦¹à¦²à§‡ à¦à¦•à¦‡ à¦¬à¦²à§‡à¦“ à¦¤à§à¦¬à¦°à¦£ à¦•à¦® à¦¹à¦¯à¦¼à¥¤',
+      'à¦‰à¦¦à¦¾à¦¹à¦°à¦£: à¦–à¦¾à¦²à¦¿ à¦ à§‡à¦²à¦¾à¦—à¦¾à¦¡à¦¼à¦¿ à¦¸à¦¹à¦œà§‡ à¦šà¦²à§‡, à¦•à¦¿à¦¨à§à¦¤à§ à¦¬à§‹à¦à¦¾à¦‡ à¦ à§‡à¦²à¦¾à¦—à¦¾à¦¡à¦¼à¦¿ à¦ à§‡à¦²à¦¤à§‡ à¦¬à§‡à¦¶à¦¿ à¦¬à¦² à¦²à¦¾à¦—à§‡à¥¤',
     ],
-    diagram: 'graph LR\n  A[বল F] --> B[ভর m]\n  A --> C[ত্বরণ a]\n  B --> D[F = ma]\n  C --> D\n  D --> E[গতি পরিবর্তন]',
+    diagram: 'graph LR\n  A[à¦¬à¦² F] --> B[à¦­à¦° m]\n  A --> C[à¦¤à§à¦¬à¦°à¦£ a]\n  B --> D[F = ma]\n  C --> D\n  D --> E[à¦—à¦¤à¦¿ à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨]',
   },
   metallic_bond: {
     subject: 'chemistry',
     title: 'Metallic Bond',
     path: ['Chemistry', 'Chemical Bonding', 'Metallic Bond', 'Sea of Electrons'],
-    keywords: ['ধাতব', 'metallic', 'metal bond', 'ধাতুর বন্ধন', 'মুক্ত ইলেকট্রন', 'electron sea'],
+    keywords: ['à¦§à¦¾à¦¤à¦¬', 'metallic', 'metal bond', 'à¦§à¦¾à¦¤à§à¦° à¦¬à¦¨à§à¦§à¦¨', 'à¦®à§à¦•à§à¦¤ à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨', 'electron sea'],
     facts: [
-      'ধাতব বন্ধন হলো ধাতু পরমাণুর ধনাত্মক আয়ন এবং চারপাশে চলাচলকারী মুক্ত ইলেকট্রনের আকর্ষণ।',
-      'ধাতুতে বাইরের স্তরের ইলেকট্রনগুলো একটি পরমাণুর সাথে শক্তভাবে বাঁধা থাকে না; তারা অনেক আয়নের চারপাশে ছড়িয়ে থাকে।',
-      'এই মুক্ত ইলেকট্রনের জন্য ধাতু বিদ্যুৎ পরিবহন করে, নমনীয় হয় এবং চকচকে দেখায়।',
+      'à¦§à¦¾à¦¤à¦¬ à¦¬à¦¨à§à¦§à¦¨ à¦¹à¦²à§‹ à¦§à¦¾à¦¤à§ à¦ªà¦°à¦®à¦¾à¦£à§à¦° à¦§à¦¨à¦¾à¦¤à§à¦®à¦• à¦†à¦¯à¦¼à¦¨ à¦à¦¬à¦‚ à¦šà¦¾à¦°à¦ªà¦¾à¦¶à§‡ à¦šà¦²à¦¾à¦šà¦²à¦•à¦¾à¦°à§€ à¦®à§à¦•à§à¦¤ à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨à§‡à¦° à¦†à¦•à¦°à§à¦·à¦£à¥¤',
+      'à¦§à¦¾à¦¤à§à¦¤à§‡ à¦¬à¦¾à¦‡à¦°à§‡à¦° à¦¸à§à¦¤à¦°à§‡à¦° à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨à¦—à§à¦²à§‹ à¦à¦•à¦Ÿà¦¿ à¦ªà¦°à¦®à¦¾à¦£à§à¦° à¦¸à¦¾à¦¥à§‡ à¦¶à¦•à§à¦¤à¦­à¦¾à¦¬à§‡ à¦¬à¦¾à¦à¦§à¦¾ à¦¥à¦¾à¦•à§‡ à¦¨à¦¾; à¦¤à¦¾à¦°à¦¾ à¦…à¦¨à§‡à¦• à¦†à¦¯à¦¼à¦¨à§‡à¦° à¦šà¦¾à¦°à¦ªà¦¾à¦¶à§‡ à¦›à¦¡à¦¼à¦¿à¦¯à¦¼à§‡ à¦¥à¦¾à¦•à§‡à¥¤',
+      'à¦à¦‡ à¦®à§à¦•à§à¦¤ à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨à§‡à¦° à¦œà¦¨à§à¦¯ à¦§à¦¾à¦¤à§ à¦¬à¦¿à¦¦à§à¦¯à§à§Ž à¦ªà¦°à¦¿à¦¬à¦¹à¦¨ à¦•à¦°à§‡, à¦¨à¦®à¦¨à§€à¦¯à¦¼ à¦¹à¦¯à¦¼ à¦à¦¬à¦‚ à¦šà¦•à¦šà¦•à§‡ à¦¦à§‡à¦–à¦¾à¦¯à¦¼à¥¤',
     ],
-    diagram: 'graph LR\n  A[ধাতু পরমাণু] --> B[মুক্ত ইলেকট্রন]\n  A --> C[ধনাত্মক ধাতব আয়ন]\n  B --> D[ইলেকট্রনের সাগর]\n  C --> E[আকর্ষণ]\n  D --> E\n  E --> F[ধাতব বন্ধন]',
+    diagram: 'graph LR\n  A[à¦§à¦¾à¦¤à§ à¦ªà¦°à¦®à¦¾à¦£à§] --> B[à¦®à§à¦•à§à¦¤ à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨]\n  A --> C[à¦§à¦¨à¦¾à¦¤à§à¦®à¦• à¦§à¦¾à¦¤à¦¬ à¦†à¦¯à¦¼à¦¨]\n  B --> D[à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨à§‡à¦° à¦¸à¦¾à¦—à¦°]\n  C --> E[à¦†à¦•à¦°à§à¦·à¦£]\n  D --> E\n  E --> F[à¦§à¦¾à¦¤à¦¬ à¦¬à¦¨à§à¦§à¦¨]',
   },
   ionic_bond: {
     subject: 'chemistry',
     title: 'Ionic Bond',
     path: ['Chemistry', 'Chemical Bonding', 'Ionic Bond', 'Electron Transfer'],
-    keywords: ['আয়নিক', 'ionic', 'ion', 'electron transfer', 'ইলেকট্রন গ্রহণ', 'ইলেকট্রন ছাড়ে'],
+    keywords: ['à¦†à¦¯à¦¼à¦¨à¦¿à¦•', 'ionic', 'ion', 'electron transfer', 'à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦—à§à¦°à¦¹à¦£', 'à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦›à¦¾à§œà§‡'],
     facts: [
-      'আয়নিক বন্ধনে এক পরমাণু ইলেকট্রন ছেড়ে দেয়, আর অন্য পরমাণু সেটি গ্রহণ করে।',
-      'ইলেকট্রন হারালে ধনাত্মক আয়ন, আর ইলেকট্রন গ্রহণ করলে ঋণাত্মক আয়ন তৈরি হয়।',
-      'বিপরীত আধানের আকর্ষণই আয়নিক বন্ধনকে ধরে রাখে।',
+      'à¦†à¦¯à¦¼à¦¨à¦¿à¦• à¦¬à¦¨à§à¦§à¦¨à§‡ à¦à¦• à¦ªà¦°à¦®à¦¾à¦£à§ à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦›à§‡à¦¡à¦¼à§‡ à¦¦à§‡à¦¯à¦¼, à¦†à¦° à¦…à¦¨à§à¦¯ à¦ªà¦°à¦®à¦¾à¦£à§ à¦¸à§‡à¦Ÿà¦¿ à¦—à§à¦°à¦¹à¦£ à¦•à¦°à§‡à¥¤',
+      'à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦¹à¦¾à¦°à¦¾à¦²à§‡ à¦§à¦¨à¦¾à¦¤à§à¦®à¦• à¦†à¦¯à¦¼à¦¨, à¦†à¦° à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦—à§à¦°à¦¹à¦£ à¦•à¦°à¦²à§‡ à¦‹à¦£à¦¾à¦¤à§à¦®à¦• à¦†à¦¯à¦¼à¦¨ à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼à¥¤',
+      'à¦¬à¦¿à¦ªà¦°à§€à¦¤ à¦†à¦§à¦¾à¦¨à§‡à¦° à¦†à¦•à¦°à§à¦·à¦£à¦‡ à¦†à¦¯à¦¼à¦¨à¦¿à¦• à¦¬à¦¨à§à¦§à¦¨à¦•à§‡ à¦§à¦°à§‡ à¦°à¦¾à¦–à§‡à¥¤',
     ],
-    diagram: 'graph LR\n  A[ধাতু] --> B[ইলেকট্রন ছাড়ে]\n  C[অধাতু] --> D[ইলেকট্রন নেয়]\n  B --> E[ধনাত্মক আয়ন]\n  D --> F[ঋণাত্মক আয়ন]\n  E --> G[আয়নিক বন্ধন]\n  F --> G',
+    diagram: 'graph LR\n  A[à¦§à¦¾à¦¤à§] --> B[à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦›à¦¾à¦¡à¦¼à§‡]\n  C[à¦…à¦§à¦¾à¦¤à§] --> D[à¦‡à¦²à§‡à¦•à¦Ÿà§à¦°à¦¨ à¦¨à§‡à¦¯à¦¼]\n  B --> E[à¦§à¦¨à¦¾à¦¤à§à¦®à¦• à¦†à¦¯à¦¼à¦¨]\n  D --> F[à¦‹à¦£à¦¾à¦¤à§à¦®à¦• à¦†à¦¯à¦¼à¦¨]\n  E --> G[à¦†à¦¯à¦¼à¦¨à¦¿à¦• à¦¬à¦¨à§à¦§à¦¨]\n  F --> G',
   },
   photosynthesis: {
     subject: 'biology',
     title: 'Photosynthesis',
     path: ['Biology', 'Plant Physiology', 'Photosynthesis', 'Food Production'],
-    keywords: ['photosynthesis', 'সালোক', 'উদ্ভিদ', 'chlorophyll', 'co2', 'অক্সিজেন'],
+    keywords: ['photosynthesis', 'à¦¸à¦¾à¦²à§‹à¦•', 'à¦‰à¦¦à§à¦­à¦¿à¦¦', 'chlorophyll', 'co2', 'à¦…à¦•à§à¦¸à¦¿à¦œà§‡à¦¨'],
     facts: [
-      'সালোকসংশ্লেষণে সবুজ উদ্ভিদ সূর্যের আলো ব্যবহার করে খাদ্য তৈরি করে।',
-      'এতে লাগে আলো, পানি, কার্বন ডাই-অক্সাইড এবং ক্লোরোফিল।',
-      'ফল হিসেবে গ্লুকোজ তৈরি হয় এবং অক্সিজেন বের হয়।',
+      'à¦¸à¦¾à¦²à§‹à¦•à¦¸à¦‚à¦¶à§à¦²à§‡à¦·à¦£à§‡ à¦¸à¦¬à§à¦œ à¦‰à¦¦à§à¦­à¦¿à¦¦ à¦¸à§‚à¦°à§à¦¯à§‡à¦° à¦†à¦²à§‹ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§‡ à¦–à¦¾à¦¦à§à¦¯ à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§‡à¥¤',
+      'à¦à¦¤à§‡ à¦²à¦¾à¦—à§‡ à¦†à¦²à§‹, à¦ªà¦¾à¦¨à¦¿, à¦•à¦¾à¦°à§à¦¬à¦¨ à¦¡à¦¾à¦‡-à¦…à¦•à§à¦¸à¦¾à¦‡à¦¡ à¦à¦¬à¦‚ à¦•à§à¦²à§‹à¦°à§‹à¦«à¦¿à¦²à¥¤',
+      'à¦«à¦² à¦¹à¦¿à¦¸à§‡à¦¬à§‡ à¦—à§à¦²à§à¦•à§‹à¦œ à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼ à¦à¦¬à¦‚ à¦…à¦•à§à¦¸à¦¿à¦œà§‡à¦¨ à¦¬à§‡à¦° à¦¹à¦¯à¦¼à¥¤',
     ],
-    diagram: 'graph LR\n  A[আলো] --> D[সালোকসংশ্লেষণ]\n  B[CO2] --> D\n  C[পানি] --> D\n  D --> E[গ্লুকোজ]\n  D --> F[অক্সিজেন]',
+    diagram: 'graph LR\n  A[à¦†à¦²à§‹] --> D[à¦¸à¦¾à¦²à§‹à¦•à¦¸à¦‚à¦¶à§à¦²à§‡à¦·à¦£]\n  B[CO2] --> D\n  C[à¦ªà¦¾à¦¨à¦¿] --> D\n  D --> E[à¦—à§à¦²à§à¦•à§‹à¦œ]\n  D --> F[à¦…à¦•à§à¦¸à¦¿à¦œà§‡à¦¨]',
   },
   quadratic_formula: {
     subject: 'math',
     title: 'Quadratic Formula',
     path: ['Math', 'Algebra', 'Quadratic Equation', 'Formula'],
-    keywords: ['quadratic', 'দ্বিঘাত', 'সমীকরণ', 'formula', 'সূত্র', 'x²'],
+    keywords: ['quadratic', 'à¦¦à§à¦¬à¦¿à¦˜à¦¾à¦¤', 'à¦¸à¦®à§€à¦•à¦°à¦£', 'formula', 'à¦¸à§‚à¦¤à§à¦°', 'xÂ²'],
     facts: [
-      'দ্বিঘাত সমীকরণের সাধারণ রূপ ax² + bx + c = 0।',
-      'সমাধানের সূত্র: x = (-b ± √(b² - 4ac)) / 2a।',
-      'প্রথমে a, b, c আলাদা করো, তারপর সূত্রে বসিয়ে ধাপে ধাপে সমাধান করো।',
+      'à¦¦à§à¦¬à¦¿à¦˜à¦¾à¦¤ à¦¸à¦®à§€à¦•à¦°à¦£à§‡à¦° à¦¸à¦¾à¦§à¦¾à¦°à¦£ à¦°à§‚à¦ª axÂ² + bx + c = 0à¥¤',
+      'à¦¸à¦®à¦¾à¦§à¦¾à¦¨à§‡à¦° à¦¸à§‚à¦¤à§à¦°: x = (-b Â± âˆš(bÂ² - 4ac)) / 2aà¥¤',
+      'à¦ªà§à¦°à¦¥à¦®à§‡ a, b, c à¦†à¦²à¦¾à¦¦à¦¾ à¦•à¦°à§‹, à¦¤à¦¾à¦°à¦ªà¦° à¦¸à§‚à¦¤à§à¦°à§‡ à¦¬à¦¸à¦¿à¦¯à¦¼à§‡ à¦§à¦¾à¦ªà§‡ à¦§à¦¾à¦ªà§‡ à¦¸à¦®à¦¾à¦§à¦¾à¦¨ à¦•à¦°à§‹à¥¤',
     ],
-    diagram: 'graph LR\n  A[ax²+bx+c=0] --> B[a,b,c বের করো]\n  B --> C[সূত্রে বসাও]\n  C --> D[x এর মান]\n  D --> E[যাচাই]',
+    diagram: 'graph LR\n  A[axÂ²+bx+c=0] --> B[a,b,c à¦¬à§‡à¦° à¦•à¦°à§‹]\n  B --> C[à¦¸à§‚à¦¤à§à¦°à§‡ à¦¬à¦¸à¦¾à¦“]\n  C --> D[x à¦à¦° à¦®à¦¾à¦¨]\n  D --> E[à¦¯à¦¾à¦šà¦¾à¦‡]',
   },
   creative_answer: {
     subject: 'bangla',
     title: 'Creative Answer Structure',
     path: ['Bangla', 'Creative Writing', 'CQ Answer', 'Structure'],
-    keywords: ['সৃজনশীল', 'বাংলা', 'উত্তর', 'অনুচ্ছেদ'],
+    keywords: ['à¦¸à§ƒà¦œà¦¨à¦¶à§€à¦²', 'à¦¬à¦¾à¦‚à¦²à¦¾', 'à¦‰à¦¤à§à¦¤à¦°', 'à¦…à¦¨à§à¦šà§à¦›à§‡à¦¦'],
     facts: [
-      'সৃজনশীল উত্তরে আগে মূল ভাব, তারপর ব্যাখ্যা, শেষে উদাহরণ লিখতে হয়।',
-      'প্রশ্নের নির্দেশক শব্দ যেমন ব্যাখ্যা কর, বিশ্লেষণ কর, মূল্যায়ন কর - এগুলো আগে ধরতে হবে।',
-      'পরিষ্কার ভাব, ছোট অনুচ্ছেদ এবং পাঠ্যবইয়ের প্রাসঙ্গিক উদাহরণ নম্বর বাড়ায়।',
+      'à¦¸à§ƒà¦œà¦¨à¦¶à§€à¦² à¦‰à¦¤à§à¦¤à¦°à§‡ à¦†à¦—à§‡ à¦®à§‚à¦² à¦­à¦¾à¦¬, à¦¤à¦¾à¦°à¦ªà¦° à¦¬à§à¦¯à¦¾à¦–à§à¦¯à¦¾, à¦¶à§‡à¦·à§‡ à¦‰à¦¦à¦¾à¦¹à¦°à¦£ à¦²à¦¿à¦–à¦¤à§‡ à¦¹à¦¯à¦¼à¥¤',
+      'à¦ªà§à¦°à¦¶à§à¦¨à§‡à¦° à¦¨à¦¿à¦°à§à¦¦à§‡à¦¶à¦• à¦¶à¦¬à§à¦¦ à¦¯à§‡à¦®à¦¨ à¦¬à§à¦¯à¦¾à¦–à§à¦¯à¦¾ à¦•à¦°, à¦¬à¦¿à¦¶à§à¦²à§‡à¦·à¦£ à¦•à¦°, à¦®à§‚à¦²à§à¦¯à¦¾à¦¯à¦¼à¦¨ à¦•à¦° - à¦à¦—à§à¦²à§‹ à¦†à¦—à§‡ à¦§à¦°à¦¤à§‡ à¦¹à¦¬à§‡à¥¤',
+      'à¦ªà¦°à¦¿à¦·à§à¦•à¦¾à¦° à¦­à¦¾à¦¬, à¦›à§‹à¦Ÿ à¦…à¦¨à§à¦šà§à¦›à§‡à¦¦ à¦à¦¬à¦‚ à¦ªà¦¾à¦ à§à¦¯à¦¬à¦‡à¦¯à¦¼à§‡à¦° à¦ªà§à¦°à¦¾à¦¸à¦™à§à¦—à¦¿à¦• à¦‰à¦¦à¦¾à¦¹à¦°à¦£ à¦¨à¦®à§à¦¬à¦° à¦¬à¦¾à¦¡à¦¼à¦¾à¦¯à¦¼à¥¤',
     ],
-    diagram: 'graph LR\n  A[প্রশ্ন পড়ো] --> B[নির্দেশক শব্দ ধরো]\n  B --> C[মূল ভাব]\n  C --> D[ব্যাখ্যা]\n  D --> E[উদাহরণ]',
+    diagram: 'graph LR\n  A[à¦ªà§à¦°à¦¶à§à¦¨ à¦ªà¦¡à¦¼à§‹] --> B[à¦¨à¦¿à¦°à§à¦¦à§‡à¦¶à¦• à¦¶à¦¬à§à¦¦ à¦§à¦°à§‹]\n  B --> C[à¦®à§‚à¦² à¦­à¦¾à¦¬]\n  C --> D[à¦¬à§à¦¯à¦¾à¦–à§à¦¯à¦¾]\n  D --> E[à¦‰à¦¦à¦¾à¦¹à¦°à¦£]',
   },
 } as const
 
@@ -105,13 +216,16 @@ function inferLesson(question: string): LessonKey | null {
 }
 
 function selectedAnimationKey(question: string, mode: OutputMode, lessonKey: LessonKey | null): AnimationKey | null {
-  if (mode !== 'animation') return null
+  if (mode !== 'animation' && mode !== 'video') return null
   if (lessonKey === 'newton_second_law' || lessonKey === 'photosynthesis') return lessonKey
+  if (lessonKey === 'quadratic_formula') return 'quadratic_formula'
 
   const normalized = question.toLowerCase()
-  if (/(খনিজ|খনিজ|mineral|khonij|crystal)/i.test(normalized)) return 'minerals'
-  if (/(photosynthesis|সালোক|chlorophyll|co2|oxygen)/i.test(normalized)) return 'photosynthesis'
+  if (/(à¦–à¦¨à¦¿à¦œ|à¦–à¦¨à¦¿à¦œ|mineral|khonij|crystal)/i.test(normalized)) return 'minerals'
+  if (/(photosynthesis|à¦¸à¦¾à¦²à§‹à¦•|chlorophyll|co2|oxygen)/i.test(normalized)) return 'photosynthesis'
   if (/(newton|2nd law|second law|f\s*=\s*ma|force)/i.test(normalized)) return 'newton_second_law'
+
+  if (/(quadratic|formula|x\s*(\^2|²)|equation)/i.test(normalized)) return 'quadratic_formula'
 
   return 'generic_concept'
 }
@@ -140,61 +254,61 @@ function polishMermaidDiagram(diagram: string) {
 
 function detectEmotion(question: string, previousCount = 0): EmotionState {
   const lc = question.toLowerCase()
-  if (previousCount > 1 || ['পারছি না', 'কঠিন', 'হতাশ', 'too hard', 'frustrated'].some(word => lc.includes(word))) return 'frustrated'
-  if (['বুঝি না', 'বুঝলাম না', 'কেন', 'কিভাবে', 'বুঝাও', 'bujhi na', 'bujhao', 'why', 'how'].some(word => lc.includes(word))) return 'confused'
+  if (previousCount > 1 || ['à¦ªà¦¾à¦°à¦›à¦¿ à¦¨à¦¾', 'à¦•à¦ à¦¿à¦¨', 'à¦¹à¦¤à¦¾à¦¶', 'too hard', 'frustrated'].some(word => lc.includes(word))) return 'frustrated'
+  if (['à¦¬à§à¦à¦¿ à¦¨à¦¾', 'à¦¬à§à¦à¦²à¦¾à¦® à¦¨à¦¾', 'à¦•à§‡à¦¨', 'à¦•à¦¿à¦­à¦¾à¦¬à§‡', 'à¦¬à§à¦à¦¾à¦“', 'bujhi na', 'bujhao', 'why', 'how'].some(word => lc.includes(word))) return 'confused'
   return 'confident'
 }
 
 function introFor(emotion: EmotionState) {
-  if (emotion === 'frustrated') return 'চিন্তা করো না, খুব ছোট করে ধরি।'
-  if (emotion === 'confused') return 'একটা সহজ উদাহরণ দিয়ে শুরু করি।'
-  return 'ভালো প্রশ্ন।'
+  if (emotion === 'frustrated') return 'à¦šà¦¿à¦¨à§à¦¤à¦¾ à¦•à¦°à§‹ à¦¨à¦¾, à¦–à§à¦¬ à¦›à§‹à¦Ÿ à¦•à¦°à§‡ à¦§à¦°à¦¿à¥¤'
+  if (emotion === 'confused') return 'à¦à¦•à¦Ÿà¦¾ à¦¸à¦¹à¦œ à¦‰à¦¦à¦¾à¦¹à¦°à¦£ à¦¦à¦¿à¦¯à¦¼à§‡ à¦¶à§à¦°à§ à¦•à¦°à¦¿à¥¤'
+  return 'à¦­à¦¾à¦²à§‹ à¦ªà§à¦°à¦¶à§à¦¨à¥¤'
 }
 
 function answerFromLesson(lessonKey: LessonKey, mode: OutputMode, emotion: EmotionState, language: string) {
   const lesson = LESSONS[lessonKey]
-  const cultural = language !== 'bn' ? 'CHT example ধরলে, jhum farming-এর মতো এখানে ছোট ছোট অংশ মিলে পুরো প্রক্রিয়া তৈরি হয়। ' : ''
+  const cultural = language !== 'bn' ? 'CHT example à¦§à¦°à¦²à§‡, jhum farming-à¦à¦° à¦®à¦¤à§‹ à¦à¦–à¦¾à¦¨à§‡ à¦›à§‹à¦Ÿ à¦›à§‹à¦Ÿ à¦…à¦‚à¦¶ à¦®à¦¿à¦²à§‡ à¦ªà§à¦°à§‹ à¦ªà§à¦°à¦•à§à¦°à¦¿à¦¯à¦¼à¦¾ à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼à¥¤ ' : ''
 
   if (mode === 'exam') {
-    return `সংজ্ঞা: ${lesson.facts[0]}\n\nব্যাখ্যা: ${lesson.facts[1]}\n\nগুরুত্ব/উদাহরণ: ${lesson.facts[2]}\n\nSocratic check: এই বন্ধন বা ধারণাটি কোন বৈশিষ্ট্য তৈরি করছে?`
+    return `à¦¸à¦‚à¦œà§à¦žà¦¾: ${lesson.facts[0]}\n\nà¦¬à§à¦¯à¦¾à¦–à§à¦¯à¦¾: ${lesson.facts[1]}\n\nà¦—à§à¦°à§à¦¤à§à¦¬/à¦‰à¦¦à¦¾à¦¹à¦°à¦£: ${lesson.facts[2]}\n\nSocratic check: à¦à¦‡ à¦¬à¦¨à§à¦§à¦¨ à¦¬à¦¾ à¦§à¦¾à¦°à¦£à¦¾à¦Ÿà¦¿ à¦•à§‹à¦¨ à¦¬à§ˆà¦¶à¦¿à¦·à§à¦Ÿà§à¦¯ à¦¤à§ˆà¦°à¦¿ à¦•à¦°à¦›à§‡?`
   }
 
   if (mode === 'simple') {
-    return `${introFor(emotion)} ${cultural}${lesson.facts[0]} ${lesson.facts[2]} এখন তুমি এক লাইনে বলো, এখানে মূল আকর্ষণ বা কারণটা কী?`
+    return `${introFor(emotion)} ${cultural}${lesson.facts[0]} ${lesson.facts[2]} à¦à¦–à¦¨ à¦¤à§à¦®à¦¿ à¦à¦• à¦²à¦¾à¦‡à¦¨à§‡ à¦¬à¦²à§‹, à¦à¦–à¦¾à¦¨à§‡ à¦®à§‚à¦² à¦†à¦•à¦°à§à¦·à¦£ à¦¬à¦¾ à¦•à¦¾à¦°à¦£à¦Ÿà¦¾ à¦•à§€?`
   }
 
-  return `${introFor(emotion)} ${cultural}${lesson.facts.join(' ')} Socratic check: এই concept বুঝতে কোন আগের ধারণাটা জানা দরকার?`
+  return `${introFor(emotion)} ${cultural}${lesson.facts.join(' ')} Socratic check: à¦à¦‡ concept à¦¬à§à¦à¦¤à§‡ à¦•à§‹à¦¨ à¦†à¦—à§‡à¦° à¦§à¦¾à¦°à¦£à¦¾à¦Ÿà¦¾ à¦œà¦¾à¦¨à¦¾ à¦¦à¦°à¦•à¦¾à¦°?`
 }
 
 function unknownQuestionFallback(question: string, selectedSubject: string, emotion: EmotionState) {
   const intro = introFor(emotion)
-  return `${intro} এই প্রশ্নের জন্য নির্ভরযোগ্য curriculum context পাচ্ছি না, তাই ভুল concept ধরে উত্তর দিচ্ছি না। প্রশ্নটা "${question.slice(0, 80)}"। যদি এটা তরলের চাপ/প্রবাহ নিয়ে হয়, মূল ধারণা হলো: তরল পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়, আর গভীরতা বাড়লে চাপ বাড়ে। তুমি কি "তরলের চাপ" বোঝাতে চেয়েছ, নাকি "তরলের প্রবাহ"?`
+  return `${intro} à¦à¦‡ à¦ªà§à¦°à¦¶à§à¦¨à§‡à¦° à¦œà¦¨à§à¦¯ à¦¨à¦¿à¦°à§à¦­à¦°à¦¯à§‹à¦—à§à¦¯ curriculum context à¦ªà¦¾à¦šà§à¦›à¦¿ à¦¨à¦¾, à¦¤à¦¾à¦‡ à¦­à§à¦² concept à¦§à¦°à§‡ à¦‰à¦¤à§à¦¤à¦° à¦¦à¦¿à¦šà§à¦›à¦¿ à¦¨à¦¾à¥¤ à¦ªà§à¦°à¦¶à§à¦¨à¦Ÿà¦¾ "${question.slice(0, 80)}"à¥¤ à¦¯à¦¦à¦¿ à¦à¦Ÿà¦¾ à¦¤à¦°à¦²à§‡à¦° à¦šà¦¾à¦ª/à¦ªà§à¦°à¦¬à¦¾à¦¹ à¦¨à¦¿à§Ÿà§‡ à¦¹à§Ÿ, à¦®à§‚à¦² à¦§à¦¾à¦°à¦£à¦¾ à¦¹à¦²à§‹: à¦¤à¦°à¦² à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦¦à§‡à§Ÿà¦¾à¦² à¦“ à¦¨à¦¿à¦šà§‡à¦° à¦¦à¦¿à¦•à§‡ à¦šà¦¾à¦ª à¦¦à§‡à§Ÿ, à¦†à¦° à¦—à¦­à§€à¦°à¦¤à¦¾ à¦¬à¦¾à§œà¦²à§‡ à¦šà¦¾à¦ª à¦¬à¦¾à§œà§‡à¥¤ à¦¤à§à¦®à¦¿ à¦•à¦¿ "à¦¤à¦°à¦²à§‡à¦° à¦šà¦¾à¦ª" à¦¬à§‹à¦à¦¾à¦¤à§‡ à¦šà§‡à§Ÿà§‡à¦›, à¦¨à¦¾à¦•à¦¿ "à¦¤à¦°à¦²à§‡à¦° à¦ªà§à¦°à¦¬à¦¾à¦¹"?`
 }
 
 function directFallbackAnswer(question: string, emotion: EmotionState) {
   const intro = introFor(emotion)
-  return `${intro} প্রশ্নটা "${question.slice(0, 80)}"। যদি এটা তরলের চাপ/প্রবাহ নিয়ে হয়, মূল ধারণা হলো: তরল পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়, আর গভীরতা বাড়লে চাপ বাড়ে। তরল সবদিকে চাপ প্রয়োগ করে, তাই পাত্রের আকার ও গভীরতা চাপের প্রভাব বদলায়। তুমি কি "তরলের চাপ" বোঝাতে চেয়েছ, নাকি "তরলের প্রবাহ"?`
+  return `${intro} à¦ªà§à¦°à¦¶à§à¦¨à¦Ÿà¦¾ "${question.slice(0, 80)}"à¥¤ à¦¯à¦¦à¦¿ à¦à¦Ÿà¦¾ à¦¤à¦°à¦²à§‡à¦° à¦šà¦¾à¦ª/à¦ªà§à¦°à¦¬à¦¾à¦¹ à¦¨à¦¿à§Ÿà§‡ à¦¹à§Ÿ, à¦®à§‚à¦² à¦§à¦¾à¦°à¦£à¦¾ à¦¹à¦²à§‹: à¦¤à¦°à¦² à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦¦à§‡à§Ÿà¦¾à¦² à¦“ à¦¨à¦¿à¦šà§‡à¦° à¦¦à¦¿à¦•à§‡ à¦šà¦¾à¦ª à¦¦à§‡à§Ÿ, à¦†à¦° à¦—à¦­à§€à¦°à¦¤à¦¾ à¦¬à¦¾à§œà¦²à§‡ à¦šà¦¾à¦ª à¦¬à¦¾à§œà§‡à¥¤ à¦¤à¦°à¦² à¦¸à¦¬à¦¦à¦¿à¦•à§‡ à¦šà¦¾à¦ª à¦ªà§à¦°à§Ÿà§‹à¦— à¦•à¦°à§‡, à¦¤à¦¾à¦‡ à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦†à¦•à¦¾à¦° à¦“ à¦—à¦­à§€à¦°à¦¤à¦¾ à¦šà¦¾à¦ªà§‡à¦° à¦ªà§à¦°à¦­à¦¾à¦¬ à¦¬à¦¦à¦²à¦¾à§Ÿà¥¤ à¦¤à§à¦®à¦¿ à¦•à¦¿ "à¦¤à¦°à¦²à§‡à¦° à¦šà¦¾à¦ª" à¦¬à§‹à¦à¦¾à¦¤à§‡ à¦šà§‡à§Ÿà§‡à¦›, à¦¨à¦¾à¦•à¦¿ "à¦¤à¦°à¦²à§‡à¦° à¦ªà§à¦°à¦¬à¦¾à¦¹"?`
 }
 
 function safeFallbackAnswer(question: string, emotion: EmotionState) {
   const intro = introFor(emotion)
   const normalized = question.toLowerCase()
 
-  if (/খনিজ|ধনিজ|mineral/.test(normalized)) {
-    return `${intro} খনিজ পদার্থ হলো মাটি বা ভূ-পৃষ্ঠের নিচ থেকে পাওয়া প্রাকৃতিক পদার্থ, যেগুলো মানুষের কাজে লাগে। উদাহরণ: লোহা, তামা, সোনা, রূপা, কয়লা, চুনাপাথর, লবণ, প্রাকৃতিক গ্যাস ও পেট্রোলিয়াম। এগুলো দিয়ে ঘরবাড়ি, যন্ত্রপাতি, গয়না, জ্বালানি ও রাসায়নিক দ্রব্য তৈরি করা হয়। Socratic check: খনিজ পদার্থের মধ্যে কোনগুলো জ্বালানি হিসেবে ব্যবহার হয়?`
+  if (/à¦–à¦¨à¦¿à¦œ|à¦§à¦¨à¦¿à¦œ|mineral/.test(normalized)) {
+    return `${intro} à¦–à¦¨à¦¿à¦œ à¦ªà¦¦à¦¾à¦°à§à¦¥ à¦¹à¦²à§‹ à¦®à¦¾à¦Ÿà¦¿ à¦¬à¦¾ à¦­à§‚-à¦ªà§ƒà¦·à§à¦ à§‡à¦° à¦¨à¦¿à¦š à¦¥à§‡à¦•à§‡ à¦ªà¦¾à¦“à§Ÿà¦¾ à¦ªà§à¦°à¦¾à¦•à§ƒà¦¤à¦¿à¦• à¦ªà¦¦à¦¾à¦°à§à¦¥, à¦¯à§‡à¦—à§à¦²à§‹ à¦®à¦¾à¦¨à§à¦·à§‡à¦° à¦•à¦¾à¦œà§‡ à¦²à¦¾à¦—à§‡à¥¤ à¦‰à¦¦à¦¾à¦¹à¦°à¦£: à¦²à§‹à¦¹à¦¾, à¦¤à¦¾à¦®à¦¾, à¦¸à§‹à¦¨à¦¾, à¦°à§‚à¦ªà¦¾, à¦•à§Ÿà¦²à¦¾, à¦šà§à¦¨à¦¾à¦ªà¦¾à¦¥à¦°, à¦²à¦¬à¦£, à¦ªà§à¦°à¦¾à¦•à§ƒà¦¤à¦¿à¦• à¦—à§à¦¯à¦¾à¦¸ à¦“ à¦ªà§‡à¦Ÿà§à¦°à§‹à¦²à¦¿à§Ÿà¦¾à¦®à¥¤ à¦à¦—à§à¦²à§‹ à¦¦à¦¿à§Ÿà§‡ à¦˜à¦°à¦¬à¦¾à§œà¦¿, à¦¯à¦¨à§à¦¤à§à¦°à¦ªà¦¾à¦¤à¦¿, à¦—à§Ÿà¦¨à¦¾, à¦œà§à¦¬à¦¾à¦²à¦¾à¦¨à¦¿ à¦“ à¦°à¦¾à¦¸à¦¾à§Ÿà¦¨à¦¿à¦• à¦¦à§à¦°à¦¬à§à¦¯ à¦¤à§ˆà¦°à¦¿ à¦•à¦°à¦¾ à¦¹à§Ÿà¥¤ Socratic check: à¦–à¦¨à¦¿à¦œ à¦ªà¦¦à¦¾à¦°à§à¦¥à§‡à¦° à¦®à¦§à§à¦¯à§‡ à¦•à§‹à¦¨à¦—à§à¦²à§‹ à¦œà§à¦¬à¦¾à¦²à¦¾à¦¨à¦¿ à¦¹à¦¿à¦¸à§‡à¦¬à§‡ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦¹à§Ÿ?`
   }
 
-  if (/তরল|liquid|fluid/.test(normalized)) {
-    return `${intro} তরল পদার্থের নির্দিষ্ট আয়তন থাকে, কিন্তু নির্দিষ্ট আকার থাকে না; যে পাত্রে রাখা হয় তার আকার ধারণ করে। পানি, তেল, দুধ, কেরোসিন এগুলো তরল পদার্থের উদাহরণ। তরল সহজে প্রবাহিত হয় এবং পাত্রের দেয়াল ও নিচের দিকে চাপ দেয়। Socratic check: পানি গ্লাসে রাখলে কেন গ্লাসের আকার নেয়?`
+  if (/à¦¤à¦°à¦²|liquid|fluid/.test(normalized)) {
+    return `${intro} à¦¤à¦°à¦² à¦ªà¦¦à¦¾à¦°à§à¦¥à§‡à¦° à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à§Ÿà¦¤à¦¨ à¦¥à¦¾à¦•à§‡, à¦•à¦¿à¦¨à§à¦¤à§ à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à¦•à¦¾à¦° à¦¥à¦¾à¦•à§‡ à¦¨à¦¾; à¦¯à§‡ à¦ªà¦¾à¦¤à§à¦°à§‡ à¦°à¦¾à¦–à¦¾ à¦¹à§Ÿ à¦¤à¦¾à¦° à¦†à¦•à¦¾à¦° à¦§à¦¾à¦°à¦£ à¦•à¦°à§‡à¥¤ à¦ªà¦¾à¦¨à¦¿, à¦¤à§‡à¦², à¦¦à§à¦§, à¦•à§‡à¦°à§‹à¦¸à¦¿à¦¨ à¦à¦—à§à¦²à§‹ à¦¤à¦°à¦² à¦ªà¦¦à¦¾à¦°à§à¦¥à§‡à¦° à¦‰à¦¦à¦¾à¦¹à¦°à¦£à¥¤ à¦¤à¦°à¦² à¦¸à¦¹à¦œà§‡ à¦ªà§à¦°à¦¬à¦¾à¦¹à¦¿à¦¤ à¦¹à§Ÿ à¦à¦¬à¦‚ à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦¦à§‡à§Ÿà¦¾à¦² à¦“ à¦¨à¦¿à¦šà§‡à¦° à¦¦à¦¿à¦•à§‡ à¦šà¦¾à¦ª à¦¦à§‡à§Ÿà¥¤ Socratic check: à¦ªà¦¾à¦¨à¦¿ à¦—à§à¦²à¦¾à¦¸à§‡ à¦°à¦¾à¦–à¦²à§‡ à¦•à§‡à¦¨ à¦—à§à¦²à¦¾à¦¸à§‡à¦° à¦†à¦•à¦¾à¦° à¦¨à§‡à§Ÿ?`
   }
 
-  return `${intro} প্রশ্নটা "${question.slice(0, 80)}"। সহজভাবে বললে, এই প্রশ্নের মূল শব্দগুলো আগে চিহ্নিত করতে হবে, তারপর সংজ্ঞা, উদাহরণ এবং ব্যবহার লিখতে হবে। তুমি প্রশ্নটা আরেকটু নির্দিষ্ট করে লিখলে আমি exact chapter অনুযায়ী উত্তর সাজিয়ে দেব। Socratic check: প্রশ্নে কোন শব্দটা সবচেয়ে গুরুত্বপূর্ণ মনে হচ্ছে?`
+  return `${intro} à¦ªà§à¦°à¦¶à§à¦¨à¦Ÿà¦¾ "${question.slice(0, 80)}"à¥¤ à¦¸à¦¹à¦œà¦­à¦¾à¦¬à§‡ à¦¬à¦²à¦²à§‡, à¦à¦‡ à¦ªà§à¦°à¦¶à§à¦¨à§‡à¦° à¦®à§‚à¦² à¦¶à¦¬à§à¦¦à¦—à§à¦²à§‹ à¦†à¦—à§‡ à¦šà¦¿à¦¹à§à¦¨à¦¿à¦¤ à¦•à¦°à¦¤à§‡ à¦¹à¦¬à§‡, à¦¤à¦¾à¦°à¦ªà¦° à¦¸à¦‚à¦œà§à¦žà¦¾, à¦‰à¦¦à¦¾à¦¹à¦°à¦£ à¦à¦¬à¦‚ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦²à¦¿à¦–à¦¤à§‡ à¦¹à¦¬à§‡à¥¤ à¦¤à§à¦®à¦¿ à¦ªà§à¦°à¦¶à§à¦¨à¦Ÿà¦¾ à¦†à¦°à§‡à¦•à¦Ÿà§ à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦•à¦°à§‡ à¦²à¦¿à¦–à¦²à§‡ à¦†à¦®à¦¿ exact chapter à¦…à¦¨à§à¦¯à¦¾à§Ÿà§€ à¦‰à¦¤à§à¦¤à¦° à¦¸à¦¾à¦œà¦¿à§Ÿà§‡ à¦¦à§‡à¦¬à¥¤ Socratic check: à¦ªà§à¦°à¦¶à§à¦¨à§‡ à¦•à§‹à¦¨ à¦¶à¦¬à§à¦¦à¦Ÿà¦¾ à¦¸à¦¬à¦šà§‡à§Ÿà§‡ à¦—à§à¦°à§à¦¤à§à¦¬à¦ªà§‚à¦°à§à¦£ à¦®à¦¨à§‡ à¦¹à¦šà§à¦›à§‡?`
 }
 
 function safeFallbackGraphPath(question: string, selectedSubject: string) {
   const normalized = question.toLowerCase()
-  if (/খনিজ|ধনিজ|mineral/.test(normalized)) return ['Geography', 'Natural Resources', 'Minerals']
-  if (/তরল|liquid|fluid/.test(normalized)) return ['Physics', 'Matter', 'Liquid']
+  if (/à¦–à¦¨à¦¿à¦œ|à¦§à¦¨à¦¿à¦œ|mineral/.test(normalized)) return ['Geography', 'Natural Resources', 'Minerals']
+  if (/à¦¤à¦°à¦²|liquid|fluid/.test(normalized)) return ['Physics', 'Matter', 'Liquid']
   return [selectedSubject || 'Curriculum', 'General Question']
 }
 
@@ -248,13 +362,13 @@ function extractJson(text: string) {
 function fallbackConceptDiagram(fallbackTitle: string) {
   const title = (fallbackTitle || 'Concept').replace(/[[\]{}|"`]/g, ' ').slice(0, 36)
   return `flowchart LR
-  A[${title}] --> B[সংজ্ঞা]
-  A --> C[বৈশিষ্ট্য]
-  A --> D[উদাহরণ]
-  B --> E[মূল কারণ]
+  A[${title}] --> B[à¦¸à¦‚à¦œà§à¦žà¦¾]
+  A --> C[à¦¬à§ˆà¦¶à¦¿à¦·à§à¦Ÿà§à¦¯]
+  A --> D[à¦‰à¦¦à¦¾à¦¹à¦°à¦£]
+  B --> E[à¦®à§‚à¦² à¦•à¦¾à¦°à¦£]
   C --> E
-  D --> F[বাস্তব ব্যবহার]
-  E --> G[মূল শিক্ষা]
+  D --> F[à¦¬à¦¾à¦¸à§à¦¤à¦¬ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦°]
+  E --> G[à¦®à§‚à¦² à¦¶à¦¿à¦•à§à¦·à¦¾]
   F --> G`
 }
 
@@ -265,11 +379,11 @@ function safeDiagram(value: unknown, fallbackTitle: string) {
 
 function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
   const normalized = question.toLowerCase()
-  if (/খনিজ|ধনিজ|mineral/.test(normalized)) {
-    return 'graph LR\n  A[প্রাকৃতিক উৎস] --> B[খনিজ পদার্থ]\n  B --> C[ধাতব খনিজ]\n  B --> D[অধাতব খনিজ]\n  B --> E[জ্বালানি খনিজ]\n  C --> F[লোহা ও তামা]\n  D --> G[লবণ ও চুনাপাথর]\n  E --> H[কয়লা ও গ্যাস]'
+  if (/à¦–à¦¨à¦¿à¦œ|à¦§à¦¨à¦¿à¦œ|mineral/.test(normalized)) {
+    return 'graph LR\n  A[à¦ªà§à¦°à¦¾à¦•à§ƒà¦¤à¦¿à¦• à¦‰à§Žà¦¸] --> B[à¦–à¦¨à¦¿à¦œ à¦ªà¦¦à¦¾à¦°à§à¦¥]\n  B --> C[à¦§à¦¾à¦¤à¦¬ à¦–à¦¨à¦¿à¦œ]\n  B --> D[à¦…à¦§à¦¾à¦¤à¦¬ à¦–à¦¨à¦¿à¦œ]\n  B --> E[à¦œà§à¦¬à¦¾à¦²à¦¾à¦¨à¦¿ à¦–à¦¨à¦¿à¦œ]\n  C --> F[à¦²à§‹à¦¹à¦¾ à¦“ à¦¤à¦¾à¦®à¦¾]\n  D --> G[à¦²à¦¬à¦£ à¦“ à¦šà§à¦¨à¦¾à¦ªà¦¾à¦¥à¦°]\n  E --> H[à¦•à§Ÿà¦²à¦¾ à¦“ à¦—à§à¦¯à¦¾à¦¸]'
   }
-  if (/তরল|liquid|fluid/.test(normalized)) {
-    return 'graph LR\n  A[তরল পদার্থ] --> B[নির্দিষ্ট আয়তন]\n  A --> C[নির্দিষ্ট আকার নেই]\n  A --> D[প্রবাহিত হয়]\n  A --> E[চাপ প্রয়োগ করে]\n  C --> F[পাত্রের আকার নেয়]'
+  if (/à¦¤à¦°à¦²|liquid|fluid/.test(normalized)) {
+    return 'graph LR\n  A[à¦¤à¦°à¦² à¦ªà¦¦à¦¾à¦°à§à¦¥] --> B[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à§Ÿà¦¤à¦¨]\n  A --> C[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à¦•à¦¾à¦° à¦¨à§‡à¦‡]\n  A --> D[à¦ªà§à¦°à¦¬à¦¾à¦¹à¦¿à¦¤ à¦¹à§Ÿ]\n  A --> E[à¦šà¦¾à¦ª à¦ªà§à¦°à§Ÿà§‹à¦— à¦•à¦°à§‡]\n  C --> F[à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦†à¦•à¦¾à¦° à¦¨à§‡à§Ÿ]'
   }
   return safeDiagram(null, fallbackTitle)
 }
@@ -277,7 +391,7 @@ function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
 function fallbackOcrContextAnswer(question: string, extractedText: string, emotion: EmotionState) {
   const intro = introFor(emotion)
   const readable = extractedText.replace(/\s+/g, ' ').trim().slice(0, 520)
-  return `${intro} Uploaded text থেকে যা পড়া যাচ্ছে: ${readable}${extractedText.length > 520 ? '...' : ''}\n\nতোমার প্রশ্ন: ${question}\n\nএই text-এর ভিত্তিতে আগে main idea, keyword, আর কোনো equation/question number চিহ্নিত করো। তারপর ওই অংশ ধরে উত্তর সাজাও। যদি তুমি specific question number বলো, আমি সেই অংশ ধরে আরও সরাসরি answer সাজিয়ে দেব। Socratic check: এই uploaded text-এ কোন line বা keyword সবচেয়ে গুরুত্বপূর্ণ মনে হচ্ছে?`
+  return `${intro} Uploaded text à¦¥à§‡à¦•à§‡ à¦¯à¦¾ à¦ªà§œà¦¾ à¦¯à¦¾à¦šà§à¦›à§‡: ${readable}${extractedText.length > 520 ? '...' : ''}\n\nà¦¤à§‹à¦®à¦¾à¦° à¦ªà§à¦°à¦¶à§à¦¨: ${question}\n\nà¦à¦‡ text-à¦à¦° à¦­à¦¿à¦¤à§à¦¤à¦¿à¦¤à§‡ à¦†à¦—à§‡ main idea, keyword, à¦†à¦° à¦•à§‹à¦¨à§‹ equation/question number à¦šà¦¿à¦¹à§à¦¨à¦¿à¦¤ à¦•à¦°à§‹à¥¤ à¦¤à¦¾à¦°à¦ªà¦° à¦“à¦‡ à¦…à¦‚à¦¶ à¦§à¦°à§‡ à¦‰à¦¤à§à¦¤à¦° à¦¸à¦¾à¦œà¦¾à¦“à¥¤ à¦¯à¦¦à¦¿ à¦¤à§à¦®à¦¿ specific question number à¦¬à¦²à§‹, à¦†à¦®à¦¿ à¦¸à§‡à¦‡ à¦…à¦‚à¦¶ à¦§à¦°à§‡ à¦†à¦°à¦“ à¦¸à¦°à¦¾à¦¸à¦°à¦¿ answer à¦¸à¦¾à¦œà¦¿à§Ÿà§‡ à¦¦à§‡à¦¬à¥¤ Socratic check: à¦à¦‡ uploaded text-à¦ à¦•à§‹à¦¨ line à¦¬à¦¾ keyword à¦¸à¦¬à¦šà§‡à§Ÿà§‡ à¦—à§à¦°à§à¦¤à§à¦¬à¦ªà§‚à¦°à§à¦£ à¦®à¦¨à§‡ à¦¹à¦šà§à¦›à§‡?`
 }
 
 async function dynamicGeminiNode(params: {
@@ -287,16 +401,9 @@ async function dynamicGeminiNode(params: {
   emotion: EmotionState
   language: string
   conceptMemory: unknown
-  curriculumChunks?: Array<{
-    content: string
-    contextText?: string
-    context_text?: string
-    contextual_summary?: string
-    topic: string
-    chapter?: string
-    chunk_type?: string
-    similarity: number
-  }>
+  studentProfile?: StudentProfileContext
+  chatContext?: ChatContextItem[]
+  curriculumChunks?: RetrievedCurriculumChunk[]
 }) {
   const memoryText = Array.isArray(params.conceptMemory)
     ? params.conceptMemory
@@ -306,27 +413,25 @@ async function dynamicGeminiNode(params: {
         .join('\n')
     : ''
 
-  const curriculumContext = Array.isArray(params.curriculumChunks) && params.curriculumChunks.length > 0
-    ? '\n\nCurriculum context (from vector search):\n' +
-      params.curriculumChunks
-        .map((chunk, i) => {
-          const contextText = chunk.contextText || chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n')
-          const chunkMeta = [chunk.chapter, chunk.topic, chunk.chunk_type].filter(Boolean).join(' / ')
-          return `${i + 1}. [${chunkMeta || chunk.topic}] ${contextText}`
-        })
-        .join('\n')
-    : ''
+  const curriculumContext = curriculumContextText(params.curriculumChunks)
 
   const prompt = `You are VoicePandita's dynamic GraphRAG planner for SSC/HSC/admission students in Bangladesh.
 The question may be new and not in the local graph. Create a fresh curriculum-safe concept node.
 
 Student question: ${params.question}
 Selected subject from UI: ${params.selectedSubject}
+${profileInstruction(params.studentProfile)}
 Emotion: ${params.emotion}
 Language: ${params.language}
 Output mode: ${params.outputMode}
 Recent student concept memory:
-${memoryText || 'None'}${curriculumContext}
+${memoryText || 'None'}
+
+Recent chat context:
+${chatContextText(params.chatContext)}
+
+Retrieved curriculum context:
+${curriculumContext}
 
 Return ONLY valid JSON with this shape:
 {
@@ -340,10 +445,12 @@ Return ONLY valid JSON with this shape:
 Rules:
 - Infer the true school subject from the question first; the selected subject may be wrong.
 - Must answer the exact question.
-- If the student asks repeated words like 'করো করো করো', ignore repetition.
+- If the question refers to "this/ei/eta/related/previous", resolve it from recent chat context and keep the same concept unless the student clearly changes topic.
+- If the student asks repeated words like 'à¦•à¦°à§‹ à¦•à¦°à§‹ à¦•à¦°à§‹', ignore repetition.
 - If emotion is confused, use a simple analogy.
 - If emotion is frustrated, be short and encouraging.
-- Use curriculum context if available to ground your answer.
+- Use retrieved curriculum context when relevant. If it is weak or missing, still answer from reliable general knowledge and mention uncertainty only when needed.
+- For complex questions, teach in layers: core idea, step-by-step reasoning, example, common mistake, final takeaway.
 - End answer with one Socratic follow-up question.
 - Do not invent fake textbook references.
 - Diagram must be a concept map, not A -> B -> C -> D only.
@@ -371,14 +478,26 @@ async function directGeminiAnswer(params: {
   outputMode: OutputMode
   emotion: EmotionState
   language: string
+  studentProfile?: StudentProfileContext
+  chatContext?: ChatContextItem[]
+  curriculumChunks?: RetrievedCurriculumChunk[]
 }) {
+  const isFollowUp = looksLikeFollowUp(params.question)
   const prompt = `You are VoicePandita, a careful Bangla tutor and concept-map builder for SSC/HSC/admission students in Bangladesh.
 
 Student question: ${params.question}
 Selected subject from UI (weak hint only, may be wrong): ${params.selectedSubject}
+${profileInstruction(params.studentProfile)}
 Emotion: ${params.emotion}
 Language: ${params.language}
 Output mode: ${params.outputMode}
+This question is likely a follow-up to the recent chat: ${isFollowUp ? 'yes' : 'no'}
+
+Recent chat context:
+${chatContextText(params.chatContext)}
+
+Retrieved curriculum/textbook context. Use it when relevant; ignore it if it is unrelated:
+${curriculumContextText(params.curriculumChunks)}
 
 Return ONLY valid JSON with this shape:
 {
@@ -392,14 +511,23 @@ Return ONLY valid JSON with this shape:
 Rules:
 - Do not say curriculum context is missing.
 - Do not switch to Newton's law, bonding, or another unrelated concept.
+- If this is a follow-up, keep the same topic/chapter from recent chat context unless the student clearly names a new topic.
+- For questions like "HSC te ei related ki ki question aste pare?", answer for the previous concept and list likely HSC-style questions for that concept.
 - Infer the true subject from the question; ignore the selected subject if it is wrong.
+- If retrieved curriculum context is relevant, ground the answer in it.
+- If context comes from SSC-BanglaTutor, treat it as the primary SSC/NCTB-aligned evidence.
+- If retrieved context is missing or irrelevant, use your reliable general knowledge and answer normally.
 - If the question has typo/mixed Bangla-English, infer the likely intended school concept.
 - If the question is ambiguous, give the most likely answer first, then ask one short clarifying question.
-- Answer should usually be 70-130 words unless simple mode.
+- For complex questions, explain in layers: main idea, step-by-step reasoning, one concrete example, common mistake, final takeaway.
+- For SSC/HSC board goal, include definition/explanation/example style when useful.
+- For admission goal, include intuition, formula/logic, and trap warnings when useful.
+- Answer should usually be 120-220 words for whiteboard/text mode, 60-100 words for simple mode, and marks-friendly for exam mode.
+- Keep Bangla clear and student-friendly; technical English terms are okay when common in textbooks.
 - Diagram must not be generic like Question -> Cause -> Result -> Understand.
 - Diagram nodes must name the actual concept, types, examples, properties, or process steps.
 - Diagram must branch naturally from one main concept into properties/types/examples; do not force unrelated merge nodes.
-- Diagram must use this Mermaid style: graph LR\\n  A[মূল ধারণা] --> B[প্রকার]\\n  B --> C[উদাহরণ]
+- Diagram must use this Mermaid style: graph LR\\n  A[à¦®à§‚à¦² à¦§à¦¾à¦°à¦£à¦¾] --> B[à¦ªà§à¦°à¦•à¦¾à¦°]\\n  B --> C[à¦‰à¦¦à¦¾à¦¹à¦°à¦£]
 - End with one Socratic follow-up question.`
 
   const raw = await geminiText(prompt)
@@ -434,26 +562,11 @@ async function ocrContextGeminiAnswer(params: {
   outputMode: OutputMode
   emotion: EmotionState
   language: string
-  curriculumChunks?: Array<{
-    content: string
-    contextText?: string
-    context_text?: string
-    contextual_summary?: string
-    topic: string
-    chapter?: string
-    chunk_type?: string
-    similarity: number
-  }>
+  studentProfile?: StudentProfileContext
+  chatContext?: ChatContextItem[]
+  curriculumChunks?: RetrievedCurriculumChunk[]
 }) {
-  const curriculumContext = Array.isArray(params.curriculumChunks) && params.curriculumChunks.length > 0
-    ? params.curriculumChunks
-        .map((chunk, i) => {
-          const contextText = chunk.contextText || chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n')
-          const chunkMeta = [chunk.chapter, chunk.topic, chunk.chunk_type].filter(Boolean).join(' / ')
-          return `${i + 1}. [${chunkMeta || chunk.topic}] ${contextText}`
-        })
-        .join('\n')
-    : 'None'
+  const curriculumContext = curriculumContextText(params.curriculumChunks)
 
   const prompt = `You are VoicePandita, a helpful tutor for students in Bangladesh.
 The student uploaded educational text from an image. Use the extracted text as the primary context.
@@ -470,9 +583,13 @@ Student question about the extracted text:
 ${params.question}
 
 Selected subject from UI (weak hint only): ${params.selectedSubject}
+${profileInstruction(params.studentProfile)}
 Emotion: ${params.emotion}
 Language: ${params.language}
 Output mode: ${params.outputMode}
+
+Recent chat context:
+${chatContextText(params.chatContext)}
 
 Return ONLY valid JSON with this shape:
 {
@@ -531,10 +648,24 @@ export async function POST(req: NextRequest) {
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
     const curriculumChunks = Array.isArray(body.curriculumChunks) ? body.curriculumChunks : undefined
+    const studentProfile = body.studentProfile && typeof body.studentProfile === 'object'
+      ? {
+          level: typeof body.studentProfile.level === 'string' ? body.studentProfile.level : undefined,
+          goal: typeof body.studentProfile.goal === 'string' ? body.studentProfile.goal : undefined,
+          group: typeof body.studentProfile.group === 'string' ? body.studentProfile.group : undefined,
+        }
+      : undefined
+    const chatContext = Array.isArray(body.chatContext)
+      ? body.chatContext.slice(-8).map((item: any) => ({
+          role: typeof item?.role === 'string' ? item.role : undefined,
+          text: typeof item?.text === 'string' ? item.text : undefined,
+          graphPath: Array.isArray(item?.graphPath) ? item.graphPath.map((part: unknown) => String(part)).slice(0, 6) : undefined,
+        }))
+      : undefined
     const extractedText = String(body.extractedText || '').trim()
     const requestSource = String(body.source || '')
     const conceptSignal = requestSource === 'ocr' && extractedText ? `${extractedText}\n${question}` : question
-    const lessonKey = inferLesson(question)
+    const lessonKey = inferLesson(conceptSignal)
     const detectedEmotion = detectEmotion(question, repeatCount)
     const emotion = (body.emotion || detectedEmotion) as EmotionState
     const conceptMemory = body.conceptMemory
@@ -546,6 +677,7 @@ export async function POST(req: NextRequest) {
     let graphPath: string[] = lesson ? [...lesson.path] : [selectedSubject || 'Curriculum', 'Needs Clarification']
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
     let mode: 'ocr_context' | 'curriculum_guided' | 'general_fallback' = lessonKey ? 'curriculum_guided' : 'general_fallback'
+    const grounding = groundingInfo(curriculumChunks, studentProfile)
 
     try {
       if (requestSource === 'ocr' && extractedText) {
@@ -556,6 +688,8 @@ export async function POST(req: NextRequest) {
           outputMode,
           emotion,
           language,
+          studentProfile,
+          chatContext,
           curriculumChunks,
         })
         answer = ocrAnswer.answer
@@ -570,6 +704,9 @@ export async function POST(req: NextRequest) {
           outputMode,
           emotion,
           language,
+          studentProfile,
+          chatContext,
+          curriculumChunks,
         })
         answer = dynamic.answer
         diagram = dynamic.diagram
@@ -588,14 +725,20 @@ Facts:
 ${activeLesson.facts.join('\n')}
 
 Student question: ${question}
+${profileInstruction(studentProfile)}
 Emotion: ${emotion}
 Language: ${language}
 Mode: ${outputMode}
 
+Recent chat context:
+${chatContextText(chatContext)}
+
 Rules:
 - Answer in Bangla.
 - Must answer the exact question. Do not switch to another bonding/concept.
-- Max 120 words unless exam mode.
+- If the student asks a follow-up using "ei/eta/related/previous", keep the topic from recent chat context.
+- Explain clearly for the student's level and goal.
+- Max 180 words unless exam mode.
 - If confused, use an analogy first.
 - End with one Socratic follow-up question.`
 
@@ -621,25 +764,26 @@ Rules:
 
     return NextResponse.json({
       answer,
-      diagram: outputMode === 'simple' || outputMode === 'exam' ? null : polishMermaidDiagram(diagram),
+      diagram: outputMode === 'simple' || outputMode === 'exam' || outputMode === 'video' ? null : polishMermaidDiagram(diagram),
       animationKey,
       detectedEmotion,
       graphPath,
       pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
       source,
       mode,
+      grounding,
     })
   } catch (err) {
     console.error('/api/ask error:', err)
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json(
       {
-        answer: 'দুঃখিত, এখন উত্তর তৈরি করা যাচ্ছে না। আবার চেষ্টা করো।',
+        answer: 'à¦¦à§à¦ƒà¦–à¦¿à¦¤, à¦à¦–à¦¨ à¦‰à¦¤à§à¦¤à¦° à¦¤à§ˆà¦°à¦¿ à¦•à¦°à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤',
         diagram: null,
         error: process.env.NODE_ENV === 'development' ? message : undefined,
       },
       { status: 500 }
     )
-    return NextResponse.json({ answer: 'দুঃখিত, এখন উত্তর তৈরি করা যাচ্ছে না। আবার চেষ্টা করো।', diagram: null }, { status: 500 })
+    return NextResponse.json({ answer: 'à¦¦à§à¦ƒà¦–à¦¿à¦¤, à¦à¦–à¦¨ à¦‰à¦¤à§à¦¤à¦° à¦¤à§ˆà¦°à¦¿ à¦•à¦°à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§‹à¥¤', diagram: null }, { status: 500 })
   }
 }

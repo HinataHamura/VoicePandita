@@ -24,6 +24,43 @@ npm run dev
 
 ---
 
+## Manim Explainer Videos
+
+VoicePandita uses a hybrid visual-teaching architecture:
+
+- Existing React animations stay instant and low-bandwidth friendly in `/learn`.
+- Optional Manim explainers can be pre-rendered as MP4 files for polished STEM lessons.
+- If a Manim asset is missing, the app automatically falls back to the React animation or Mermaid concept map.
+
+Current curated Manim keys:
+
+```text
+newton_second_law
+quadratic_formula
+photosynthesis
+```
+
+Render locally:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-manim.txt
+
+npm run manim:list
+npm run manim:render
+```
+
+Rendered videos are copied to:
+
+```text
+public/animations/manim/videos/*.mp4
+```
+
+The render script updates `public/animations/manim/manifest.json` and marks successful assets as `available: true`. Do not claim AI-generated Manim videos as production-ready unless the MP4 exists and the manifest marks it available.
+
+---
+
 ## Text Multilingual Support
 
 The `/learn` chat now treats the selected language tab as the answer language. A student can type in Bangla, English, Chakma, Marma, or Garo, and the API sends this routing payload:
@@ -201,6 +238,34 @@ python scripts/seed_curriculum.py
 | Deploy | Vercel | Free |
 
 **Total monthly cost at MVP: BDT 0**
+
+---
+
+## Business Model and Global Readiness
+
+VoicePandita uses a cross-subsidy model: keep essential learning access free for rural and low-income students, then earn sustainable revenue from premium exam support, institutions, and sponsored inclusive deployments.
+
+| Channel | User / buyer | Offer | Sustainability logic |
+|---------|--------------|-------|----------------------|
+| Free student access | Rural SSC/HSC learners | Bangla Q&A, voice help, limited revision packs, offline fallback | Protects the social mission and builds adoption |
+| Student premium | Families who can pay | Higher AI usage, saved history, exam-focused packs, richer practice | Low-cost recurring revenue without blocking basic access |
+| School / NGO license | Schools, NGOs, learning centers | Teacher dashboard, cohort analytics, local curriculum packs, offline support | Seat or cohort pricing scales beyond individual chat usage |
+| Sponsored deployment | CSR, donors, government programs | Rural, CHT, and deaf learner access packs with impact reporting | Funds learners who cannot pay directly |
+| Data-safe insights | Teachers and program managers | Aggregated weak-topic and confusion hotspot reports | Uses anonymized learning signals, not private student resale |
+
+### Adoption Pathway
+
+1. Pilot with 2-3 rural or low-income SSC/HSC classrooms and measure active learners, questions answered, weak-topic improvement, teacher time saved, and offline-pack usage.
+2. Expand through NGOs, schools, and inclusive education partners serving CHT language communities and deaf learners.
+3. Add teacher dashboards, sponsored content packs, district-level reporting, and diaspora-supported mentor/content validation.
+4. Localize the same architecture for other multilingual emerging markets by swapping curriculum packs, language bridges, and verified datasets.
+
+### Global and NRB Readiness
+
+- NRB educators and mentors can validate Bangla curriculum content, sponsor pilots, and support diaspora learner cohorts.
+- University and language-data collaborators can help verify Chakma, Marma, Garo, and BdSL resources before production claims.
+- The platform is modular: RAG sources, language bridges, school dashboards, accessibility layers, and offline packs can be adapted country by country.
+- The market pattern is global: underserved learners need low-cost, curriculum-grounded, voice-first tutoring in local languages.
 
 ---
 

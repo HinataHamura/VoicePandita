@@ -12,14 +12,14 @@ export const animationMap: Record<AnimationKey, AnimationTemplate> = {
     title: "Newton's Second Law",
     subtitle: 'Force arrow, acceleration pulse, and mass effect.',
     component: NewtonLawAnimation,
-    prompts: ['newton', '2nd law', 'second law', 'f=ma', 'force', 'bujhi na'],
+    prompts: ['newton', '2nd law', 'second law', 'f=ma', 'force', 'বল', 'ত্বরণ', 'ভর'],
   },
   photosynthesis: {
     key: 'photosynthesis',
     title: 'Photosynthesis',
     subtitle: 'Sunlight, water, CO2, glucose, and oxygen.',
     component: PhotosynthesisAnimation,
-    prompts: ['photosynthesis', 'salok', 'chlorophyll', 'co2', 'oxygen'],
+    prompts: ['photosynthesis', 'salok', 'chlorophyll', 'co2', 'oxygen', 'সালোক', 'উদ্ভিদ'],
   },
   minerals: {
     key: 'minerals',
@@ -27,6 +27,13 @@ export const animationMap: Record<AnimationKey, AnimationTemplate> = {
     subtitle: 'Earth layers, crystal formation, properties, examples.',
     component: MineralAnimation,
     prompts: ['mineral', 'khonij', 'খনিজ', 'crystal'],
+  },
+  quadratic_formula: {
+    key: 'quadratic_formula',
+    title: 'Quadratic Formula',
+    subtitle: 'Identify a, b, c and solve step by step.',
+    component: GenericConceptAnimation,
+    prompts: ['quadratic', 'formula', 'x²', 'x^2', 'equation', 'দ্বিঘাত', 'সমীকরণ', 'সূত্র'],
   },
   generic_concept: {
     key: 'generic_concept',

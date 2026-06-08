@@ -31,14 +31,32 @@
     {
       "id": "market",
       "label": "Market Opportunity",
-      "eyebrow": "Underserved learners",
-      "body": "The first wedge is rural SSC/HSC support. Expansion opportunities include school licensing, inclusive education programs, NGO/government partnerships, and premium personal tutor subscriptions."
+      "eyebrow": "Bangladesh wedge, global pattern",
+      "body": "The first wedge is rural SSC/HSC science support for students who cannot afford coaching or stable internet. The same access gap exists across South Asia and other multilingual emerging markets, so the product can expand from Bangladesh into Bangla-speaking diaspora learners, low-resource language communities, inclusive education programs, and school networks that need curriculum-grounded AI support."
     },
     {
       "id": "business",
       "label": "Business Model",
-      "eyebrow": "Sustainable access",
-      "body": "VoicePandita can combine student freemium access, premium tutoring plans, school licensing, government education partnerships, and sponsored offline learning packs for low-resource communities."
+      "eyebrow": "Freemium plus institutional revenue",
+      "body": "VoicePandita keeps core student access free through a freemium model: free Bangla Q&A, voice help, and limited revision packs; paid student upgrades for deeper exam prep, saved history, and higher AI usage; school/NGO licensing for teacher dashboards, cohort analytics, and offline packs; and sponsored deployments funded by CSR, donors, or government education programs. This creates a cross-subsidy model where urban/premium and institutional users help keep rural access affordable."
+    },
+    {
+      "id": "unit-economics",
+      "label": "Unit Economics",
+      "eyebrow": "Low-cost delivery",
+      "body": "The MVP is designed around free-tier and low-cost infrastructure: Vercel, Supabase, pgvector, browser TTS, Gemini/Groq free or low-cost inference, cacheable curriculum chunks, and offline fallback packs. Cost control comes from retrieval before generation, short structured answers, cached textbook explanations, and institution-level batching. Revenue scales by seats, schools, and sponsored packs rather than only per-chat payments."
+    },
+    {
+      "id": "adoption",
+      "label": "Adoption Pathway",
+      "eyebrow": "Pilot to scale",
+      "body": "Roll out in three phases: first, 2-3 rural or low-income SSC/HSC pilot classrooms with teacher-supervised usage and learning outcome measurement; second, NGO and school partnerships for inclusive education cohorts, including CHT language support and deaf learner workflows; third, district-level and diaspora-supported deployments with teacher dashboards, content packs, and impact reporting. Success metrics: active learners, answered curriculum questions, weak-topic improvement, teacher time saved, offline-pack usage, and retention."
+    },
+    {
+      "id": "global-readiness",
+      "label": "Global Readiness",
+      "eyebrow": "NRB and cross-border scale",
+      "body": "VoicePandita can become a Bangladesh-origin model for inclusive AI tutoring in multilingual markets. The global strategy is to partner with NRB educators, diaspora mentors, universities, and language-data contributors to validate curriculum content, fund pilots, and adapt the platform to comparable low-resource education contexts. The architecture is modular: language bridges, curriculum packs, RAG sources, school dashboards, and accessibility layers can be localized country by country."
     },
     {
       "id": "traction",
@@ -80,77 +98,77 @@
     }
   ],
   "version": "BuildFest MVP",
-  "updatedAt": "2026-05-29",
+  "updatedAt": "2026-06-05",
   "versions": [
     {
-      "id": "v-1780088725096",
-      "at": "2026-05-29T21:05:25.096Z",
+      "id": "v-1780682236245",
+      "at": "2026-06-05T17:57:16.245Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780088724325",
-      "at": "2026-05-29T21:05:24.325Z",
+      "id": "v-1780682235262",
+      "at": "2026-06-05T17:57:15.262Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780088723544",
-      "at": "2026-05-29T21:05:23.544Z",
+      "id": "v-1780682234247",
+      "at": "2026-06-05T17:57:14.247Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780088722761",
-      "at": "2026-05-29T21:05:22.761Z",
+      "id": "v-1780682233230",
+      "at": "2026-06-05T17:57:13.230Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780088721990",
-      "at": "2026-05-29T21:05:21.990Z",
+      "id": "v-1780682232241",
+      "at": "2026-06-05T17:57:12.241Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780088721221",
-      "at": "2026-05-29T21:05:21.221Z",
+      "id": "v-1780682231247",
+      "at": "2026-06-05T17:57:11.247Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780088720405",
-      "at": "2026-05-29T21:05:20.405Z",
+      "id": "v-1780682229769",
+      "at": "2026-06-05T17:57:09.769Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780087902694",
-      "at": "2026-05-29T20:51:42.694Z",
+      "id": "v-1780682229027",
+      "at": "2026-06-05T17:57:09.027Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780087901896",
-      "at": "2026-05-29T20:51:41.896Z",
+      "id": "v-1780682228272",
+      "at": "2026-06-05T17:57:08.272Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780087901110",
-      "at": "2026-05-29T20:51:41.110Z",
+      "id": "v-1780682227500",
+      "at": "2026-06-05T17:57:07.500Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780087900336",
-      "at": "2026-05-29T20:51:40.336Z",
+      "id": "v-1780682226738",
+      "at": "2026-06-05T17:57:06.738Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     },
     {
-      "id": "v-1780087899437",
-      "at": "2026-05-29T20:51:39.437Z",
+      "id": "v-1780682225964",
+      "at": "2026-06-05T17:57:05.964Z",
       "by": "admin",
       "note": "Published BuildFest MVP"
     }

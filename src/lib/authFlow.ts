@@ -11,6 +11,7 @@ import {
 } from '@/lib/studentStore'
 
 const DEMO_COOKIE = 'vp_demo_session'
+const GUEST_COOKIE = 'vp_guest_session'
 
 export function setDemoAuthCookie() {
   document.cookie = `${DEMO_COOKIE}=1; path=/; max-age=2592000; samesite=lax`
@@ -20,8 +21,20 @@ export function clearDemoAuthCookie() {
   document.cookie = `${DEMO_COOKIE}=; path=/; max-age=0; samesite=lax`
 }
 
+export function setGuestAuthCookie() {
+  document.cookie = `${GUEST_COOKIE}=1; path=/; max-age=2592000; samesite=lax`
+}
+
+export function clearGuestAuthCookie() {
+  document.cookie = `${GUEST_COOKIE}=; path=/; max-age=0; samesite=lax`
+}
+
 export function hasDemoAuthCookie() {
   return document.cookie.split(';').some(item => item.trim() === `${DEMO_COOKIE}=1`)
+}
+
+export function hasGuestAuthCookie() {
+  return document.cookie.split(';').some(item => item.trim() === `${GUEST_COOKIE}=1`)
 }
 
 export async function getAuthenticatedStudent(): Promise<StudentIdentity | null> {
@@ -30,6 +43,10 @@ export async function getAuthenticatedStudent(): Promise<StudentIdentity | null>
     if (current.isDemo || hasDemoAuthCookie()) {
       if (!current.isDemo) setCurrentStudent(DEMO_STUDENT)
       return current.isDemo ? current : DEMO_STUDENT
+    }
+
+    if (current.isGuest || hasGuestAuthCookie()) {
+      return current
     }
 
     const supabase = createClient()

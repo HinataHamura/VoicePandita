@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Globe, History, Home, LogOut, Mic, Settings, TrendingUp, User, Users, X } from 'lucide-react'
-import { clearDemoAuthCookie } from '@/lib/authFlow'
+import { clearDemoAuthCookie, clearGuestAuthCookie } from '@/lib/authFlow'
 import { createClient } from '@/lib/supabase/client'
 
 const nav = [
@@ -25,6 +25,7 @@ export default function Sidebar({ open, onClose }: Props) {
 
   async function handleLogout() {
     clearDemoAuthCookie()
+    clearGuestAuthCookie()
     localStorage.removeItem('vp_guest')
     localStorage.removeItem('vp_session_id')
     localStorage.removeItem('vp_current_student')

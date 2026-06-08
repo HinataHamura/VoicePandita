@@ -6,6 +6,8 @@
     "dev": "next dev -p 3000",
     "dev:tts": "python -m uvicorn scripts.tts_server:app --port 8001 --reload",
     "dev:seed": "python scripts/seed_curriculum.py",
+    "manim:list": "python scripts/manim/render_manim.py --list",
+    "manim:render": "python scripts/manim/render_manim.py --key all --quality low",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:tts\"",
     "build": "node --max-old-space-size=4096 node_modules/next/dist/bin/next build",
     "start": "next start",

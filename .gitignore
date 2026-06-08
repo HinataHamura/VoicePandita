@@ -54,6 +54,7 @@ coverage/
 .tmp*
 tmp/
 temp/
+.manim-cache/
 
 # Local databases / model artifacts
 *.db

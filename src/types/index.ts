@@ -1,6 +1,6 @@
 export type Subject = 'physics' | 'chemistry' | 'biology' | 'math' | 'bangla' | 'english'
-export type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
-export type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
+export type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
+export type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
 export type EmotionState = 'confident' | 'confused' | 'frustrated'
 export type Language = 'bn' | 'ccp' | 'ckm' | 'mrm' | 'gnk'
 export type TargetLanguage = 'Bangla' | 'Chakma' | 'Marma' | 'Garo'

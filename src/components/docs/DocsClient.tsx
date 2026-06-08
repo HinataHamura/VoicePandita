@@ -80,14 +80,32 @@ const DEFAULT_SECTIONS: Section[] = [
   {
     id: 'market',
     label: 'Market Opportunity',
-    eyebrow: 'Underserved learners',
-    body: 'The first wedge is rural SSC/HSC support. Expansion opportunities include school licensing, inclusive education programs, NGO/government partnerships, and premium personal tutor subscriptions.',
+    eyebrow: 'Bangladesh wedge, global pattern',
+    body: 'The first wedge is rural SSC/HSC science support for students who cannot afford coaching or stable internet. The same access gap exists across South Asia and other multilingual emerging markets, so the product can expand from Bangladesh into Bangla-speaking diaspora learners, low-resource language communities, inclusive education programs, and school networks that need curriculum-grounded AI support.',
   },
   {
     id: 'business',
     label: 'Business Model',
-    eyebrow: 'Sustainable access',
-    body: 'VoicePandita can combine student freemium access, premium tutoring plans, school licensing, government education partnerships, and sponsored offline learning packs for low-resource communities.',
+    eyebrow: 'Freemium plus institutional revenue',
+    body: 'VoicePandita keeps core student access free through a freemium model: free Bangla Q&A, voice help, and limited revision packs; paid student upgrades for deeper exam prep, saved history, and higher AI usage; school/NGO licensing for teacher dashboards, cohort analytics, and offline packs; and sponsored deployments funded by CSR, donors, or government education programs. This creates a cross-subsidy model where urban/premium and institutional users help keep rural access affordable.',
+  },
+  {
+    id: 'unit-economics',
+    label: 'Unit Economics',
+    eyebrow: 'Low-cost delivery',
+    body: 'The MVP is designed around free-tier and low-cost infrastructure: Vercel, Supabase, pgvector, browser TTS, Gemini/Groq free or low-cost inference, cacheable curriculum chunks, and offline fallback packs. Cost control comes from retrieval before generation, short structured answers, cached textbook explanations, and institution-level batching. Revenue scales by seats, schools, and sponsored packs rather than only per-chat payments.',
+  },
+  {
+    id: 'adoption',
+    label: 'Adoption Pathway',
+    eyebrow: 'Pilot to scale',
+    body: 'Roll out in three phases: first, 2-3 rural or low-income SSC/HSC pilot classrooms with teacher-supervised usage and learning outcome measurement; second, NGO and school partnerships for inclusive education cohorts, including CHT language support and deaf learner workflows; third, district-level and diaspora-supported deployments with teacher dashboards, content packs, and impact reporting. Success metrics: active learners, answered curriculum questions, weak-topic improvement, teacher time saved, offline-pack usage, and retention.',
+  },
+  {
+    id: 'global-readiness',
+    label: 'Global Readiness',
+    eyebrow: 'NRB and cross-border scale',
+    body: 'VoicePandita can become a Bangladesh-origin model for inclusive AI tutoring in multilingual markets. The global strategy is to partner with NRB educators, diaspora mentors, universities, and language-data contributors to validate curriculum content, fund pilots, and adapt the platform to comparable low-resource education contexts. The architecture is modular: language bridges, curriculum packs, RAG sources, school dashboards, and accessibility layers can be localized country by country.',
   },
   {
     id: 'traction',

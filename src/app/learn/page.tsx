@@ -9,15 +9,16 @@ import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
+import ManimVideoAnimation from '@/components/animations/ManimVideoAnimation'
 import TeachingAnimation from '@/components/animations/TeachingAnimation'
 import type { AnimationKey } from '@/components/animations/types'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
-import { getConceptMemory, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
+import { getConceptMemory, getStudentProfile, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 import { searchCurriculum } from '@/lib/embeddings'
 import { createClient } from '@/lib/supabase/client'
 import { appendChatMessages, createChatSession, fetchChatMessages, migrateLocalHistoryToSupabase, recordOfflineChat } from '@/lib/services/chatHistory'
 
-type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation'
+type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
 
@@ -88,6 +89,13 @@ interface Message {
   emotion?: EmotionState
   pwnMessage?: string
   graphPath?: string[]
+  outputMode?: OutputMode
+  grounding?: {
+    grounded: boolean
+    label?: string
+    sourceDataset?: string | null
+    similarity?: number | null
+  }
   loading?: boolean
 }
 
@@ -98,7 +106,7 @@ const QUICK_QUESTIONS = [
 ]
 
 function isVisualMode(mode: OutputMode) {
-  return mode === 'animation'
+  return mode === 'animation' || mode === 'video'
 }
 
 const OFFLINE_ANSWERS: Record<string, string> = {
@@ -158,6 +166,26 @@ function localEmotionHint(question: string, repeatCount: number): Exclude<Emotio
   return 'confident'
 }
 
+function recentChatContext(messages: Message[]) {
+  return messages
+    .filter(msg => !msg.loading && msg.text.trim())
+    .slice(-6)
+    .map(msg => ({
+      role: msg.role,
+      text: msg.text.slice(0, 900),
+      graphPath: msg.graphPath,
+    }))
+}
+
+function followUpAnchor(messages: Message[]) {
+  const recentAi = [...messages].reverse().find(msg => msg.role === 'ai' && !msg.loading && (msg.graphPath?.length || msg.text.trim()))
+  if (!recentAi) return ''
+  return [
+    recentAi.graphPath?.length ? `Previous topic: ${recentAi.graphPath.join(' -> ')}` : '',
+    recentAi.text ? `Previous answer: ${recentAi.text.slice(0, 700)}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 export default function LearnPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -198,7 +226,7 @@ export default function LearnPage() {
     const mode = params.get('mode') as OutputMode | null
     const languageParam = params.get('language') as LanguageMode | null
     if (seededQuestion) setInput(seededQuestion)
-    if (mode && ['whiteboard', 'animation'].includes(mode)) setOutputMode(mode)
+    if (mode && ['whiteboard', 'animation', 'video'].includes(mode)) setOutputMode(mode)
     if (languageParam && ['bn', 'ckm', 'mrm', 'gnk'].includes(languageParam)) setLanguage(languageParam)
     if (params.get('deaf') === '1') setDeafMode(true)
     try {
@@ -234,6 +262,8 @@ export default function LearnPage() {
               emotion: (row.emotion as EmotionState) || null,
               pwnMessage: row.metadata?.pwnMessage as string | undefined,
               graphPath: row.graph_path || undefined,
+              grounding: row.metadata?.grounding as Message['grounding'],
+              outputMode: (row.metadata?.outputMode as OutputMode | undefined) || undefined,
             }))
           setMessages(restored)
         })
@@ -492,7 +522,16 @@ export default function LearnPage() {
 
     try {
       const supabase = createClient()
-      const curriculumChunks = await searchCurriculum(question, supabase, 0.5, 3)
+      const studentProfile = getStudentProfile()
+      const chatContext = recentChatContext(messages)
+      const anchor = followUpAnchor(messages)
+      const retrievalQuery = context?.extractedText
+        ? `${question}\n\nUploaded text:\n${context.extractedText.slice(0, 1400)}`
+        : [question, anchor].filter(Boolean).join('\n\n')
+      const curriculumChunks = await searchCurriculum(retrievalQuery, supabase, 0.42, 6, {
+        subject,
+        profile: studentProfile,
+      })
       console.info('[VectorRAG] Sending to Gemini with curriculum context:', curriculumChunks)
 
       const res = await fetch('/api/ask', {
@@ -505,6 +544,8 @@ export default function LearnPage() {
           emotion: localEmotion,
           language,
           repeatCount,
+          studentProfile,
+          chatContext,
           conceptMemory: getConceptMemory().slice(0, 6),
           curriculumChunks,
           extractedText: context?.extractedText,
@@ -526,6 +567,8 @@ export default function LearnPage() {
               emotion: nextEmotion,
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
+              grounding: data.grounding,
+              outputMode,
               loading: false,
             }
           : msg
@@ -549,6 +592,7 @@ export default function LearnPage() {
             hasExtractedText: Boolean(context?.extractedText),
             pwnMessage: data.pwnMessage,
             animationKey: answerAnimationKey,
+            grounding: data.grounding,
           },
         },
       ])
@@ -734,6 +778,11 @@ export default function LearnPage() {
                                 {msg.graphPath.join(' -> ')}
                               </span>
                             )}
+                            {msg.grounding?.grounded && (
+                              <span className="rounded-full bg-indigo/10 px-3 py-1 text-xs font-semibold text-indigo">
+                                {msg.grounding.label || 'Curriculum grounded'}
+                              </span>
+                            )}
                             {msg.pwnMessage && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-saffron/20 px-3 py-1 text-xs font-medium text-orange-600">
                                 <Sparkles size={12} /> {msg.pwnMessage}
@@ -742,13 +791,21 @@ export default function LearnPage() {
                           </div>
                           <p className="bangla whitespace-pre-line leading-relaxed text-ink">{msg.text}</p>
                         </div>
-                        {(msg.animationKey || msg.diagram) && (
+                        {((msg.outputMode === 'video' && msg.animationKey) || msg.animationKey || msg.diagram) && (
                           <div className="card p-4">
                             <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-forest">
                               <Zap size={12} />
-                              <span>{msg.animationKey ? 'Visual Teaching Animation' : 'Whiteboard Concept Map'}</span>
+                              <span>
+                                {msg.outputMode === 'video'
+                                  ? 'Manim Video Explainer'
+                                  : msg.animationKey
+                                    ? 'Visual Teaching Animation'
+                                    : 'Whiteboard Concept Map'}
+                              </span>
                             </div>
-                            {msg.animationKey ? (
+                            {msg.outputMode === 'video' && msg.animationKey ? (
+                              <ManimVideoAnimation animationKey={msg.animationKey} />
+                            ) : msg.animationKey ? (
                               <TeachingAnimation animationKey={msg.animationKey} question={msg.text} graphPath={msg.graphPath} fallbackDiagram={msg.diagram} />
                             ) : (
                               msg.diagram && <MermaidDiagram chart={msg.diagram} />
