@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 
 type Settings = {
@@ -17,6 +18,7 @@ function readSettings(): Settings {
 }
 
 export default function AppChrome() {
+  const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -35,11 +37,13 @@ export default function AppChrome() {
     }
   }, [])
 
+  if (pathname?.startsWith('/learn')) return null
+
   return (
     <>
       <button
         onClick={() => setSidebarOpen(true)}
-        className={`fixed left-4 top-4 z-[60] h-12 w-14 flex-col items-center justify-center rounded-lg border border-forest/10 bg-white/90 text-ink shadow-lg shadow-ink/10 backdrop-blur-xl hover:border-saffron/35 hover:bg-paper/80 ${sidebarOpen ? 'hidden' : 'flex'}`}
+        className={`fixed left-4 top-4 z-[80] h-12 w-14 flex-col items-center justify-center rounded-lg border border-forest/10 bg-white/90 text-ink shadow-lg shadow-ink/10 backdrop-blur-xl hover:border-saffron/35 hover:bg-paper/80 ${sidebarOpen ? 'hidden' : 'flex'}`}
         aria-label="Open menu"
         title="Open menu"
       >

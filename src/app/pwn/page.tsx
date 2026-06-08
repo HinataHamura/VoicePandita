@@ -21,7 +21,7 @@ export default function PwnPage() {
 
   return (
     <div className="ai-shell min-h-dvh">
-      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
+      <header className="sticky top-0 z-40 border-b border-white/70 bg-cream/95 px-4 py-4 shadow-sm shadow-forest/5 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
           <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Back to learn">
             <ArrowLeft size={18} />

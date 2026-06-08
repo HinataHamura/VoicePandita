@@ -38,13 +38,13 @@ export default function Sidebar({ open, onClose }: Props) {
     <AnimatePresence>
       {open && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-40 bg-slate-950/24 backdrop-blur-md" />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-[90] bg-slate-950/30 backdrop-blur-md" />
           <motion.aside
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="glass-panel fixed left-0 top-0 z-50 flex h-full w-80 max-w-[86vw] flex-col border-r border-white/50"
+            className="glass-panel fixed left-0 top-0 z-[100] flex h-full w-80 max-w-[86vw] flex-col border-r border-white/50"
           >
             <div className="flex items-center justify-between border-b border-white/50 p-5">
               <span className="font-display text-xl font-bold tracking-tight">Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span></span>
