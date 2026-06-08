@@ -58,6 +58,38 @@ a, button, input, textarea, select {
 
 button, a, select { -webkit-tap-highlight-color: transparent; }
 
+.vp-menu-button {
+  color: #14201E;
+  background: rgba(248, 251, 245, 0.92);
+  border: 1px solid rgba(15, 107, 92, 0.16);
+  box-shadow: 0 14px 34px rgba(20, 32, 30, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.vp-menu-button:hover {
+  color: #0F6B5C;
+  background: rgba(234, 243, 236, 0.96);
+  border-color: rgba(242, 116, 87, 0.34);
+  transform: translateY(-1px);
+}
+
+.vp-menu-icon {
+  color: currentColor;
+}
+
+.vp-logout-button {
+  color: #9E3F2F;
+  background: rgba(255, 224, 218, 0.72);
+  border: 1px solid rgba(158, 90, 79, 0.16);
+  box-shadow: 0 10px 24px rgba(158, 63, 47, 0.08);
+}
+
+.vp-logout-button:hover {
+  color: #8A3327;
+  background: rgba(255, 214, 207, 0.88);
+  border-color: rgba(158, 90, 79, 0.24);
+}
+
 .bangla {
   font-family: var(--font-bangla), sans-serif;
 }
@@ -131,6 +163,32 @@ html.vp-dark body::before {
     linear-gradient(rgba(236,246,241,0.055) 1px, transparent 1px),
     linear-gradient(90deg, rgba(236,246,241,0.055) 1px, transparent 1px),
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+html.vp-dark .vp-menu-button {
+  color: #ECF6F1;
+  background: rgba(14, 28, 25, 0.92);
+  border-color: rgba(141, 181, 172, 0.24);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+}
+
+html.vp-dark .vp-menu-button:hover {
+  color: #9DEEF2;
+  background: rgba(20, 43, 38, 0.96);
+  border-color: rgba(157, 238, 242, 0.28);
+}
+
+html.vp-dark .vp-logout-button {
+  color: #FFC8C2;
+  background: rgba(255, 163, 154, 0.1);
+  border-color: rgba(255, 163, 154, 0.22);
+  box-shadow: none;
+}
+
+html.vp-dark .vp-logout-button:hover {
+  color: #FFE5E2;
+  background: rgba(255, 163, 154, 0.16);
+  border-color: rgba(255, 192, 186, 0.34);
 }
 
 html.vp-dark .card {

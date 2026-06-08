@@ -63,18 +63,23 @@ The render script updates `public/animations/manim/manifest.json` and marks succ
 
 ## Text Multilingual Support
 
-The `/learn` chat now treats the selected language tab as the answer language. A student can type in Bangla, English, Chakma, Marma, or Garo, and the API sends this routing payload:
+The `/learn` chat detects the learner's input language and script before choosing the answer style. A student can type in Standard Bangla, English, Chakma, Marma, or Garo. For Chakma/Garo/Marma, the API tries to preserve whether the learner used Bengali script/Bangla horof, native script, or Romanized text when confidence is high.
 
 ```json
 {
   "user_text": "<student question>",
   "input_language": "<detected language>",
-  "target_language": "<selected tab language>",
-  "subject_context": "<optional subject or topic>"
+  "input_script": "<detected script>",
+  "target_language": "<resolved answer language>",
+  "output_script": "<resolved answer script>",
+  "confidence": 0.82,
+  "provenance": "verified | generated | fallback"
 }
 ```
 
-The selected tab has higher priority than the input language. Bangla answers use the existing tutor path. Chakma uses the dataset-backed Bangla/Chakma bridge. Garo and Marma return a safe fallback unless you enable a verified fine-tuned model or explicitly opt into unverified generation with `ALLOW_UNVERIFIED_LOW_RESOURCE_GENERATION=1`.
+The API first prepares a grounded Standard Bangla answer from curriculum context, then adapts that answer into the resolved language/script. Standard Bangla input returns Standard Bangla. Clear Chakma, Garo, or Marma input returns the same language and script preference where possible. If detection confidence is low or verified translation support is too limited, VoicePandita returns a Standard Bangla explanation with a short note that verified translation is limited.
+
+Chakma uses the local/Hugging Face dataset-backed Bangla/Chakma bridge plus Bengali-script Chakma examples. Garo and Marma support is generated or safely falls back with metadata; the app does not claim perfect translation for low-resource languages.
 
 ### Build JSONL datasets
 

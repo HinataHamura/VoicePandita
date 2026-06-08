@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 
@@ -47,8 +48,7 @@ export default function AppChrome() {
         aria-label="Open menu"
         title="Open menu"
       >
-        <span className="mb-1 block h-0.5 w-6 rounded bg-current" />
-        <span className="block h-0.5 w-4 rounded bg-current opacity-55" />
+        <Menu className="vp-menu-icon" size={22} strokeWidth={2.4} aria-hidden="true" />
       </button>
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
     </>

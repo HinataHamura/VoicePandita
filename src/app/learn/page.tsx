@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, FileText, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, FileText, Globe, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
@@ -21,6 +21,14 @@ import { appendChatMessages, createChatSession, fetchChatMessages, migrateLocalH
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
+type AnswerProvenance = 'verified' | 'generated' | 'fallback'
+
+const LANGUAGE_LABEL_BY_CODE: Record<LanguageMode, string> = {
+  bn: 'Bangla',
+  ckm: 'Chakma',
+  mrm: 'Marma',
+  gnk: 'Garo',
+}
 
 type OcrResult = {
   success: boolean
@@ -87,6 +95,13 @@ interface Message {
   diagram?: string | null
   animationKey?: AnimationKey | null
   emotion?: EmotionState
+  targetLanguage?: string
+  requestedTargetLanguage?: string
+  languageConfidence?: number
+  outputScript?: string
+  answerProvenance?: AnswerProvenance
+  languageFallback?: boolean
+  verified?: boolean
   pwnMessage?: string
   graphPath?: string[]
   outputMode?: OutputMode
@@ -184,6 +199,42 @@ function followUpAnchor(messages: Message[]) {
     recentAi.graphPath?.length ? `Previous topic: ${recentAi.graphPath.join(' -> ')}` : '',
     recentAi.text ? `Previous answer: ${recentAi.text.slice(0, 700)}` : '',
   ].filter(Boolean).join('\n')
+}
+
+const OUTPUT_LANGUAGE_LABELS: Record<string, string> = {
+  bangla: 'বাংলা',
+  bengali: 'বাংলা',
+  bn: 'বাংলা',
+  chakma: 'চাকমা',
+  garo: 'গারো',
+  marma: 'মারমা',
+}
+
+const OUTPUT_SCRIPT_LABELS: Record<string, string> = {
+  bengali: 'বাংলা হরফ',
+  latin: 'English horof',
+}
+
+const LOW_RESOURCE_FALLBACK_MESSAGE = 'এই ভাষা/হরফে যাচাইকৃত ডেটা সীমিত, তাই বাংলা ব্যাখ্যাও দেওয়া হলো।'
+const EXPERIMENTAL_VOICE_MESSAGE = 'এই ভাষার ভয়েস এখনো পরীক্ষামূলক।'
+
+function normalizedKey(value?: string | null) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function answerOutputLabel(message: Message) {
+  const languageKey = normalizedKey(message.targetLanguage)
+  const scriptKey = normalizedKey(message.outputScript)
+  const languageLabel = OUTPUT_LANGUAGE_LABELS[languageKey] || message.targetLanguage || 'বাংলা'
+
+  if (languageLabel === 'বাংলা') return 'উত্তর ভাষা: বাংলা'
+
+  const scriptLabel = OUTPUT_SCRIPT_LABELS[scriptKey]
+  return scriptLabel ? `উত্তর ভাষা: ${languageLabel} · ${scriptLabel}` : `উত্তর ভাষা: ${languageLabel}`
+}
+
+function usesRomanizedLowResourceOutput(message: Message) {
+  return ['chakma', 'garo', 'marma'].includes(normalizedKey(message.targetLanguage)) && normalizedKey(message.outputScript) === 'latin'
 }
 
 export default function LearnPage() {
@@ -565,6 +616,13 @@ export default function LearnPage() {
               diagram: data.diagram,
               animationKey: answerAnimationKey,
               emotion: nextEmotion,
+              targetLanguage: data.selectedTargetLanguage || LANGUAGE_LABEL_BY_CODE[language],
+              requestedTargetLanguage: data.requestedTargetLanguage,
+              languageConfidence: data.languageConfidence,
+              outputScript: data.outputScript,
+              answerProvenance: data.languageMetadata?.provenance,
+              languageFallback: Boolean(data.languageMetadata?.fallback),
+              verified: data.languageMetadata?.verified,
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
               grounding: data.grounding,
@@ -703,6 +761,9 @@ export default function LearnPage() {
             >
               <Accessibility size={12} /> BdSL
             </button>
+            <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full bg-saffron/10 px-3 py-1.5 text-xs font-medium text-saffron">
+              <Globe size={12} /> Preference {LANGUAGE_LABEL_BY_CODE[language]}
+            </span>
           </div>
         </div>
 
@@ -726,7 +787,7 @@ export default function LearnPage() {
                 <Mic size={32} className="text-white" />
               </div>
               <h1 className="bangla mb-2 font-display text-2xl font-bold">কী জানতে চাও?</h1>
-              <p className="bangla max-w-md text-sm leading-relaxed text-ink/60">
+              <p className="bangla max-w-md text-sm leading-relaxed text-ink/55">
                 Bangla voice, typed question, textbook photo, mother-tongue mode, emotion adaptation, and BdSL avatar - এক জায়গায়।
               </p>
               <div className="mt-5 grid max-w-2xl grid-cols-2 gap-2 text-left text-xs text-ink/60 md:grid-cols-4">
@@ -773,6 +834,27 @@ export default function LearnPage() {
                         <div className="card p-5">
                           <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
                             {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
+                            {msg.targetLanguage && (
+                              <span className="rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs font-medium text-saffron">
+                                {answerOutputLabel(msg)}
+                              </span>
+                            )}
+                            {typeof msg.languageConfidence === 'number' && (
+                              <span className="rounded-full bg-indigo/8 px-2.5 py-0.5 text-xs text-indigo">
+                                confidence {Math.round(msg.languageConfidence * 100)}%
+                              </span>
+                            )}
+                            {msg.answerProvenance && (
+                              <span className={`rounded-full px-2.5 py-0.5 text-xs ${
+                                msg.answerProvenance === 'fallback'
+                                  ? 'bg-clay/10 text-clay'
+                                  : msg.verified
+                                    ? 'bg-forest/8 text-forest'
+                                    : 'bg-ink/5 text-ink/55'
+                              }`}>
+                                {msg.answerProvenance}{msg.verified ? ' verified' : ''}
+                              </span>
+                            )}
                             {msg.graphPath && (
                               <span className="rounded-full bg-forest/10 px-3 py-1 text-xs font-medium text-forest">
                                 {msg.graphPath.join(' -> ')}
@@ -789,6 +871,16 @@ export default function LearnPage() {
                               </span>
                             )}
                           </div>
+                          {msg.languageFallback && (
+                            <p className="bangla mb-3 rounded-lg bg-clay/8 px-3 py-2 text-xs leading-relaxed text-clay">
+                              {LOW_RESOURCE_FALLBACK_MESSAGE}
+                            </p>
+                          )}
+                          {!msg.languageFallback && usesRomanizedLowResourceOutput(msg) && (
+                            <p className="bangla mb-3 rounded-lg bg-indigo/8 px-3 py-2 text-xs leading-relaxed text-indigo">
+                              {EXPERIMENTAL_VOICE_MESSAGE}
+                            </p>
+                          )}
                           <p className="bangla whitespace-pre-line leading-relaxed text-ink">{msg.text}</p>
                         </div>
                         {((msg.outputMode === 'video' && msg.animationKey) || msg.animationKey || msg.diagram) && (
