@@ -39,15 +39,21 @@ export default function Sidebar({ open, onClose }: Props) {
     <AnimatePresence>
       {open && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-[90] bg-slate-950/30 backdrop-blur-md" />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm md:left-80"
+          />
           <motion.aside
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="glass-panel fixed left-0 top-0 z-[100] flex h-full w-80 max-w-[86vw] flex-col border-r border-white/50"
+            className="fixed left-0 top-0 z-50 flex h-full w-80 max-w-[86vw] flex-col border-r border-slate-200/60 bg-white/90 text-slate-900 shadow-2xl shadow-slate-900/10 backdrop-blur-xl"
           >
-            <div className="flex items-center justify-between border-b border-slate-200/60 p-5">
+            <div className="flex items-center justify-between border-b border-white/40 p-5">
               <span className="font-display text-xl font-bold tracking-tight text-slate-900">Voice<span className="text-indigo-500">Pandita</span></span>
               <button onClick={onClose} className="rounded-full border border-slate-200/70 bg-white/80 p-2 text-slate-600 shadow-sm hover:scale-105 hover:bg-white hover:text-slate-900" aria-label="Close menu">
                 <X size={18} />
@@ -58,7 +64,12 @@ export default function Sidebar({ open, onClose }: Props) {
                 const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
 
                 return (
-                  <Link key={item.href} href={item.href} onClick={onClose} className={`group flex items-center gap-3 rounded-2xl p-3 ${active ? 'bg-indigo-100/70' : 'hover:bg-indigo-50'}`}>
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onClose}
+                    className={`group flex items-center gap-3 rounded-2xl p-3 transition-colors ${active ? 'bg-indigo-100/70' : 'hover:bg-indigo-50'}`}
+                  >
                     <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${active ? 'bg-indigo-500 text-white' : 'bg-indigo-50 text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white'}`}>
                       <item.icon size={17} />
                     </div>
