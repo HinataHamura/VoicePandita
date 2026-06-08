@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, FileText, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, FileText, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, ThumbsDown, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
+import StudyBuddyInviteCard from '@/components/study-buddy/StudyBuddyInviteCard'
 import ManimVideoAnimation from '@/components/animations/ManimVideoAnimation'
 import TeachingAnimation from '@/components/animations/TeachingAnimation'
 import type { AnimationKey } from '@/components/animations/types'
@@ -90,6 +91,8 @@ interface Message {
   pwnMessage?: string
   graphPath?: string[]
   outputMode?: OutputMode
+  studyQuestion?: string
+  studyConceptHint?: string
   grounding?: {
     grounded: boolean
     label?: string
@@ -207,6 +210,7 @@ export default function LearnPage() {
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [questionHistory, setQuestionHistory] = useState<string[]>([])
+  const [manualStudyInvite, setManualStudyInvite] = useState<{ messageId: string; questionText: string; conceptHint?: string } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
@@ -264,6 +268,8 @@ export default function LearnPage() {
               graphPath: row.graph_path || undefined,
               grounding: row.metadata?.grounding as Message['grounding'],
               outputMode: (row.metadata?.outputMode as OutputMode | undefined) || undefined,
+              studyQuestion: row.metadata?.studyQuestion as string | undefined,
+              studyConceptHint: row.metadata?.studyConceptHint as string | undefined,
             }))
           setMessages(restored)
         })
@@ -569,6 +575,8 @@ export default function LearnPage() {
               graphPath: data.graphPath,
               grounding: data.grounding,
               outputMode,
+              studyQuestion: nextEmotion === 'confused' || nextEmotion === 'frustrated' ? question : undefined,
+              studyConceptHint: Array.isArray(data.graphPath) ? data.graphPath.slice(-1)[0] : undefined,
               loading: false,
             }
           : msg
@@ -593,6 +601,8 @@ export default function LearnPage() {
             pwnMessage: data.pwnMessage,
             animationKey: answerAnimationKey,
             grounding: data.grounding,
+            studyQuestion: nextEmotion === 'confused' || nextEmotion === 'frustrated' ? question : undefined,
+            studyConceptHint: Array.isArray(data.graphPath) ? data.graphPath.slice(-1)[0] : undefined,
           },
         },
       ])
@@ -813,6 +823,30 @@ export default function LearnPage() {
                           </div>
                         )}
                         <BdslAvatar active={deafMode} text={msg.text} />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setManualStudyInvite({
+                              messageId: msg.id,
+                              questionText: msg.studyQuestion || messages.slice().reverse().find(item => item.role === 'user')?.text || msg.text.slice(0, 160),
+                              conceptHint: msg.studyConceptHint || msg.graphPath?.slice(-1)[0],
+                            })}
+                            className="inline-flex items-center gap-2 rounded-xl border border-forest/20 bg-white/75 px-3 py-2 text-xs font-semibold text-forest shadow-sm hover:bg-white"
+                          >
+                            <ThumbsDown size={13} />
+                            Bujhi Nai
+                          </button>
+                        </div>
+                        {(msg.studyQuestion || manualStudyInvite?.messageId === msg.id) && (
+                          <StudyBuddyInviteCard
+                            questionText={manualStudyInvite?.messageId === msg.id ? manualStudyInvite.questionText : msg.studyQuestion || msg.text.slice(0, 160)}
+                            subject={subject}
+                            language={language === 'bn' ? 'bn' : language === 'ckm' ? 'chakma' : language === 'mrm' ? 'marma' : 'garo'}
+                            emotionLabel={msg.emotion === 'frustrated' ? 'frustrated' : 'confused'}
+                            conceptHint={manualStudyInvite?.messageId === msg.id ? manualStudyInvite.conceptHint : msg.studyConceptHint || msg.graphPath?.slice(-1)[0]}
+                            anonymousSessionId={getSessionId()}
+                          />
+                        )}
                       </>
                     )}
                   </div>

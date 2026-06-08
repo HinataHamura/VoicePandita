@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Globe, History, Home, LogOut, Mic, Settings, TrendingUp, User, Users, X } from 'lucide-react'
+import { Globe, History, Home, LogOut, Mic, Settings, TrendingUp, User, UserRoundPlus, Users, X } from 'lucide-react'
 import { clearDemoAuthCookie, clearGuestAuthCookie } from '@/lib/authFlow'
 import { createClient } from '@/lib/supabase/client'
 
@@ -12,7 +12,8 @@ const nav = [
   { href: '/learn', icon: Mic, label: 'Learn', sub: 'Voice tutor' },
   { href: '/history', icon: History, label: 'History', sub: 'Saved Q&A' },
   { href: '/profile', icon: User, label: 'Profile', sub: 'Student dashboard' },
-  { href: '/progress', icon: TrendingUp, label: 'Progress', sub: 'Weak topics' },
+  { href: '/progress', icon: TrendingUp, label: 'Student Analytics', sub: 'Learning signals' },
+  { href: '/study-buddy', icon: UserRoundPlus, label: 'Bondhu Study Room', sub: 'AI group practice' },
   { href: '/pwn', icon: Users, label: 'Peer Wisdom', sub: 'Community hotspots' },
   { href: '/chakma', icon: Globe, label: 'Language Bridge', sub: 'Chakma, Marma, Garo' },
   { href: '/settings', icon: Settings, label: 'Settings', sub: 'Preferences' },

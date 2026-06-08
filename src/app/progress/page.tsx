@@ -216,8 +216,8 @@ export default function ProgressPage() {
             <ArrowLeft size={18} />
           </Link>
           <div>
-            <h1 className="font-display text-lg font-bold">Understanding Dashboard</h1>
-            <p className="text-xs text-ink/45">Learning behavior and clarity signals for {student?.isDemo ? 'judge demo' : student?.name || 'this student'}</p>
+            <h1 className="font-display text-lg font-bold">Student Analytics Dashboard</h1>
+            <p className="text-xs text-ink/45">Understanding, behavior, and clarity signals for {student?.isDemo ? 'judge demo' : student?.name || 'this student'}</p>
           </div>
         </div>
       </header>
