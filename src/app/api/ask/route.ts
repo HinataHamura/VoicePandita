@@ -1,10 +1,57 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import chakmaBridgeRows from '@/data/chakma/chakmaBridge.json'
+import { detectLanguage, normalizeSelectedLanguage as normalizeSelectedLearnLanguage } from '@/lib/multilingual/detectLanguage'
+import { detectScriptWithConfidence } from '@/lib/multilingual/detectScript'
+import { localizeAnswer as localizeAnswerPhase2 } from '@/lib/multilingual/localizeAnswer'
+import {
+  formatChakmaExamples,
+  prepareChakmaBridge,
+  selectChakmaExamples,
+  translateBanglaWithDataset,
+  type ChakmaBridgeContext,
+} from '@/lib/chakmaBridge'
+import {
+  detectMultilingualRoute,
+  normalizeTargetLanguage,
+  safeLowResourceFallback,
+  targetLanguageToCode,
+  type AnswerProvenance,
+  type DetectedScript,
+  type TargetLanguage,
+} from '@/lib/multilingualSupport'
+import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/marmaBridge'
+import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
 type EmotionState = 'confident' | 'confused' | 'frustrated'
+type CurriculumChunk = {
+  content: string
+  contextText?: string
+  context_text?: string
+  contextual_summary?: string
+  topic: string
+  chapter?: string
+  chunk_type?: string
+  similarity: number
+}
+type LocalizedAnswer = {
+  answer: string
+  diagram: string | null
+  targetLanguage: TargetLanguage
+  outputScript: DetectedScript
+  provenance: AnswerProvenance
+  verified: boolean
+  sourceSuffix: string
+}
+type ChakmaBridgeRow = {
+  bangla?: string
+  bengaliScriptChakma?: string
+  romanizedChakma?: string
+}
 
 type StudentProfileContext = {
   level?: string
@@ -43,6 +90,8 @@ const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
 const groqKey = process.env.GROQ_API_KEY?.trim()
 const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000)
+const CHAKMA_BENGALI_ROWS = chakmaBridgeRows as ChakmaBridgeRow[]
 
 function profileInstruction(profile?: StudentProfileContext) {
   const level = String(profile?.level || '').toUpperCase()
@@ -352,6 +401,231 @@ async function geminiText(prompt: string) {
   throw lastError
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timer = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  })
+
+  return Promise.race([promise, timer]).finally(() => {
+    if (timeout) clearTimeout(timeout)
+  })
+}
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  })
+}
+
+async function generateServerEmbedding(text: string) {
+  const embedUrl = process.env.NEXT_PUBLIC_TTS_URL || 'http://localhost:8001'
+  try {
+    const response = await fetch(`${embedUrl}/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (!response.ok) throw new Error(`Embeddings API error: ${response.status}`)
+    const data = await response.json()
+    if (!Array.isArray(data.embedding) || data.embedding.length !== 384) {
+      throw new Error('Embedding endpoint did not return a 384-dim vector')
+    }
+    return data.embedding as number[]
+  } catch {
+    return fallbackEmbedding(text)
+  }
+}
+
+async function retrieveCurriculumChunks(query: string, providedChunks?: unknown): Promise<CurriculumChunk[]> {
+  if (Array.isArray(providedChunks) && providedChunks.length > 0) {
+    return providedChunks
+      .filter((chunk): chunk is CurriculumChunk => typeof chunk?.content === 'string' && typeof chunk?.topic === 'string')
+      .slice(0, 5)
+  }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return []
+
+  try {
+    const embedding = await generateServerEmbedding(query)
+    const { data, error } = await supabase.rpc('search_curriculum', {
+      query_embedding: embedding,
+      similarity_threshold: 0.45,
+      match_count: 4,
+    })
+
+    if (error) throw error
+
+    const chunks = (data || [])
+      .filter((chunk: any) =>
+        typeof chunk.content === 'string' &&
+        !chunk.content.trim().toLowerCase().startsWith('student question:')
+      )
+      .map((chunk: any) => ({
+        ...chunk,
+        contextText: chunk.context_text || [chunk.contextual_summary, chunk.content].filter(Boolean).join('\n\n'),
+      }))
+      .slice(0, 4)
+
+    console.info('[VectorRAG] Retrieved curriculum chunks', {
+      count: chunks.length,
+      topics: chunks.map((chunk: CurriculumChunk) => chunk.topic).filter(Boolean),
+    })
+    return chunks
+  } catch (err) {
+    console.warn('[VectorRAG] Curriculum retrieval fallback', err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+function formatBengaliScriptChakmaExamples(limit = 12) {
+  return CHAKMA_BENGALI_ROWS
+    .filter(row => row.bangla && row.bengaliScriptChakma)
+    .slice(0, limit)
+    .map(row => `Bangla: ${row.bangla}\nChakma in Bengali script: ${row.bengaliScriptChakma}`)
+    .join('\n\n')
+}
+
+function formatRomanizedChakmaExamples(limit = 12) {
+  return CHAKMA_BENGALI_ROWS
+    .filter(row => row.bangla && row.romanizedChakma)
+    .slice(0, limit)
+    .map(row => `Bangla: ${row.bangla}\nRomanized Chakma: ${row.romanizedChakma}`)
+    .join('\n\n')
+}
+
+function normalizeLowResourcePhrase(value: string) {
+  return value
+    .normalize('NFKC')
+    .replace(/[।?!,;:"'‘’“”()[\]{}\-–—.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function hasScript(text: string, script: DetectedScript) {
+  for (const char of text) {
+    const codePoint = char.codePointAt(0) || 0
+    if (script === 'Bengali' && codePoint >= 0x0980 && codePoint <= 0x09ff) return true
+    if (script === 'Chakma' && codePoint >= 0x11100 && codePoint <= 0x1114f) return true
+    if (script === 'Myanmar' && codePoint >= 0x1000 && codePoint <= 0x109f) return true
+    if (script === 'Latin' && ((codePoint >= 0x0041 && codePoint <= 0x005a) || (codePoint >= 0x0061 && codePoint <= 0x007a))) return true
+  }
+  return script === 'Unknown'
+}
+
+async function translateQuestionToBangla(params: {
+  originalQuestion: string
+  route: ReturnType<typeof detectMultilingualRoute>
+  bridge: ChakmaBridgeContext
+}) {
+  const { originalQuestion, route, bridge } = params
+  if (route.language === 'Bangla' || route.language === 'English' || route.language === 'unknown') return originalQuestion
+
+  if (route.language === 'Chakma' && route.outputScript === 'Chakma') {
+    return translateChakmaQuestionWithGemini(originalQuestion, bridge)
+  }
+
+  const normalizedOriginal = normalizeLowResourcePhrase(originalQuestion)
+  const exactChakmaBengali = route.language === 'Chakma'
+    ? CHAKMA_BENGALI_ROWS.find(row =>
+        row.bengaliScriptChakma &&
+        normalizeLowResourcePhrase(row.bengaliScriptChakma) === normalizedOriginal
+      )
+    : null
+  if (exactChakmaBengali?.bangla) return exactChakmaBengali.bangla
+
+  if (!genAI) return originalQuestion
+
+  const scriptInstruction = route.outputScript === 'Bengali'
+    ? 'The student wrote the low-resource language using Bengali script/Bangla horof.'
+    : route.outputScript === 'Latin'
+      ? 'The student wrote the low-resource language in Romanized Latin form.'
+      : 'The student used a native script.'
+  const examples = route.language === 'Chakma'
+    ? `\nExamples:\n${route.outputScript === 'Latin' ? formatRomanizedChakmaExamples(10) : formatBengaliScriptChakmaExamples(10)}\n`
+    : ''
+
+  const prompt = `Translate the student question into Standard Bangla for curriculum retrieval.
+Language: ${route.language}
+Detection detail: ${route.detail}
+${scriptInstruction}
+${examples}
+Student question:
+${originalQuestion}
+
+Return ONLY the Standard Bangla question. Preserve formulas, symbols, and English scientific terms. If uncertain, keep the educational intent and do not add new facts.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translated?.trim() || originalQuestion
+  } catch (err) {
+    console.warn('/api/ask low-resource question translation failed', err instanceof Error ? err.message : err)
+    return originalQuestion
+  }
+}
+
+async function translateChakmaQuestionWithGemini(question: string, bridge: ChakmaBridgeContext) {
+  if (!bridge.enabled || bridge.detectedLanguage !== 'ccp') return bridge.questionForTutor
+  if (bridge.inputMatch && bridge.inputMatch.score >= 0.82) return bridge.questionForTutor
+
+  const prompt = `You are translating a student question from Chakma to Bangla for VoicePandita.
+Use the parallel Chakma/Bangla examples from the Hugging Face dataset as guidance.
+
+Examples:
+${formatChakmaExamples(bridge.examples)}
+
+Chakma student question:
+${question}
+
+Return ONLY the Bangla translation. Do not answer the question. Preserve formulas and English scientific terms.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translated?.trim() || bridge.questionForTutor
+  } catch (err) {
+    console.warn('/api/ask Chakma question translation failed', err instanceof Error ? err.message : err)
+    return bridge.questionForTutor
+  }
+}
+
+async function translateBanglaAnswerToChakma(answer: string, bridge: ChakmaBridgeContext) {
+  if (!bridge.enabled) return answer
+
+  const datasetFallback = translateBanglaWithDataset(answer, bridge.pairs)
+  const answerExamples = selectChakmaExamples(answer, bridge.pairs, 16)
+
+  if (!genAI) return datasetFallback
+
+  const prompt = `Translate this Bangla tutoring answer into Chakma language using Chakma script (ISO 639-3: ccp).
+Use the parallel examples from the Hugging Face dataset as style and vocabulary guidance.
+
+Examples:
+${formatChakmaExamples(answerExamples)}
+
+Bangla answer:
+${answer}
+
+Rules:
+- Return ONLY the Chakma translation.
+- Preserve formulas, symbols, English science terms, and Mermaid-independent wording.
+- Keep the Socratic follow-up question as a question in Chakma.
+- If a school term has no reliable Chakma equivalent, keep that term in Bangla/English inside the Chakma sentence.`
+
+  try {
+    const translated = await geminiText(prompt)
+    return translateBanglaWithDataset(translated?.trim() || datasetFallback, bridge.pairs)
+  } catch (err) {
+    console.warn('/api/ask Chakma answer translation failed', err instanceof Error ? err.message : err)
+    return datasetFallback
+  }
+}
 function extractJson(text: string) {
   const cleaned = text.replace(/```json|```/g, '').trim()
   const start = cleaned.indexOf('{')
@@ -422,6 +696,299 @@ function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
     return 'graph LR\n  A[à¦¤à¦°à¦² à¦ªà¦¦à¦¾à¦°à§à¦¥] --> B[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à§Ÿà¦¤à¦¨]\n  A --> C[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à¦•à¦¾à¦° à¦¨à§‡à¦‡]\n  A --> D[à¦ªà§à¦°à¦¬à¦¾à¦¹à¦¿à¦¤ à¦¹à§Ÿ]\n  A --> E[à¦šà¦¾à¦ª à¦ªà§à¦°à§Ÿà§‹à¦— à¦•à¦°à§‡]\n  C --> F[à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦†à¦•à¦¾à¦° à¦¨à§‡à§Ÿ]'
   }
   return safeDiagram(null, fallbackTitle)
+}
+
+function learnerLanguageToTargetLanguage(language: string): TargetLanguage {
+  if (language === 'chakma') return 'Chakma'
+  if (language === 'garo') return 'Garo'
+  if (language === 'marma') return 'Marma'
+  return 'Bangla'
+}
+
+function learnerScriptToDetectedScript(script: string): DetectedScript {
+  if (script === 'bengali') return 'Bengali'
+  if (script === 'latin') return 'Latin'
+  if (script === 'chakma') return 'Chakma'
+  if (script === 'myanmar') return 'Myanmar'
+  return 'Unknown'
+}
+
+const BANGLA_TO_MARMA_SCRIPT: Record<string, string> = {
+  অ: 'အ',
+  আ: 'အာ',
+  ই: 'ဣ',
+  ঈ: 'ဤ',
+  উ: 'ဥ',
+  ঊ: 'ဦ',
+  ঋ: 'ရီ',
+  এ: 'အေ',
+  ঐ: 'အိုက်',
+  ও: 'အို',
+  ঔ: 'အောက်',
+  ক: 'က',
+  খ: 'ခ',
+  গ: 'ဂ',
+  ঘ: 'ဃ',
+  ঙ: 'င',
+  চ: 'စ',
+  ছ: 'ဆ',
+  জ: 'ဇ',
+  ঝ: 'ဈ',
+  ঞ: 'ည',
+  ট: 'တ',
+  ঠ: 'ထ',
+  ড: 'ဒ',
+  ঢ: 'ဓ',
+  ণ: 'န',
+  ত: 'တ',
+  থ: 'သ',
+  দ: 'ဒ',
+  ধ: 'ဓ',
+  ন: 'န',
+  প: 'ပ',
+  ফ: 'ဖ',
+  ব: 'ဗ',
+  ভ: 'ဘ',
+  ম: 'မ',
+  য: 'ယ',
+  র: 'ရ',
+  ল: 'လ',
+  শ: 'ရှ',
+  ষ: 'ရှ',
+  স: 'စ',
+  হ: 'ဟ',
+  ড়: 'ရ',
+  ঢ়: 'ရ',
+  য়: 'ယ',
+  '়': '',
+  'ং': 'ံ',
+  'ঃ': 'း',
+  'ঁ': 'ံ',
+  'া': 'ာ',
+  'ি': 'ိ',
+  'ী': 'ီ',
+  'ু': 'ု',
+  'ূ': 'ူ',
+  'ৃ': 'ြိ',
+  'ে': 'ေ',
+  'ৈ': 'ိုင်',
+  'ো': 'ို',
+  'ৌ': 'ေါ',
+  '্': '်',
+  '০': '၀',
+  '১': '၁',
+  '২': '၂',
+  '৩': '၃',
+  '৪': '၄',
+  '৫': '၅',
+  '৬': '၆',
+  '৭': '၇',
+  '৮': '၈',
+  '৯': '၉',
+  '।': '။',
+}
+
+const BANGLA_TO_LATIN_SCRIPT: Record<string, string> = {
+  অ: 'a',
+  আ: 'a',
+  ই: 'i',
+  ঈ: 'i',
+  উ: 'u',
+  ঊ: 'u',
+  ঋ: 'ri',
+  এ: 'e',
+  ঐ: 'oi',
+  ও: 'o',
+  ঔ: 'ou',
+  ক: 'k',
+  খ: 'kh',
+  গ: 'g',
+  ঘ: 'gh',
+  ঙ: 'ng',
+  চ: 'ch',
+  ছ: 'chh',
+  জ: 'j',
+  ঝ: 'jh',
+  ঞ: 'ny',
+  ট: 't',
+  ঠ: 'th',
+  ড: 'd',
+  ঢ: 'dh',
+  ণ: 'n',
+  ত: 't',
+  থ: 'th',
+  দ: 'd',
+  ধ: 'dh',
+  ন: 'n',
+  প: 'p',
+  ফ: 'ph',
+  ব: 'b',
+  ভ: 'bh',
+  ম: 'm',
+  য: 'y',
+  র: 'r',
+  ল: 'l',
+  শ: 'sh',
+  ষ: 'sh',
+  স: 's',
+  হ: 'h',
+  ড়: 'r',
+  ঢ়: 'rh',
+  য়: 'y',
+  '়': '',
+  'ং': 'ng',
+  'ঃ': 'h',
+  'ঁ': 'n',
+  'া': 'a',
+  'ি': 'i',
+  'ী': 'i',
+  'ু': 'u',
+  'ূ': 'u',
+  'ৃ': 'ri',
+  'ে': 'e',
+  'ৈ': 'oi',
+  'ো': 'o',
+  'ৌ': 'ou',
+  '্': '',
+  '০': '0',
+  '১': '1',
+  '২': '2',
+  '৩': '3',
+  '৪': '4',
+  '৫': '5',
+  '৬': '6',
+  '৭': '7',
+  '৮': '8',
+  '৯': '9',
+  '।': '.',
+}
+
+const GARO_TERM_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/সালোকসংশ্লেষণ/g, 'photosynthesis'],
+  [/উদ্ভিদ/g, 'sam bolrang'],
+  [/আলো/g, 'salni teng.su'],
+  [/পানি/g, 'chi'],
+  [/অক্সিজেন/g, 'oxygen'],
+  [/গ্লুকোজ/g, 'glucose'],
+  [/খাদ্য/g, 'cha.aniko'],
+  [/কার্বন ডাই-অক্সাইড|CO2/g, 'CO2'],
+  [/ক্লোরোফিল/g, 'chlorophyll'],
+  [/বল/g, 'bil'],
+  [/ভর/g, 'jrimani'],
+  [/ত্বরণ/g, 'ta.rake re.ani'],
+  [/গতি/g, 're.ani'],
+  [/ধাতু/g, 'metal'],
+  [/অধাতু/g, 'non-metal'],
+  [/ইলেকট্রন/g, 'electron'],
+  [/আয়ন/g, 'ion'],
+  [/বন্ধন/g, 'bond'],
+  [/আকর্ষণ/g, 'salnapani'],
+  [/প্রশ্ন/g, 'sing.aniko'],
+  [/কারণ/g, 'a.sel'],
+  [/ফলাফল/g, 'bite'],
+  [/বোঝা/g, 'ma.siani'],
+  [/সূত্র/g, 'formula'],
+  [/যাচাই/g, 'nirokani'],
+  [/উদাহরণ/g, 'mesokani'],
+  [/ব্যাখ্যা/g, 'talatani'],
+  [/মূল ভাব/g, 'mongsonggipa miksongani'],
+]
+
+function transliterateBangla(value: string, alphabet: Record<string, string>) {
+  let output = ''
+  for (const char of value) {
+    const codePoint = char.codePointAt(0) || 0
+    output += codePoint >= 0x0980 && codePoint <= 0x09ff ? alphabet[char] ?? char : char
+  }
+  return output
+}
+
+function translateBanglaToGaroText(value: string) {
+  let output = value
+  for (const [pattern, replacement] of GARO_TERM_REPLACEMENTS) {
+    output = output.replace(pattern, replacement)
+  }
+  return transliterateBangla(output, BANGLA_TO_LATIN_SCRIPT)
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([?.!,])/g, '$1')
+    .trim()
+}
+
+function translateBanglaToMarmaScript(value: string) {
+  return transliterateBangla(value, BANGLA_TO_MARMA_SCRIPT)
+}
+
+function sanitizeMermaidLabel(label: string) {
+  return label.replace(/[[\]{}<>]/g, '').replace(/\s+/g, ' ').trim() || 'Concept'
+}
+
+function translateMermaidLabels(chart: string, translator: (label: string) => string) {
+  return chart.replace(/\[([^\]]+)\]/g, (_, label: string) => `[${sanitizeMermaidLabel(translator(label))}]`)
+}
+
+function localizeDiagram(
+  chart: string | null,
+  targetLanguage: TargetLanguage,
+  bridge: ChakmaBridgeContext
+) {
+  if (!chart) return null
+  if (targetLanguage === 'Bangla') return chart
+  if (targetLanguage === 'Chakma') {
+    return translateMermaidLabels(chart, label => translateBanglaWithDataset(label, bridge.pairs))
+  }
+  if (targetLanguage === 'Marma') {
+    return translateMermaidLabels(chart, translateBanglaToMarmaScript)
+  }
+  return translateMermaidLabels(chart, translateBanglaToGaroText)
+}
+
+async function translateBanglaAnswerToMarma(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  inputLanguage: string
+  subjectContext: string
+}) {
+  const deterministicFallback = translateBanglaToMarmaScript(params.banglaAnswer)
+  if (!genAI) return deterministicFallback
+
+  const marma = await loadMarmaContext()
+  if (!marma.enabled) return deterministicFallback
+
+  const prompt = `You are VoicePandita's multilingual tutoring translator.
+You are writing for Marma-speaking students in Bangladesh.
+Use Marma language written in Myanmar script.
+The examples below are real Marma text from CLEAR-Global/marmaspeak-text. Use them only as script/style evidence, not as answer content.
+
+Marma corpus examples:
+${formatMarmaExamples(marma.examples)}
+
+Detected input language: ${params.inputLanguage}
+Selected target language: Marma
+Subject context: ${params.subjectContext || 'Not provided'}
+
+Student question:
+${params.originalQuestion}
+
+Bangla educational source answer:
+${params.banglaAnswer}
+
+Rules:
+- Return only the student-facing answer in Marma language using Myanmar script.
+- Keep formulas, symbols, and science terms like CO2, glucose, photosynthesis, F = ma if there is no reliable Marma equivalent.
+- Keep it simple for a school student.
+- Do not output Bangla or English paragraphs.
+- Do not return an English availability warning.`
+
+  try {
+    const generated = await geminiText(prompt)
+    const answer = generated?.trim() || ''
+    if (!answer) return deterministicFallback
+    if (!hasMarmaScript(answer)) return deterministicFallback
+    return answer
+  } catch (err) {
+    console.warn('/api/ask Marma answer generation failed', err instanceof Error ? err.message : err)
+    return deterministicFallback
+  }
 }
 
 function fallbackOcrContextAnswer(question: string, extractedText: string, emotion: EmotionState) {
@@ -673,17 +1240,260 @@ Rules:
   }
 }
 
+async function translateBanglaAnswerToChakmaBengaliScript(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  subjectContext: string
+}) {
+  const deterministic = CHAKMA_BENGALI_ROWS
+    .filter(row => row.bangla && row.bengaliScriptChakma)
+    .sort((a, b) => String(b.bangla).length - String(a.bangla).length)
+    .reduce((text, row) => text.split(String(row.bangla)).join(String(row.bengaliScriptChakma)), params.banglaAnswer)
+
+  if (!genAI) return deterministic
+
+  const prompt = `Translate this grounded Bangla tutoring answer into Chakma language written with Bengali script/Bangla horof.
+Use the verified phrase examples only as style/vocabulary guidance. Do not claim perfect translation.
+
+Examples:
+${formatBengaliScriptChakmaExamples(16)}
+
+Student question:
+${params.originalQuestion}
+
+Subject context: ${params.subjectContext}
+
+Grounded Bangla answer:
+${params.banglaAnswer}
+
+Rules:
+- Return only the student-facing Chakma answer in Bengali script.
+- Preserve formulas, symbols, and school science terms when a reliable Chakma equivalent is unavailable.
+- Keep the Socratic follow-up as a short question.
+- Do not output native Chakma Unicode script.`
+
+  try {
+    const generated = await geminiText(prompt)
+    const answer = generated?.trim() || ''
+    return answer && hasScript(answer, 'Bengali') ? answer : deterministic
+  } catch (err) {
+    console.warn('/api/ask Chakma Bengali-script answer generation failed', err instanceof Error ? err.message : err)
+    return deterministic
+  }
+}
+
+async function translateBanglaAnswerToChakmaRomanized(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  subjectContext: string
+}) {
+  if (!genAI) return params.banglaAnswer
+
+  const prompt = `Translate this grounded Bangla tutoring answer into Romanized Chakma.
+Use the verified examples only as style/vocabulary guidance. Do not claim perfect translation.
+
+Examples:
+${formatRomanizedChakmaExamples(16)}
+
+Student question:
+${params.originalQuestion}
+
+Subject context: ${params.subjectContext}
+
+Grounded Bangla answer:
+${params.banglaAnswer}
+
+Rules:
+- Return only the student-facing answer in Romanized Chakma.
+- Preserve formulas, symbols, and school science terms when a reliable Chakma equivalent is unavailable.
+- Keep it simple for a school student.`
+
+  try {
+    const generated = await geminiText(prompt)
+    const answer = generated?.trim() || ''
+    return answer && hasScript(answer, 'Latin') ? answer : params.banglaAnswer
+  } catch (err) {
+    console.warn('/api/ask Romanized Chakma answer generation failed', err instanceof Error ? err.message : err)
+    return params.banglaAnswer
+  }
+}
+
+function translateBanglaToGaroBengaliScriptFallback(value: string) {
+  return value
+    .replace(/সালোকসংশ্লেষণ/g, 'ফটোসিন্থেসিস')
+    .replace(/উদ্ভিদ/g, 'সাম বলরাং')
+    .replace(/আলো/g, 'সালনি তেংসু')
+    .replace(/পানি/g, 'চি')
+    .replace(/খাদ্য/g, 'চাআনিকো')
+    .replace(/ব্যাখ্যা/g, 'তালাতানি')
+    .replace(/উদাহরণ/g, 'মেসোকানি')
+    .replace(/প্রশ্ন/g, 'সিংআনিকো')
+}
+
+async function translateBanglaAnswerToLowResourceScript(params: {
+  banglaAnswer: string
+  originalQuestion: string
+  targetLanguage: Exclude<TargetLanguage, 'Bangla' | 'Chakma'>
+  outputScript: DetectedScript
+  subjectContext: string
+}) {
+  const scriptLabel = params.outputScript === 'Bengali'
+    ? 'Bengali script/Bangla horof'
+    : params.outputScript === 'Latin'
+      ? 'Romanized Latin form'
+      : params.targetLanguage === 'Marma'
+        ? 'Myanmar script'
+        : 'Latin-script A.chik/Garo style'
+
+  const deterministic = params.targetLanguage === 'Garo' && params.outputScript === 'Bengali'
+    ? translateBanglaToGaroBengaliScriptFallback(params.banglaAnswer)
+    : params.targetLanguage === 'Garo'
+      ? translateBanglaToGaroText(params.banglaAnswer)
+      : params.outputScript === 'Myanmar'
+        ? translateBanglaToMarmaScript(params.banglaAnswer)
+        : params.banglaAnswer
+
+  if (!genAI) return deterministic
+
+  const prompt = `Translate this grounded Bangla tutoring answer into ${params.targetLanguage}.
+Output script: ${scriptLabel}
+This is a low-resource language. Do not claim perfect translation and do not invent unsupported school terms.
+
+Student question:
+${params.originalQuestion}
+
+Subject context: ${params.subjectContext}
+
+Grounded Bangla answer:
+${params.banglaAnswer}
+
+Rules:
+- Return only the student-facing answer in ${params.targetLanguage} using ${scriptLabel}.
+- Preserve formulas, symbols, and school science terms when no reliable local equivalent is available.
+- Keep it simple for a school student.
+- Do not include an availability warning; metadata will carry provenance.`
+
+  try {
+    const generated = await geminiText(prompt)
+    const answer = generated?.trim() || ''
+    if (!answer) return deterministic
+    if (params.outputScript !== 'Unknown' && !hasScript(answer, params.outputScript)) return deterministic
+    return answer
+  } catch (err) {
+    console.warn(`/api/ask ${params.targetLanguage} ${params.outputScript} answer generation failed`, err instanceof Error ? err.message : err)
+    return deterministic
+  }
+}
+
+async function localizeAnswer(params: {
+  banglaAnswer: string
+  diagram: string | null
+  route: ReturnType<typeof detectMultilingualRoute>
+  bridge: ChakmaBridgeContext
+  originalQuestion: string
+  inputLanguage: string
+  subjectContext: string
+}) : Promise<LocalizedAnswer> {
+  const { banglaAnswer, diagram, route, bridge, originalQuestion, inputLanguage, subjectContext } = params
+
+  if (route.shouldFallbackToBangla && route.targetLanguage !== 'Bangla') {
+    return {
+      answer: `${safeLowResourceFallback(route.targetLanguage as Exclude<TargetLanguage, 'Bangla'>)}\n\n${banglaAnswer}`,
+      diagram,
+      targetLanguage: 'Bangla',
+      outputScript: 'Bengali',
+      provenance: 'fallback',
+      verified: false,
+      sourceSuffix: `${route.targetLanguage.toLowerCase()}-low-confidence-fallback`,
+    }
+  }
+
+  if (route.targetLanguage === 'Bangla') {
+    return {
+      answer: banglaAnswer,
+      diagram,
+      targetLanguage: 'Bangla',
+      outputScript: 'Bengali',
+      provenance: 'verified',
+      verified: true,
+      sourceSuffix: 'bangla-grounded',
+    }
+  }
+
+  if (route.targetLanguage === 'Chakma') {
+    let answer = banglaAnswer
+    if (route.outputScript === 'Bengali') {
+      answer = await translateBanglaAnswerToChakmaBengaliScript({ banglaAnswer, originalQuestion, subjectContext })
+    } else if (route.outputScript === 'Latin') {
+      answer = await translateBanglaAnswerToChakmaRomanized({ banglaAnswer, originalQuestion, subjectContext })
+    } else {
+      answer = await translateBanglaAnswerToChakma(banglaAnswer, bridge)
+    }
+
+    return {
+      answer,
+      diagram: route.outputScript === 'Chakma' ? localizeDiagram(diagram, 'Chakma', bridge) : diagram,
+      targetLanguage: 'Chakma',
+      outputScript: route.outputScript,
+      provenance: 'generated',
+      verified: false,
+      sourceSuffix: `chakma-${route.outputScript.toLowerCase()}-${bridge.source}`,
+    }
+  }
+
+  if (route.targetLanguage === 'Marma' && route.outputScript === 'Myanmar') {
+    return {
+      answer: await translateBanglaAnswerToMarma({ banglaAnswer, originalQuestion, inputLanguage, subjectContext }),
+      diagram: localizeDiagram(diagram, 'Marma', bridge),
+      targetLanguage: 'Marma',
+      outputScript: 'Myanmar',
+      provenance: 'generated',
+      verified: false,
+      sourceSuffix: 'marma-corpus-bridge',
+    }
+  }
+
+  const lowResourceAnswer = await translateBanglaAnswerToLowResourceScript({
+    banglaAnswer,
+    originalQuestion,
+    targetLanguage: route.targetLanguage as Exclude<TargetLanguage, 'Bangla' | 'Chakma'>,
+    outputScript: route.outputScript,
+    subjectContext,
+  })
+
+  return {
+    answer: lowResourceAnswer,
+    diagram: route.outputScript === 'Bengali' || route.outputScript === 'Latin'
+      ? diagram
+      : localizeDiagram(diagram, route.targetLanguage, bridge),
+    targetLanguage: route.targetLanguage,
+    outputScript: route.outputScript,
+    provenance: 'generated',
+    verified: false,
+    sourceSuffix: `${route.targetLanguage.toLowerCase()}-${route.outputScript.toLowerCase()}-safe-routing`,
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const question = String(body.question || '').trim()
-    if (!question) return NextResponse.json({ error: 'Question required' }, { status: 400 })
+    const originalQuestion = String(body.question || '').trim()
+    if (!originalQuestion) return NextResponse.json({ error: 'Question required' }, { status: 400 })
 
     const outputMode = String(body.outputMode || 'whiteboard') as OutputMode
-    const language = String(body.language || 'bn')
+    const selectedTargetLanguage = normalizeTargetLanguage(body.selected_target_language || body.target_language || body.language || 'Bangla')
+    const selectedLanguageForDetection = normalizeSelectedLearnLanguage(body.language || body.selected_target_language || body.target_language || selectedTargetLanguage)
+    const scriptDetection = detectScriptWithConfidence(originalQuestion)
+    const languageDetection = detectLanguage({
+      text: originalQuestion,
+      selectedLanguage: selectedLanguageForDetection,
+    })
+    const route = detectMultilingualRoute(originalQuestion, selectedTargetLanguage)
+    const targetLanguage = route.targetLanguage
+    const language = targetLanguageToCode(targetLanguage)
+    const inputLanguage = languageDetection.language
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
-    const curriculumChunks = Array.isArray(body.curriculumChunks) ? body.curriculumChunks : undefined
     const studentProfile = body.studentProfile && typeof body.studentProfile === 'object'
       ? {
           level: typeof body.studentProfile.level === 'string' ? body.studentProfile.level : undefined,
@@ -700,6 +1510,9 @@ export async function POST(req: NextRequest) {
       : undefined
     const extractedText = String(body.extractedText || '').trim()
     const requestSource = String(body.source || '')
+    const bridge = await prepareChakmaBridge(originalQuestion, language)
+    const question = await translateQuestionToBangla({ originalQuestion, route, bridge })
+    const curriculumChunks = await retrieveCurriculumChunks(question, body.curriculumChunks)
     const conceptSignal = requestSource === 'ocr' && extractedText ? `${extractedText}\n${question}` : question
     const lessonKey = inferLesson(conceptSignal)
     const detectedEmotion = detectEmotion(question, repeatCount)
@@ -800,7 +1613,7 @@ Rules:
         source = 'local-ocr-context-fallback'
         mode = 'ocr_context'
       } else if (!answer) {
-        throw err
+        answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
       }
     }
 
@@ -808,15 +1621,53 @@ Rules:
     const safeOutputDiagram = outputMode === 'simple' || outputMode === 'exam' || outputMode === 'video'
       ? null
       : polishMermaidDiagram(diagram)
+    const localized = await localizeAnswerPhase2({
+      banglaAnswer: safeAnswer,
+      question: originalQuestion,
+      languageDetection,
+      scriptDetection,
+      selectedLanguage: selectedLanguageForDetection,
+      subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
+      generateText: geminiText,
+    })
+    const resolvedTargetLanguage = learnerLanguageToTargetLanguage(localized.metadata.outputLanguage)
+    const resolvedOutputScript = learnerScriptToDetectedScript(localized.metadata.outputScript)
+    const sourceScript = learnerScriptToDetectedScript(localized.metadata.sourceScript)
+    const languageSource = `${source}+phase2-${localized.metadata.outputLanguage}-${localized.metadata.outputScript}${localized.metadata.fallbackUsed ? '-fallback' : '-generated'}`
 
     return NextResponse.json({
-      answer: safeAnswer,
+      answerText: localized.answerText,
+      answer: localized.answerText,
+      metadata: localized.metadata,
       diagram: safeOutputDiagram && looksMojibake(safeOutputDiagram) ? fallbackConceptDiagram(graphPath.slice(-1)[0] || question) : safeOutputDiagram,
       animationKey,
       detectedEmotion,
+      detectedLanguage: localized.metadata.sourceLanguage,
+      detectedLanguageDetail: route.detail,
+      detectedScript: sourceScript,
+      selectedTargetLanguage: resolvedTargetLanguage,
+      requestedTargetLanguage: selectedTargetLanguage,
+      outputScript: resolvedOutputScript,
+      languageConfidence: localized.metadata.detectionConfidence,
+      languageMetadata: {
+        detectedLanguage: localized.metadata.sourceLanguage,
+        detectedLanguageDetail: route.detail,
+        detectedScript: sourceScript,
+        selectedTargetLanguage,
+        resolvedTargetLanguage,
+        outputScript: resolvedOutputScript,
+        confidence: localized.metadata.detectionConfidence,
+        translationConfidence: localized.metadata.translationConfidence,
+        verified: localized.metadata.verified,
+        provenance: localized.metadata.fallbackUsed ? 'fallback' : localized.metadata.verified ? 'verified' : 'generated',
+        fallback: localized.metadata.fallbackUsed,
+        reasons: languageDetection.reasons,
+      },
+      translatedQuestion: question !== originalQuestion ? question : null,
+      curriculumChunkCount: curriculumChunks.length,
       graphPath,
       pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
-      source,
+      source: languageSource,
       mode,
       grounding,
     })

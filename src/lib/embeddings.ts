@@ -1,6 +1,6 @@
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    console.info('[VectorRAG] Generating embedding for question:', text)
+    console.info('[VectorRAG] Generating embedding', { chars: text.length })
     const response = await fetch('/api/embeddings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
