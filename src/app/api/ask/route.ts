@@ -24,6 +24,7 @@ import {
 } from '@/lib/multilingualSupport'
 import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/marmaBridge'
 import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
+import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
@@ -1494,6 +1495,28 @@ export async function POST(req: NextRequest) {
     const inputLanguage = languageDetection.language
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
+    if (body.offline === true) {
+      const [offlineResult] = await searchOffline(originalQuestion, {
+        baseUrl: new URL(req.url).origin,
+        limit: 1,
+      })
+      const offline = buildOfflineAnswer(offlineResult, originalQuestion)
+      return NextResponse.json({
+        answer: offline.answer,
+        answerText: offline.answer,
+        diagram: outputMode === 'simple' || outputMode === 'exam' || outputMode === 'video' ? null : offline.diagram,
+        animationKey: null,
+        detectedEmotion: 'confident',
+        detectedLanguage: 'bn',
+        selectedTargetLanguage: 'Bangla',
+        outputScript: 'Bengali',
+        graphPath: offline.graphPath,
+        pwnMessage: 'Offline Mode: using locally cached curriculum.',
+        source: 'offline-curriculum-cache',
+        mode: 'offline_fallback',
+        grounding: { grounded: true, label: 'Offline curriculum cache', sourceDataset: 'public/offline-data', similarity: offlineResult?.score || null },
+      })
+    }
     const studentProfile = body.studentProfile && typeof body.studentProfile === 'object'
       ? {
           level: typeof body.studentProfile.level === 'string' ? body.studentProfile.level : undefined,

@@ -11,7 +11,7 @@ export function useStudyRoomRealtime(roomId: string, onEvent: () => void) {
     const channel = supabase
       .channel(studyRoomChannelName(roomId), { config: { private: true } })
       .on('broadcast', { event: '*' }, onEvent)
-      .subscribe(status => setConnected(status === 'SUBSCRIBED'))
+      .subscribe((status: string) => setConnected(status === 'SUBSCRIBED'))
 
     return () => {
       supabase.removeChannel(channel)

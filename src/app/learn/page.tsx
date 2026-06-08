@@ -16,8 +16,10 @@ import type { AnimationKey } from '@/components/animations/types'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { getConceptMemory, getStudentProfile, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 import { searchCurriculum } from '@/lib/embeddings'
-import { createClient } from '@/lib/supabase/client'
-import { appendChatMessages, createChatSession, fetchChatMessages, migrateLocalHistoryToSupabase, recordOfflineChat } from '@/lib/services/chatHistory'
+import { createClient, syncSupabaseAuthRefreshWithNetwork } from '@/lib/supabase/client'
+import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
+import { isOnline as getNetworkOnline, subscribeNetworkChanges } from '@/lib/network'
+import { appendChatMessages, createChatSession, fetchChatMessages, flushPendingHistorySync, migrateLocalHistoryToSupabase, queuePendingHistorySync, recordOfflineChat } from '@/lib/services/chatHistory'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -274,7 +276,7 @@ export default function LearnPage() {
         window.location.replace('/login?next=/learn')
       }
     })
-    setIsOnline(navigator.onLine)
+    setIsOnline(getNetworkOnline())
     const params = new URLSearchParams(window.location.search)
     const seededQuestion = params.get('q')
     const seededSession = params.get('session')
@@ -300,7 +302,12 @@ export default function LearnPage() {
       window.speechSynthesis.getVoices()
       window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices()
     }
+    syncSupabaseAuthRefreshWithNetwork(getNetworkOnline())
     migrateLocalHistoryToSupabase()
+    flushPendingHistorySync()
+    searchOffline('newton photosynthesis acid trigonometry', { limit: 1 }).catch(() => {
+      // Offline cache warm-up is best-effort for live demos.
+    })
     if (seededSession) {
       setHistoryLoading(true)
       setActiveChatSessionId(seededSession)
@@ -326,12 +333,13 @@ export default function LearnPage() {
         })
         .finally(() => setHistoryLoading(false))
     }
-    const update = () => setIsOnline(navigator.onLine)
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
+    const unsubscribeNetwork = subscribeNetworkChanges(online => {
+      setIsOnline(online)
+      syncSupabaseAuthRefreshWithNetwork(online)
+      if (online) flushPendingHistorySync()
+    })
     return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
+      unsubscribeNetwork()
     }
   }, [])
 
@@ -550,29 +558,42 @@ export default function LearnPage() {
     setMessages(prev => [...prev, userMsg, loadingMsg])
     setIsLoading(true)
     let cloudSessionId = activeChatSessionId
-    if (!cloudSessionId && navigator.onLine) {
+    if (!cloudSessionId && isOnline) {
       const session = await createChatSession({ firstQuestion: question, subject, outputMode })
       cloudSessionId = session?.id || null
       if (cloudSessionId) setActiveChatSessionId(cloudSessionId)
     }
 
-    if (!navigator.onLine) {
-      const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
-      const offlineAnswer = `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`
+    if (!isOnline) {
+      const [offlineResult] = await searchOffline(question, { limit: 1 })
+      const offline = buildOfflineAnswer(offlineResult, question)
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
-          ? { ...msg, text: offlineAnswer, emotion: localEmotion, loading: false }
+          ? {
+              ...msg,
+              text: offline.answer,
+              diagram: outputMode === 'whiteboard' ? offline.diagram : null,
+              emotion: localEmotion,
+              graphPath: offline.graphPath,
+              outputMode,
+              pwnMessage: 'Offline Mode: using locally cached curriculum.',
+              loading: false,
+            }
           : msg
       ))
+      if (voiceOutput) speakText(offline.answer, localEmotion)
       recordPractice(subject, question)
-      recordOfflineChat({
+      const offlineHistory = {
         question,
-        answer: offlineAnswer,
+        answer: offline.answer,
         subject,
         outputMode,
         language,
         source: 'offline-pack',
-      })
+        graphPath: offline.graphPath,
+      }
+      recordOfflineChat(offlineHistory)
+      queuePendingHistorySync(offlineHistory)
       setIsLoading(false)
       return
     }
@@ -725,6 +746,14 @@ export default function LearnPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <span className={`inline-flex max-w-[9rem] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-semibold sm:max-w-none sm:px-3 ${
+              isOnline
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-orange-200 bg-orange-50 text-orange-700'
+            }`}>
+              <span>{isOnline ? '● Online' : '● Offline'}</span>
+              {!isOnline && <span className="hidden sm:inline">Learning Mode</span>}
+            </span>
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
             <button
@@ -779,7 +808,7 @@ export default function LearnPage() {
 
         {!isOnline && (
           <div className="offline-banner flex items-center justify-center gap-2">
-            <WifiOff size={14} /> Offline pack active - cached answers are available.
+            <WifiOff size={14} /> Offline Mode active - using locally cached curriculum. PWN and Graph Memory sync will resume online.
           </div>
         )}
 

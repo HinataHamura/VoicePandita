@@ -43,6 +43,8 @@ export interface AppendMessageInput {
   metadata?: Record<string, unknown>
 }
 
+const PENDING_SYNC_KEY = 'pending_sync_queue'
+
 function canUseStorage() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 }
@@ -189,6 +191,54 @@ export async function deleteChatSession(sessionId: string) {
 
 export function recordOfflineChat(item: Omit<ChatHistoryItem, 'id' | 'createdAt'>) {
   recordChatHistory(item)
+}
+
+export function queuePendingHistorySync(item: Omit<ChatHistoryItem, 'id' | 'createdAt'>) {
+  if (!canUseStorage()) return
+  const existing = JSON.parse(localStorage.getItem(PENDING_SYNC_KEY) || '[]') as Array<Omit<ChatHistoryItem, 'id' | 'createdAt'> & { queuedAt: string }>
+  existing.push({ ...item, queuedAt: new Date().toISOString() })
+  localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(existing.slice(-50)))
+}
+
+export async function flushPendingHistorySync() {
+  if (!canUseStorage() || !navigator.onLine) return false
+  const pending = JSON.parse(localStorage.getItem(PENDING_SYNC_KEY) || '[]') as Array<Omit<ChatHistoryItem, 'id' | 'createdAt'> & { queuedAt?: string }>
+  if (!pending.length) return true
+  const userId = await currentUserId()
+  if (!userId) return false
+
+  const remaining: typeof pending = []
+  for (const item of pending) {
+    const session = await createChatSession({
+      firstQuestion: item.question,
+      subject: item.subject,
+      outputMode: item.outputMode,
+    })
+    if (!session) {
+      remaining.push(item)
+      continue
+    }
+    const ok = await appendChatMessages(session.id, [
+      { role: 'user', content: item.question, metadata: { offlineQueued: true, queuedAt: item.queuedAt } },
+      {
+        role: 'assistant',
+        content: item.answer,
+        graphPath: item.graphPath,
+        metadata: {
+          offlineQueued: true,
+          source: item.source,
+          language: item.language,
+          outputMode: item.outputMode,
+          subject: item.subject,
+        },
+      },
+    ])
+    if (!ok) remaining.push(item)
+  }
+
+  if (remaining.length) localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(remaining))
+  else localStorage.removeItem(PENDING_SYNC_KEY)
+  return remaining.length === 0
 }
 
 export async function migrateLocalHistoryToSupabase() {
