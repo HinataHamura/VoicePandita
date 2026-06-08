@@ -3,18 +3,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import * as THREE from 'three'
-import {
-  DEFAULT_BDSL_MOTIONS,
-  parseIsharaKothaSigml,
-  sampleBdslFrame,
-  sigmlUrlForEntry,
-  type BdslRigMotion,
-} from '@/lib/bdsl/sigmlParser'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Props {
   active: boolean
-  text: string  // raw LLM output — may contain markdown, Bengali, mixed content
+  text: string
 }
 
 type DatasetEntry = {
@@ -64,14 +57,12 @@ function ensureCwasaLoaded() {
       link.href = CWASA_STYLE_URL
       document.head.appendChild(link)
     }
-
     const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${CWASA_SCRIPT_URL}"]`)
     if (existingScript) {
       existingScript.addEventListener('load', () => resolve(), { once: true })
       existingScript.addEventListener('error', () => reject(new Error('Failed to load CWASA')), { once: true })
       return
     }
-
     const script = document.createElement('script')
     script.src = CWASA_SCRIPT_URL
     script.async = true
@@ -79,7 +70,6 @@ function ensureCwasaLoaded() {
     script.onerror = () => reject(new Error('Failed to load CWASA'))
     document.body.appendChild(script)
   })
-
   return cwasaLoadPromise
 }
 
@@ -116,459 +106,294 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; dot: string }>
 }
 const getColor = (cat: string) => CATEGORY_COLORS[cat] ?? CATEGORY_COLORS['Unknown']
 
-// ─── Hand shape SVGs ──────────────────────────────────────────────────────────
+// ─── Hand shape types ─────────────────────────────────────────────────────────
 type HandVariant = 'open' | 'point' | 'fist' | 'flat' | 'peace' | 'thumb'
 
-const CAT_HAND: Record<string, HandVariant> = {
-  'Education': 'flat', 'Numbers': 'point', 'Letters': 'point',
-  'Social Work': 'open', 'Family and Relatives': 'peace',
-  'Work': 'fist', 'Transport': 'thumb',
-  'Food and Drinks': 'open', 'Nature and Environment': 'flat',
-}
 const ALL_SHAPES: HandVariant[] = ['open', 'point', 'flat', 'peace', 'fist', 'thumb']
-const handKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]/g, '')
-
-const WORD_HAND: Record<string, HandVariant> = {
-  sun: 'open',
-  heat: 'flat',
-  light: 'point',
-  land: 'fist',
-  river: 'peace',
-  canal: 'flat',
-  pond: 'open',
-  sea: 'peace',
-  water: 'open',
-  steam: 'thumb',
-  air: 'open',
-  sky: 'open',
-  cloud: 'flat',
-  rain: 'point',
-  evaporate: 'thumb',
-  change: 'thumb',
-  continuous: 'peace',
-  up: 'point',
-  direction: 'point',
-  shape: 'flat',
-  form: 'flat',
-  book: 'flat',
-  school: 'point',
-  learn: 'flat',
-  teacher: 'point',
-  mother: 'peace',
-  father: 'fist',
-  home: 'flat',
-  good: 'thumb',
-  work: 'fist',
-  come: 'open',
-  go: 'point',
-  hello: 'open',
-  thank: 'flat',
-}
-
 function stableShapeSeed(value: string) {
   let hash = 0
-  for (let i = 0; i < value.length; i++) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
-  }
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) >>> 0
   return hash
 }
-
 function handFor(token: SignToken, i: number): HandVariant {
-  const keys = [token.gloss, token.english, token.word, token.sigmlPath].map(handKey).filter(Boolean)
-  for (const key of keys) {
-    if (WORD_HAND[key]) return WORD_HAND[key]
-  }
-  if (token.known) {
-    const seed = stableShapeSeed(keys.join('|') || `${token.category}-${i}`)
-    return ALL_SHAPES[seed % ALL_SHAPES.length]
-  }
-  return CAT_HAND[token.category] ?? ALL_SHAPES[i % ALL_SHAPES.length]
+  return ALL_SHAPES[stableShapeSeed(token.gloss || token.word) % ALL_SHAPES.length]
 }
 
-// ─── Text cleaning — handles LLM markdown output ──────────────────────────────
-type FingerPose = {
-  rotate: number
-  y: number
-  scaleY: number
-  opacity: number
-}
-
-const FINGER_POSES: Record<HandVariant, FingerPose[]> = {
-  open: [
-    { rotate: -12, y: 0, scaleY: 1, opacity: 1 },
-    { rotate: -4, y: -6, scaleY: 1.08, opacity: 1 },
-    { rotate: 4, y: -4, scaleY: 1.04, opacity: 1 },
-    { rotate: 12, y: 3, scaleY: 0.94, opacity: 1 },
-  ],
-  flat: [
-    { rotate: -4, y: -2, scaleY: 1.03, opacity: 1 },
-    { rotate: -1, y: -7, scaleY: 1.1, opacity: 1 },
-    { rotate: 1, y: -5, scaleY: 1.08, opacity: 1 },
-    { rotate: 4, y: 0, scaleY: 1.01, opacity: 1 },
-  ],
-  point: [
-    { rotate: 66, y: 36, scaleY: 0.62, opacity: 0.95 },
-    { rotate: -3, y: -8, scaleY: 1.12, opacity: 1 },
-    { rotate: 60, y: 34, scaleY: 0.66, opacity: 0.95 },
-    { rotate: 66, y: 38, scaleY: 0.58, opacity: 0.95 },
-  ],
-  fist: [
-    { rotate: 74, y: 40, scaleY: 0.56, opacity: 0.96 },
-    { rotate: 72, y: 35, scaleY: 0.6, opacity: 0.96 },
-    { rotate: 72, y: 36, scaleY: 0.58, opacity: 0.96 },
-    { rotate: 76, y: 42, scaleY: 0.54, opacity: 0.96 },
-  ],
-  peace: [
-    { rotate: 66, y: 36, scaleY: 0.62, opacity: 0.95 },
-    { rotate: -8, y: -7, scaleY: 1.1, opacity: 1 },
-    { rotate: 8, y: -7, scaleY: 1.08, opacity: 1 },
-    { rotate: 68, y: 38, scaleY: 0.58, opacity: 0.95 },
-  ],
-  thumb: [
-    { rotate: 68, y: 35, scaleY: 0.62, opacity: 0.95 },
-    { rotate: 66, y: 32, scaleY: 0.64, opacity: 0.95 },
-    { rotate: 68, y: 34, scaleY: 0.62, opacity: 0.95 },
-    { rotate: 72, y: 37, scaleY: 0.58, opacity: 0.95 },
-  ],
-}
-
-function RealisticSignHand({ variant, accent, playing, id }: {
-  variant: HandVariant
-  accent: string
-  playing: boolean
-  id: string
-}) {
-  const poses = FINGER_POSES[variant]
-  const fingerX = [42, 56, 70, 84]
-  const fingerH = [56, 66, 62, 52]
-  const handMotion = playing
-    ? { rotate: variant === 'thumb' ? [0, -7, 4, 0] : [-3, 4, -2], y: [0, -5, 2, 0], x: [0, 3, -2, 0] }
-    : { rotate: 0, y: 0, x: 0 }
-  const thumbMotion = variant === 'thumb'
-    ? { rotate: [-38, -62, -42], x: [-1, -8, -1], y: [0, -6, 0] }
-    : variant === 'fist'
-      ? { rotate: [-12, -18, -12], x: [0, 2, 0], y: [0, 2, 0] }
-      : { rotate: [-34, -42, -34], x: [0, -2, 0], y: [0, -1, 0] }
-
-  return (
-    <svg viewBox="0 0 132 160" width="122" height="122" role="img" aria-label={`${variant} signing hand`}>
-      <defs>
-        <linearGradient id={`${id}-skin`} x1="28" x2="98" y1="12" y2="136" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#F6A27D" />
-          <stop offset="0.48" stopColor="#DD7356" />
-          <stop offset="1" stopColor="#B94E3D" />
-        </linearGradient>
-        <linearGradient id={`${id}-highlight`} x1="36" x2="88" y1="28" y2="122" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#FFD0B3" stopOpacity="0.9" />
-          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-        </linearGradient>
-        <filter id={`${id}-shadow`} x="-30%" y="-30%" width="160%" height="170%">
-          <feDropShadow dx="0" dy="8" stdDeviation="6" floodColor="#5F2A20" floodOpacity="0.2" />
-        </filter>
-      </defs>
-
-      <ellipse cx="66" cy="143" rx="35" ry="7" fill="#000" opacity="0.09" />
-      <motion.g
-        filter={`url(#${id}-shadow)`}
-        animate={handMotion}
-        transition={{ duration: 0.92, ease: 'easeInOut', repeat: playing ? Infinity : 0 }}
-        style={{ transformOrigin: '66px 104px' }}
-      >
-        <motion.g
-          animate={thumbMotion}
-          transition={{ duration: 0.7, ease: 'easeInOut', repeat: playing ? Infinity : 0 }}
-          style={{ transformOrigin: '42px 98px' }}
-        >
-          <rect x="17" y="66" width="21" height="53" rx="10.5" fill={`url(#${id}-skin)`} />
-          <ellipse cx="26" cy="65" rx="9" ry="5.5" fill="#FFD4BE" opacity="0.42" transform="rotate(-22 26 65)" />
-        </motion.g>
-
-        {fingerX.map((x, i) => {
-          const pose = poses[i]
-          const knuckleY = 76 + Math.max(0, pose.y * 0.35)
-          return (
-            <motion.g
-              key={x}
-              animate={{
-                rotate: playing ? [pose.rotate - 3, pose.rotate + 5, pose.rotate - 2] : pose.rotate,
-                y: playing ? [pose.y, pose.y - 4, pose.y] : pose.y,
-                scaleY: pose.scaleY,
-                opacity: pose.opacity,
-              }}
-              transition={{ duration: 0.82 + i * 0.07, ease: 'easeInOut', repeat: playing ? Infinity : 0 }}
-              style={{ transformBox: 'fill-box', transformOrigin: '50% 100%' }}
-            >
-              <rect x={x} y={18 + i * 2} width="14" height={fingerH[i]} rx="7" fill={`url(#${id}-skin)`} />
-              <rect x={x + 2.5} y={21 + i * 2} width="9" height="8" rx="4" fill="#FFE0CF" opacity="0.55" />
-              <path d={`M${x + 2} ${knuckleY} C${x + 5} ${knuckleY + 2}, ${x + 9} ${knuckleY + 2}, ${x + 12} ${knuckleY}`} stroke="#8E3F32" strokeOpacity="0.22" strokeWidth="1.2" fill="none" />
-            </motion.g>
-          )
-        })}
-
-        <path
-          d="M34 86 C34 72 44 63 58 64 L78 65 C92 66 101 76 101 90 L101 119 C101 134 91 143 74 143 L56 143 C42 143 32 133 32 119 Z"
-          fill={`url(#${id}-skin)`}
-        />
-        <path
-          d="M44 88 C54 78 79 78 91 89 C87 107 80 124 64 132 C51 126 44 111 44 88 Z"
-          fill={`url(#${id}-highlight)`}
-        />
-        <path d="M48 105 C56 110 75 111 86 105" stroke="#7A3229" strokeOpacity="0.22" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-        <path d="M49 121 C58 126 73 126 83 119" stroke="#7A3229" strokeOpacity="0.16" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-        <rect x="42" y="133" width="48" height="16" rx="7" fill="#B94E3D" opacity="0.92" />
-        <rect x="42" y="144" width="48" height="7" rx="3.5" fill={accent} opacity="0.55" />
-      </motion.g>
-    </svg>
-  )
-}
-
+// ─── Text cleaning ────────────────────────────────────────────────────────────
 function cleanLLMText(raw: string): string {
   return raw
-    // strip markdown bold/italic/code
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/#{1,6}\s*/g, '')
-    // strip URLs
     .replace(/https?:\/\/\S+/g, '')
-    // keep English, Bengali, digits, and whitespace for sign matching
-    .replace(/[^\u0980-\u09FFa-zA-Z0-9\s?]/g, ' ')
-    // collapse whitespace
+    .replace(/[^\u0980-\u09FFa-zA-Z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-// ─── Stop words (grammar words that have no sign) ─────────────────────────────
+// ─── Normalisation ────────────────────────────────────────────────────────────
+const norm = (s: string) =>
+  s.normalize('NFC').toLowerCase().replace(/[^\u0980-\u09FFa-z0-9]/g, '')
+
+const MOJIBAKE_RE = /aª|aº|Â|Ã|à¦|à§/
+
+function looksMojibake(value: string) {
+  return MOJIBAKE_RE.test(value)
+}
+
+function cleanDatasetLabel(value: string) {
+  const trimmed = value.trim()
+  const underscoreLabel = trimmed.match(/_([^_]+)$/)?.[1]
+  const parenLabel = trimmed.match(/\(([^()]+)\)\s*$/)?.[1]
+  return (underscoreLabel || parenLabel || trimmed).trim()
+}
+
+function cleanEntry(entry: DatasetEntry): DatasetEntry {
+  const cleanEnglish = cleanDatasetLabel(entry.english || entry.gloss)
+  const cleanGloss = cleanDatasetLabel(entry.gloss || entry.english)
+  const english = cleanEnglish || cleanGloss || entry.english
+  const gloss = looksMojibake(cleanGloss) ? english : cleanGloss || english
+
+  return {
+    ...entry,
+    gloss,
+    english,
+  }
+}
+
+// ─── Stop words ───────────────────────────────────────────────────────────────
+// Keep this minimal — better to attempt a lookup and miss than skip a content word
 const STOP_WORDS = new Set([
   'the','a','an','is','are','was','were','be','been','being',
   'have','has','had','do','does','did','will','would','could',
-  'should','may','might','shall','can','need','dare','ought',
+  'should','may','might','shall','can','need','ought',
   'and','or','but','so','yet','for','nor',
   'in','on','at','by','to','of','up','as','into','onto','upon',
   'i','you','he','she','it','we','they','me','him','her','us','them',
   'my','your','his','its','our','their',
   'this','that','these','those',
-  'not','no','nor','very','just','also','only','even','still',
+  'not','no','very','just','also','only','even','still',
   'then','when','where','which','who','whom','whose','how','why',
   'if','because','since','while','although','though','unless',
   'after','before','during','about','above','below','between',
   'from','with','without','through','across','against','among',
-  'হলো','হল','হয়','হয়','হওয়া','হওয়ার','হয়ে','হয়েছে',
+])
+
+// Bengali function words — keep content words out of this list
+const BN_STOP = new Set([
+  'হলো','হল','হয়','হওয়া','হওয়ার','হয়ে','হয়েছে',
   'ও','এবং','আর','বা','কিন্তু','তাই','যে','যা','যখন','তখন',
   'একটি','একটা','এই','ওই','তার','তাদের','আমাদের','এর',
   'থেকে','দিয়ে','জন্য','সাথে','কারণ','কারণে','না','আছে',
+  'হবে','হলে','হলো','এটি','এটা','ওটা','ওটি','তখন','যখন',
+  'করে','করা','করার','করেছে','করেছিল','এবং','অথবা',
 ])
 
-const EXTRA_STOP_WORDS = new Set([
-  '\u09B9\u09AC\u09C7', '\u09B9\u09B2\u09C7', '\u09B9\u09B2\u09CB', '\u09B9\u09B2',
-  '\u09B9\u09DF', '\u09B9\u09AF\u09BC', '\u09B9\u09AF\u09BC\u09C7', '\u09B9\u09DF\u09C7',
-  '\u098F\u099F\u09BF', '\u098F\u099F\u09BE', '\u098F\u0995\u099F\u09BF', '\u098F\u0995\u099F\u09BE',
-  '\u0993', '\u098F\u09AC\u0982', '\u0986\u09B0', '\u09AC\u09BE', '\u09A4\u09BE\u0987',
-  '\u09AF\u09C7', '\u09AF\u09BE', '\u098F\u09B0', '\u09A5\u09C7\u0995\u09C7',
-  '\u09A6\u09BF\u09AF\u09BC\u09C7', '\u099C\u09A8\u09CD\u09AF', '\u09AE\u09A4\u09CB',
-  '\u0986\u099B\u09C7', '\u09A8\u09BE', '\u09AA\u09CD\u09B0\u0995\u09CD\u09B0\u09BF\u09DF\u09BE\u099F\u09BF',
-  '\u09AA\u09CD\u09B0\u0995\u09CD\u09B0\u09BF\u09AF\u09BC\u09BE\u099F\u09BF', '\u0985\u09A8\u09A8\u09CD\u09AF',
-  '\u0985\u09A8\u09CD\u09AF\u09A8\u09CD\u09AF',
+const BN_STOP_OVERRIDES = new Set([
+  '\u09B9\u0993\u09AF\u09BC\u09BE\u0995\u09C7', // হওয়াকে
+  '\u09B9\u0993\u09DF\u09BE\u0995\u09C7',       // হওয়াকে
+  '\u09AC\u09B2\u09C7',                         // বলে
+  '\u098F\u0995\u099F\u09BF',                   // একটি
+  '\u098F\u0995\u099F\u09BE',                   // একটা
 ])
 
 const isStopWord = (word: string) => {
   const lower = word.toLowerCase()
-  const normalized = norm(word)
-  return STOP_WORDS.has(lower) || STOP_WORDS.has(normalized) || EXTRA_STOP_WORDS.has(word.trim()) || EXTRA_STOP_WORDS.has(normalized)
+  const n = norm(word)
+  return STOP_WORDS.has(lower) || BN_STOP.has(word.trim()) || BN_STOP.has(n) || BN_STOP_OVERRIDES.has(word.trim()) || BN_STOP_OVERRIDES.has(n)
 }
 
-// Bengali word -> English dataset key. The local dataset mostly uses English
-// filenames/glosses, so this bridges Bangla tutor text to available signs.
+// ─── Bengali → English mapping (expanded) ────────────────────────────────────
+// This is the primary bridge between Bengali tutor text and English dataset keys.
+// Keys use NFC-normalised forms; values are dataset English glosses.
 const BN_TO_EN: Record<string, string> = {
-  'বৃষ্টি': 'Rain', 'বৃষ্টিপাত': 'Rain', 'বৃষ্টিপাতের': 'Rain',
-  'সমুদ্র': 'Sea', 'সাগর': 'Sea', 'সাগরের': 'Sea',
-  'নদী': 'River', 'নদ': 'River', 'নদীর': 'River',
-  'সূর্য': 'Sun', 'সূর্যের': 'Sun', 'সূর্যতাপে': 'Sun',
-  'পানি': 'Water', 'জল': 'Water', 'জলের': 'Water',
-  'বায়ু': 'Air', 'বাতাস': 'Air', 'বাতাসের': 'Air',
-  'মেঘ': 'Cloud', 'মেঘের': 'Cloud',
-  'আকাশ': 'Sky', 'আকাশের': 'Sky',
-  'মাটি': 'Soil', 'মাটির': 'Soil',
-  'পাহাড়': 'Mountain', 'পর্বত': 'Mountain',
-  'গাছ': 'Tree', 'গাছের': 'Tree',
-  'ফুল': 'Flower', 'ফল': 'Fruit', 'ফলের': 'Fruit',
-  'মাছ': 'Fish', 'পাখি': 'Bird', 'কুকুর': 'Dog', 'বিড়াল': 'Cat',
-  'গরু': 'Cow', 'ছাগল': 'Goat', 'ঘোড়া': 'Horse', 'হাতি': 'Elephant',
-  'বাঘ': 'Tiger', 'সিংহ': 'Lion', 'সাপ': 'Snake',
-  'মা': 'Mother', 'বাবা': 'Father', 'ভাই': 'Brother', 'বোন': 'Sister',
-  'ছেলে': 'Son', 'মেয়ে': 'Daughter', 'বন্ধু': 'Friend',
-  'মানুষ': 'Human', 'মানুষের': 'Human', 'লোক': 'Human',
-  'ভাত': 'Rice', 'রুটি': 'Bread', 'দুধ': 'Milk', 'ডিম': 'Egg',
-  'মাংস': 'Meat', 'সবজি': 'Vegetable', 'ফলমূল': 'Fruit',
-  'চা': 'Tea', 'চিনি': 'Sugar', 'লবণ': 'Salt',
-  'হাত': 'Hand', 'পা': 'Leg', 'মাথা': 'Head', 'চোখ': 'Eye',
-  'কান': 'Ear', 'নাক': 'Nose', 'মুখ': 'Mouth', 'দাঁত': 'Teeth',
-  'হৃদয়': 'Heart', 'রক্ত': 'Blood',
-  'খাওয়া': 'Eat', 'খায়': 'Eat', 'খাই': 'Eat', 'পান': 'Drink',
-  'ঘুম': 'Sleep', 'হাঁটা': 'Walk', 'দৌড়': 'Run', 'বসা': 'Sit',
-  'দাঁড়ানো': 'Stand', 'লেখা': 'Write', 'পড়া': 'Read',
-  'দেখা': 'See', 'শোনা': 'Hear', 'বলা': 'Say',
-  'আসা': 'Come', 'যাওয়া': 'Go', 'নেওয়া': 'Take', 'দেওয়া': 'Give',
-  'করা': 'Do', 'কাজ': 'Work', 'রান্না': 'Cook', 'শেখা': 'Learn',
-  'বাড়ি': 'Home', 'বাড়ি': 'Home', 'বাসা': 'Home',
-  'স্কুল': 'School', 'কলেজ': 'College', 'বিশ্ববিদ্যালয়': 'University',
-  'হাসপাতাল': 'Hospital', 'বাজার': 'Market', 'দোকান': 'Shop',
-  'রাস্তা': 'Road', 'শহর': 'City', 'গ্রাম': 'Village',
-  'দেশ': 'Country', 'বাংলাদেশ': 'Bangladesh', 'ঢাকা': 'Dhaka',
-  'ভালো': 'Good', 'ভাল': 'Good', 'খারাপ': 'Bad',
-  'বড়': 'Big', 'বড়': 'Big', 'ছোট': 'Small',
-  'গরম': 'Hot', 'ঠান্ডা': 'Cold', 'নতুন': 'New', 'পুরানো': 'Old',
-  'সুন্দর': 'Beautiful', 'কালো': 'Black', 'সাদা': 'White',
-  'লাল': 'Red', 'সবুজ': 'Green', 'নীল': 'Blue', 'হলুদ': 'Yellow',
-  'এক': 'One', 'দুই': 'Two', 'তিন': 'Three', 'চার': 'Four',
-  'পাঁচ': 'Five', 'ছয়': 'Six', 'ছয়': 'Six', 'সাত': 'Seven',
-  'আট': 'Eight', 'নয়': 'Nine', 'নয়': 'Nine', 'দশ': 'Ten',
-  'বাষ্প': 'Steam', 'জলীয়': 'Water', 'জলীয়': 'Water',
-  'জলচক্র': 'Water', 'তাপ': 'Heat', 'তাপে': 'Heat',
-  'পুকুর': 'Pond', 'পুকুরের': 'Pond', 'পুকুরে': 'Pond',
-  'বই': 'Book', 'কলম': 'Pen', 'কাগজ': 'Paper',
-  'টাকা': 'Money', 'সময়': 'Time', 'সময়': 'Time',
-  'নাম': 'Name', 'বয়স': 'Age', 'বয়স': 'Age',
-  'ডাক্তার': 'Doctor', 'ওষুধ': 'Medicine',
-  'পরিবার': 'Family', 'সমাজ': 'Society', 'জীবন': 'Life',
-  'শিক্ষক': 'Teacher', 'ছাত্র': 'Student',
-  'আলো': 'Light', 'অন্ধকার': 'Dark',
+  // Nature & Water cycle
+  'বৃষ্টি':'Rain','বৃষ্টিপাত':'Rain','বৃষ্টিপাতের':'Rain',
+  'সমুদ্র':'Sea','সাগর':'Sea','সাগরের':'Sea',
+  'নদী':'River','নদ':'River','নদীর':'River',
+  'সূর্য':'Sun','সূর্যের':'Sun','সূর্যতাপে':'Sun','সূর্যতাপ':'Sun',
+  'পানি':'Water','জল':'Water','জলের':'Water','পানির':'Water',
+  'বায়ু':'Air','বাতাস':'Air','বাতাসের':'Air',
+  'মেঘ':'Cloud','মেঘের':'Cloud','মেঘে':'Cloud',
+  'আকাশ':'Sky','আকাশের':'Sky',
+  'মাটি':'Soil','মাটির':'Soil','জমি':'Land','জমির':'Land',
+  'পাহাড়':'Mountain','পর্বত':'Mountain','পর্বতের':'Mountain',
+  'গাছ':'Tree','গাছের':'Tree','গাছে':'Tree',
+  'ফুল':'Flower','ফুলের':'Flower',
+  'ফল':'Fruit','ফলের':'Fruit','ফলমূল':'Fruit',
+  'বাষ্প':'Steam','বাষ্পের':'Steam','বাষ্পীয়':'Steam',
+  'তাপ':'Heat','তাপে':'Heat','তাপের':'Heat','উত্তাপ':'Heat',
+  'পুকুর':'Pond','পুকুরের':'Pond','পুকুরে':'Pond',
+  'নালা':'Canal','খাল':'Canal','খালের':'Canal',
+  'বিল':'Pond','হাওর':'Lake','লেক':'Lake',
+  'আলো':'Light','আলোর':'Light',
+  'অন্ধকার':'Dark',
+  'আগুন':'Fire','আগুনের':'Fire',
+  'বায়ুমণ্ডল':'Air','বায়ুমণ্ডলে':'Air','বায়ুমণ্ডলের':'Air',
+  'বাষ্পীভূত':'Evaporate','বাষ্পীভবন':'Evaporate',
+  'জলচক্র':'Water','চক্র':'Cycle',
+  'উপর':'Up','উপরে':'Up','উপরের':'Up',
+  'দিক':'Direction','দিকে':'Direction',
+  'আকার':'Shape','আকারে':'Shape',
+  'প্রক্রিয়া':'Process','প্রক্রিয়ায়':'Process','প্রক্রিয়াটি':'Process',
+  'ধারাবাহিক':'Continuous','ক্রমাগত':'Continuous','ক্রমান্বয়ে':'Continuous',
+  'শক্তি':'Power','শক্তির':'Power',
+  'বাতাসের':'Air',
+  // Animals
+  'মাছ':'Fish','পাখি':'Bird','কুকুর':'Dog','বিড়াল':'Cat',
+  'গরু':'Cow','ছাগল':'Goat','ঘোড়া':'Horse','হাতি':'Elephant',
+  'বাঘ':'Tiger','সিংহ':'Lion','সাপ':'Snake','ব্যাঙ':'Frog',
+  'হাঁস':'Duck','মুরগি':'Hen','গরুর':'Cow','ছাগলের':'Goat',
+  'প্রাণী':'Animal','পশু':'Animal','পশুপাখি':'Animal',
+  // Family
+  'মা':'Mother','বাবা':'Father','ভাই':'Brother','বোন':'Sister',
+  'ছেলে':'Son','মেয়ে':'Daughter','বন্ধু':'Friend',
+  'মানুষ':'Human','মানুষের':'Human','লোক':'Human',
+  'পরিবার':'Family','পরিবারের':'Family',
+  'দাদা':'Grandfather','দাদি':'Grandmother','নানা':'Grandfather','নানি':'Grandmother',
+  'চাচা':'Uncle','মামা':'Uncle','খালা':'Aunt','চাচি':'Aunt',
+  // Food & Drink
+  'ভাত':'Rice','রুটি':'Bread','দুধ':'Milk','ডিম':'Egg',
+  'মাংস':'Meat','সবজি':'Vegetable','চা':'Tea',
+  'চিনি':'Sugar','লবণ':'Salt','তেল':'Oil',
+  'ফলমূল':'Fruit','শাকসবজি':'Vegetable',
+  'খাবার':'Food','খাদ্য':'Food','পানীয়':'Drink',
+  // Body Parts
+  'হাত':'Hand','পা':'Leg','মাথা':'Head','চোখ':'Eye',
+  'কান':'Ear','নাক':'Nose','মুখ':'Mouth','দাঁত':'Teeth',
+  'হৃদয':'Heart','হৃদয়':'Heart','রক্ত':'Blood',
+  'পেট':'Stomach','বুক':'Chest','পিঠ':'Back',
+  'আঙুল':'Finger','বুড়ো':'Thumb','কাঁধ':'Shoulder',
+  // Actions / Verbs
+  'খাওয়া':'Eat','খায়':'Eat','খাই':'Eat',
+  'পান':'Drink','পান করা':'Drink','পান করে':'Drink',
+  'ঘুম':'Sleep','ঘুমানো':'Sleep','ঘুমায়':'Sleep',
+  'হাঁটা':'Walk','দৌড়':'Run','বসা':'Sit',
+  'দাঁড়ানো':'Stand','লেখা':'Write','পড়া':'Read',
+  'দেখা':'See','শোনা':'Hear','বলা':'Say',
+  'আসা':'Come','যাওয়া':'Go','নেওয়া':'Take','দেওয়া':'Give',
+  'করা':'Do','কাজ':'Work','রান্না':'Cook','শেখা':'Learn',
+  'জানা':'Know','বোঝা':'Understand','বুঝা':'Understand',
+  'কাঁদা':'Cry','হাসা':'Laugh','খেলা':'Play',
+  'ভাবা':'Think','মনে':'Think',
+  'শেখানো':'Teach','পড়ানো':'Teach',
+  'শুরু':'Start','শেষ':'End','থামা':'Stop',
+  // Places
+  'বাড়ি':'Home','বাসা':'Home','ঘর':'Home',
+  'স্কুল':'School','কলেজ':'College','বিশ্ববিদ্যালয়':'University',
+  'হাসপাতাল':'Hospital','বাজার':'Market','দোকান':'Shop',
+  'রাস্তা':'Road','শহর':'City','গ্রাম':'Village',
+  'দেশ':'Country','বাংলাদেশ':'Bangladesh','ঢাকা':'Dhaka',
+  'মসজিদ':'Mosque','মন্দির':'Temple','চার্চ':'Church',
+  'মাঠ':'Field','পার্ক':'Park','বন':'Forest',
+  // Adjectives / Qualities
+  'ভালো':'Good','ভাল':'Good','খারাপ':'Bad',
+  'বড়':'Big','ছোট':'Small',
+  'গরম':'Hot','ঠান্ডা':'Cold','নতুন':'New','পুরানো':'Old',
+  'সুন্দর':'Beautiful','কালো':'Black','সাদা':'White',
+  'লাল':'Red','সবুজ':'Green','নীল':'Blue','হলুদ':'Yellow',
+  'সহজ':'Easy','কঠিন':'Difficult','দ্রুত':'Fast','ধীর':'Slow',
+  'শক্ত':'Strong','দুর্বল':'Weak','উচ্চ':'High','নিচু':'Low',
+  // Numbers
+  'এক':'One','দুই':'Two','তিন':'Three','চার':'Four',
+  'পাঁচ':'Five','ছয়':'Six','সাত':'Seven',
+  'আট':'Eight','নয়':'Nine','দশ':'Ten',
+  'শত':'Hundred','হাজার':'Thousand',
+  // Time
+  'সময়':'Time','দিন':'Day','রাত':'Night','সকাল':'Morning',
+  'বিকাল':'Afternoon','সন্ধ্যা':'Evening','বছর':'Year',
+  'মাস':'Month','সপ্তাহ':'Week','আজ':'Today',
+  'কাল':'Tomorrow','গতকাল':'Yesterday',
+  // Education / Profession
+  'বই':'Book','কলম':'Pen','কাগজ':'Paper',
+  'শিক্ষক':'Teacher','ছাত্র':'Student','ছাত্রী':'Student',
+  'ডাক্তার':'Doctor','ওষুধ':'Medicine','নার্স':'Nurse',
+  'পুলিশ':'Police','সৈনিক':'Soldier',
+  'কৃষক':'Farmer','ব্যবসায়ী':'Businessman',
+  // Misc
+  'টাকা':'Money','নাম':'Name','বয়স':'Age',
+  'জীবন':'Life','সমাজ':'Society','জগৎ':'World','পৃথিবী':'Earth',
+  'খবর':'News','তথ্য':'Information',
+  'প্রশ্ন':'Question','উত্তর':'Answer',
+  'সাহায্য':'Help','ধন্যবাদ':'Thank','স্বাগতম':'Hello','নমস্কার':'Hello',
+  'বিপদ':'Danger','নিরাপদ':'Safe',
+  'সত্য':'True','মিথ্যা':'False',
+  'ভালোবাসা':'Love','ঘৃণা':'Hate',
+  'আনন্দ':'Happy','দুঃখ':'Sad','রাগ':'Angry',
+  'ভয়':'Fear','আশা':'Hope',
+  'স্বাস্থ্য':'Health','রোগ':'Disease','অসুস্থ':'Sick',
 }
 
+const BN_TO_EN_OVERRIDES: Record<string, string> = {
+  '\u09AC\u09B0\u09AB': 'Ice',
+  '\u09AC\u09B0\u09AB\u09C7': 'Ice',
+  '\u09AC\u09B0\u09AB\u09C7\u09B0': 'Ice',
+  '\u09A4\u09C8\u09B0\u09BF': 'Create',
+  '\u09A4\u09C8\u09B0\u09C0': 'Create',
+  '\u09A4\u09C8\u09B0\u09BF\u09B0': 'Create',
+  '\u09B9\u09BF\u09AE\u09BE\u0999\u09CD\u0995': 'Deep Freeze',
+  '\u09B9\u09BF\u09AE\u09BE\u0999\u09CD\u0995\u09C7': 'Deep Freeze',
+  '\u09AB\u09CD\u09B0\u09BF\u099C\u09C7': 'Deep Freeze',
+  '\u09AB\u09CD\u09B0\u09BF\u099C': 'Deep Freeze',
+  '\u09A4\u09B0\u09B2': 'Liquid',
+  '\u09A4\u09B0\u09B2\u09C7': 'Liquid',
+  '\u09AA\u09B0\u09BF\u09AC\u09B0\u09CD\u09A4\u09A8': 'change',
+  '\u09AA\u09B0\u09BF\u09AC\u09B0\u09CD\u09A4\u09A8\u09C7': 'change',
+  '\u09A4\u09BE\u09AA': 'Hot',
+  '\u09A4\u09BE\u09AA\u09C7': 'Hot',
+  '\u09A4\u09BE\u09AA\u09C7\u09B0': 'Hot',
+  '\u09A4\u09BE\u09AA\u09AE\u09BE\u09A4\u09CD\u09B0\u09BE': 'Hot',
+  '\u09A4\u09BE\u09AA\u09AE\u09BE\u09A4\u09CD\u09B0\u09BE\u09B0': 'Hot',
+  '\u09A4\u09BE\u09AA\u09AE\u09BE\u09A4\u09CD\u09B0\u09BE\u09AF\u09BC': 'Hot',
+  '\u09A4\u09BE\u09AA\u09AE\u09BE\u09A4\u09CD\u09B0\u09BE\u09DF': 'Hot',
+  '\u09A8\u09C7\u0993\u09AF\u09BC\u09BE': 'Take',
+  '\u09A8\u09C7\u0993\u09DF\u09BE': 'Take',
+  '\u0995\u09AE\u09A4\u09C7': 'Less',
+  '\u0995\u09AE\u09C7': 'Less',
+  '\u09B6\u09C1\u09B0\u09C1': 'Start',
+  '\u09A6\u09B6\u09BE': 'Condition',
+  '\u09A6\u09B6\u09BE\u09AF\u09BC': 'Condition',
+  '\u09A6\u09B6\u09BE\u09DF': 'Condition',
+}
+
+// Bengali suffix stripping (longest first for greedy match)
 const BN_SUFFIXES = [
-  'গুলো','গুলি','দের','ের','র','কে','তে','য়','য়','ে','টা','টি',
+  'গুলোর','গুলিতে','গুলিকে','গুলির','গুলো','গুলি',
+  'দের','ের','কে','তে','য়ে','য়','ে','টার','টির','টা','টি','র',
 ]
 
-const EXTRA_BN_TO_EN: Record<string, string> = {
-  '\u0995\u09C7\u09A8': 'Cause',
-  '\u0995\u09BF': 'What',
-  '\u0995\u09C0': 'What',
-  '\u0995\u0996\u09A8': 'When',
-  '\u0995\u09CB\u09A5\u09BE\u09AF\u09BC': 'Where',
-  '\u0995\u09CB\u09A5\u09BE\u09DF': 'Where',
-  '\u09AC\u09C1\u099D\u09A4\u09C7': 'To understand',
-  '\u09AC\u09C1\u099D\u09BE': 'To understand',
-  '\u09AC\u09CB\u099D\u09BE': 'To understand',
-  '\u099C\u09BE\u09A8\u09A4\u09C7': 'Know',
-  '\u099C\u09BE\u09A8\u09BE': 'Know',
-  '\u09A4\u09C0\u09AC\u09CD\u09B0': 'Strong',
-  '\u09A4\u09C0\u09AC\u09CD\u09B0\u09A4\u09BE': 'Strong',
-  '\u09AA\u09CD\u09B0\u0995\u09CD\u09B0\u09BF\u09DF\u09BE\u099F\u09BF': 'Process',
-  '\u09AA\u09CD\u09B0\u0995\u09CD\u09B0\u09BF\u09AF\u09BC\u09BE\u099F\u09BF': 'Process',
-  '\u09AA\u09CD\u09B0\u0995\u09CD\u09B0\u09BF\u09DF\u09BE': 'Process',
-  '\u09AA\u09CD\u09B0\u0995\u09CD\u09B0\u09BF\u09AF\u09BC\u09BE': 'Process',
-  '\u0985\u09A8\u09A8\u09CD\u09AF': 'Other',
-  '\u0985\u09A8\u09CD\u09AF\u09A8\u09CD\u09AF': 'Other',
-  '\u0986\u0995\u09BE\u09B0': 'Shape',
-  '\u0986\u0995\u09BE\u09B0\u09C7': 'Shape',
-  '\u09A8\u09BE\u09B2\u09BE': 'Canal',
-  '\u0996\u09BE\u09B2': 'Canal',
-  '\u09AC\u09BF\u09B2': 'Pond',
-  '\u09A4\u09BE\u09AA': 'Heat',
-  '\u09A4\u09BE\u09AA\u09C7': 'Heat',
-  '\u09AC\u09BE\u09B7\u09CD\u09AA\u09C0\u09AD\u09C2\u09A4': 'Evaporate',
-  '\u09AC\u09BE\u09B7\u09CD\u09AA\u09C0\u09AD\u09AC\u09A8': 'Evaporate',
-  '\u09AC\u09BE\u09B7\u09CD\u09AA\u09C7': 'Steam',
-  '\u09AA\u09CD\u09B0\u09A4\u09BF\u09A8\u09BF\u09DF\u09A4': 'continuous',
-  '\u09AA\u09CD\u09B0\u09A4\u09BF\u09A8\u09BF\u09AF\u09BC\u09A4': 'continuous',
-  '\u09AC\u09BE\u09DF\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2': 'Air',
-  '\u09AC\u09BE\u09DF\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2\u09C7\u09B0': 'Air',
-  '\u09AC\u09BE\u09AF\u09BC\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2': 'Air',
-  '\u09AC\u09BE\u09AF\u09BC\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2\u09C7\u09B0': 'Air',
-  '\u0989\u09AA\u09B0': 'Up',
-  '\u0989\u09AA\u09B0\u09C7': 'Up',
-  '\u0989\u09AA\u09B0\u09C7\u09B0': 'Up',
-  '\u09A6\u09BF\u0995': 'Direction',
-  '\u09A6\u09BF\u0995\u09C7': 'Direction',
+function stripBnSuffix(word: string): string {
+  for (const sfx of BN_SUFFIXES) {
+    if (word.endsWith(sfx) && word.length - sfx.length >= 2) {
+      return word.slice(0, -sfx.length)
+    }
+  }
+  return word
 }
 
-// ─── Dataset + index ──────────────────────────────────────────────────────────
-const DATASET_URL = '/data/Sections/dataset.json'
-
-// Seed covers common words so the component works immediately before dataset loads
-const SEED: DatasetEntry[] = [
-  { gloss:'Water',       english:'Water',       category:'Nature and Environment', sigmlPath:'Water.sigml' },
-  { gloss:'Rain',        english:'Rain',         category:'Nature and Environment', sigmlPath:'Rain.sigml' },
-  { gloss:'River',       english:'River',        category:'Nature and Environment', sigmlPath:'River.sigml' },
-  { gloss:'Sun',         english:'Sun',          category:'Nature and Environment', sigmlPath:'Sun.sigml' },
-  { gloss:'Steam',       english:'Steam',        category:'Nature and Environment', sigmlPath:'Steam.sigml' },
-  { gloss:'Cloud',       english:'Cloud',        category:'Nature and Environment', sigmlPath:'Cloud.sigml' },
-  { gloss:'Sea',         english:'Sea',          category:'Nature and Environment', sigmlPath:'Sea.sigml' },
-  { gloss:'Mountain',    english:'Mountain',     category:'Nature and Environment', sigmlPath:'Mountain.sigml' },
-  { gloss:'Tree',        english:'Tree',         category:'Nature and Environment', sigmlPath:'Tree.sigml' },
-  { gloss:'Sky',         english:'Sky',          category:'Nature and Environment', sigmlPath:'Sky.sigml' },
-  { gloss:'Heat',        english:'Heat',         category:'Nature and Environment', sigmlPath:'Heat.sigml' },
-  { gloss:'Cold',        english:'Cold',         category:'Nature and Environment', sigmlPath:'Cold.sigml' },
-  { gloss:'Fire',        english:'Fire',         category:'Nature and Environment', sigmlPath:'Fire.sigml' },
-  { gloss:'Wind',        english:'Wind',         category:'Nature and Environment', sigmlPath:'Wind.sigml' },
-  { gloss:'Book',        english:'Book',         category:'Education',             sigmlPath:'Book.sigml' },
-  { gloss:'School',      english:'School',       category:'Education',             sigmlPath:'School.sigml' },
-  { gloss:'Learn',       english:'Learn',        category:'Education',             sigmlPath:'Learning.sigml' },
-  { gloss:'Read',        english:'Read',         category:'Education',             sigmlPath:'Read.sigml' },
-  { gloss:'Write',       english:'Write',        category:'Education',             sigmlPath:'Write.sigml' },
-  { gloss:'Teacher',     english:'Teacher',      category:'Profession',            sigmlPath:'Teacher.sigml' },
-  { gloss:'Doctor',      english:'Doctor',       category:'Profession',            sigmlPath:'Doctor.sigml' },
-  { gloss:'Mother',      english:'Mother',       category:'Family and Relatives',  sigmlPath:'Mother.sigml' },
-  { gloss:'Father',      english:'Father',       category:'Family and Relatives',  sigmlPath:'Father.sigml' },
-  { gloss:'Brother',     english:'Brother',      category:'Family and Relatives',  sigmlPath:'Brother.sigml' },
-  { gloss:'Sister',      english:'Sister',       category:'Family and Relatives',  sigmlPath:'Sister.sigml' },
-  { gloss:'Child',       english:'Child',        category:'Family and Relatives',  sigmlPath:'Child.sigml' },
-  { gloss:'Rice',        english:'Rice',         category:'Food and Drinks',       sigmlPath:'Rice.sigml' },
-  { gloss:'Fish',        english:'Fish',         category:'Animals and Birds',     sigmlPath:'Fish.sigml' },
-  { gloss:'Cat',         english:'Cat',          category:'Animals and Birds',     sigmlPath:'Cat.sigml' },
-  { gloss:'Dog',         english:'Dog',          category:'Animals and Birds',     sigmlPath:'Dog.sigml' },
-  { gloss:'Bird',        english:'Bird',         category:'Animals and Birds',     sigmlPath:'Bird.sigml' },
-  { gloss:'Home',        english:'Home',         category:'Household Items',       sigmlPath:'Home.sigml' },
-  { gloss:'Bangladesh',  english:'Bangladesh',   category:'Country',               sigmlPath:'Bangladesh.sigml' },
-  { gloss:'Good',        english:'Good',         category:'Human Characteristics', sigmlPath:'Good.sigml' },
-  { gloss:'Work',        english:'Work',         category:'Work',                  sigmlPath:'Work.sigml' },
-  { gloss:'Come',        english:'Come',         category:'Work',                  sigmlPath:'Come.sigml' },
-  { gloss:'Go',          english:'Go',           category:'Work',                  sigmlPath:'Go.sigml' },
-  { gloss:'Hello',       english:'Hello',        category:'Social Work',           sigmlPath:'Hello.sigml' },
-  { gloss:'Thank',       english:'Thank',        category:'Social Work',           sigmlPath:'Thank.sigml' },
-  { gloss:'Help',        english:'Help',         category:'Social Work',           sigmlPath:'Help.sigml' },
-  { gloss:'Road',        english:'Road',         category:'Transport',             sigmlPath:'Road.sigml' },
-  { gloss:'Evaporate',   english:'Evaporate',    category:'Nature and Environment', sigmlPath:'Evaporate.sigml' },
-  { gloss:'Surface',     english:'Surface',      category:'Nature and Environment', sigmlPath:'Surface.sigml' },
-  { gloss:'Absorb',      english:'Absorb',       category:'Nature and Environment', sigmlPath:'Absorb.sigml' },
-  { gloss:'Form',        english:'Form',         category:'Nature and Environment', sigmlPath:'Form.sigml' },
-  { gloss:'Fall',        english:'Fall',         category:'Nature and Environment', sigmlPath:'Fall.sigml' },
-  { gloss:'Rise',        english:'Rise',         category:'Nature and Environment', sigmlPath:'Rise.sigml' },
-  { gloss:'Cycle',       english:'Cycle',        category:'Nature and Environment', sigmlPath:'Cycle.sigml' },
-  { gloss:'Animal',      english:'Animal',       category:'Animals and Birds',     sigmlPath:'Animal.sigml' },
-  { gloss:'Human',       english:'Human',        category:'Human Characteristics', sigmlPath:'Human.sigml' },
-  { gloss:'Food',        english:'Food',         category:'Food and Drinks',       sigmlPath:'Food.sigml' },
-  { gloss:'Eat',         english:'Eat',          category:'Food and Drinks',       sigmlPath:'Eat.sigml' },
-  { gloss:'Drink',       english:'Drink',        category:'Food and Drinks',       sigmlPath:'Drink.sigml' },
-  { gloss:'Sleep',       english:'Sleep',        category:'Work',                  sigmlPath:'Sleep.sigml' },
-  { gloss:'Walk',        english:'Walk',         category:'Work',                  sigmlPath:'Walk.sigml' },
-  { gloss:'Run',         english:'Run',          category:'Work',                  sigmlPath:'Run.sigml' },
-  { gloss:'See',         english:'See',          category:'Work',                  sigmlPath:'See.sigml' },
-  { gloss:'Hear',        english:'Hear',         category:'Body Parts',            sigmlPath:'Hear.sigml' },
-  { gloss:'Hand',        english:'Hand',         category:'Body Parts',            sigmlPath:'Hand.sigml' },
-  { gloss:'Eye',         english:'Eye',          category:'Body Parts',            sigmlPath:'Eye.sigml' },
-  { gloss:'Head',        english:'Head',         category:'Body Parts',            sigmlPath:'Head.sigml' },
-  { gloss:'Heart',       english:'Heart',        category:'Body Parts',            sigmlPath:'Heart.sigml' },
-  { gloss:'Blood',       english:'Blood',        category:'Body Parts',            sigmlPath:'Blood.sigml' },
-  { gloss:'Time',        english:'Time',         category:'Others - 1',            sigmlPath:'Time.sigml' },
-  { gloss:'Day',         english:'Day',          category:'Others - 1',            sigmlPath:'Day.sigml' },
-  { gloss:'Night',       english:'Night',        category:'Others - 1',            sigmlPath:'Night.sigml' },
-  { gloss:'Morning',     english:'Morning',      category:'Others - 1',            sigmlPath:'Morning.sigml' },
-  { gloss:'Year',        english:'Year',         category:'Others - 1',            sigmlPath:'Year.sigml' },
-  { gloss:'House',       english:'House',        category:'Household Items',       sigmlPath:'House.sigml' },
-  { gloss:'Money',       english:'Money',        category:'Economic',              sigmlPath:'Money.sigml' },
-  { gloss:'Country',     english:'Country',      category:'Country',               sigmlPath:'Country.sigml' },
-  { gloss:'City',        english:'City',         category:'City',                  sigmlPath:'City.sigml' },
-  { gloss:'People',      english:'People',       category:'Human Characteristics', sigmlPath:'People.sigml' },
-  { gloss:'Life',        english:'Life',         category:'Human Characteristics', sigmlPath:'Life.sigml' },
-  { gloss:'Love',        english:'Love',         category:'Human Characteristics', sigmlPath:'Love.sigml' },
-  { gloss:'Happy',       english:'Happy',        category:'Human Characteristics', sigmlPath:'Happy.sigml' },
-  { gloss:'Sad',         english:'Sad',          category:'Human Characteristics', sigmlPath:'Sad.sigml' },
-  { gloss:'Big',         english:'Big',          category:'Human Characteristics', sigmlPath:'Big.sigml' },
-  { gloss:'Small',       english:'Small',        category:'Human Characteristics', sigmlPath:'Small.sigml' },
-  { gloss:'New',         english:'New',          category:'Others - 1',            sigmlPath:'New.sigml' },
-  { gloss:'Old',         english:'Old',          category:'Others - 1',            sigmlPath:'Old.sigml' },
+// ─── English suffix stripping ────────────────────────────────────────────────
+const EN_SUFFIXES = [
+  'tion','sion','ness','ment','ings','tion','ers','ies',
+  'ing','ed','er','es','ly','al','ful','less','s','e',
 ]
+
+function stripEnSuffix(n: string): string[] {
+  const stems: string[] = []
+  for (const sfx of EN_SUFFIXES) {
+    if (n.length > sfx.length + 3 && n.endsWith(sfx)) {
+      const stem = n.slice(0, -sfx.length)
+      stems.push(stem)
+      stems.push(stem + 'e')
+      stems.push(stem + 'y')
+      stems.push(stem + 'i')
+    }
+  }
+  return [...new Set(stems)]
+}
+
+// ─── Dataset ──────────────────────────────────────────────────────────────────
+const DATASET_URL = '/data/Sections/dataset.json'
 
 async function loadDataset(): Promise<DatasetEntry[]> {
   const res = await fetch(DATASET_URL)
@@ -577,123 +402,208 @@ async function loadDataset(): Promise<DatasetEntry[]> {
   return raw
     .filter((item) => !!item && typeof item === 'object')
     .map((item) => ({
-      gloss:     item.gloss     ?? '',
-      english:   item.english   ?? item.gloss ?? '',
-      category:  item.sectionEn ?? item.category ?? 'Unknown',
-      sigmlPath: item.sigmlPath ?? '',
-      datasetRoot: item.datasetRoot ?? '',
+      gloss:      item.gloss     ?? '',
+      english:    item.english   ?? item.gloss ?? '',
+      category:   item.sectionEn ?? item.category ?? 'Unknown',
+      sigmlPath:  item.sigmlPath ?? '',
+      datasetRoot: item.datasetRoot ?? item.root ?? item.folder ?? '',
     }))
-    .filter((e) => e.english.trim())
+    .map(cleanEntry)
+    .filter((e) => e.english.trim() || e.gloss.trim())
 }
 
-// ─── Index & lookup ───────────────────────────────────────────────────────────
-const norm = (s: string) =>
-  s.normalize('NFC').toLowerCase().replace(/[^\u0980-\u09FFa-z0-9]/g, '')
+// ─── SiGML URL builder ────────────────────────────────────────────────────────
+// FIX: was previously imported from @/lib/bdsl/sigmlParser but never defined here.
+// We now build the URL from the dataset entry directly.
+function sigmlUrlForEntry(token: SignToken): string | null {
+  if (!token.sigmlPath) return null
 
+  // Absolute URL — use as-is
+  if (/^https?:\/\//i.test(token.sigmlPath)) return token.sigmlPath
+
+  const rootBase = DATASET_URL.replace('/dataset.json', '')
+
+  // Normalise Windows-style paths
+  const cleanPath = token.sigmlPath.replace(/\\/g, '/')
+
+  if (token.datasetRoot) {
+    // Try to avoid double-encoding: build path segments individually
+    const rootSegment = encodeURIComponent(token.datasetRoot)
+    const fileSegment = cleanPath.split('/').map(encodeURIComponent).join('/')
+    return `${rootBase}/${rootSegment}/${fileSegment}`
+  }
+
+  // No datasetRoot — try direct path relative to dataset base
+  const fileSegment = cleanPath.split('/').map(encodeURIComponent).join('/')
+  return `${rootBase}/${fileSegment}`
+}
+
+// ─── Index building ───────────────────────────────────────────────────────────
 function buildIndex(entries: DatasetEntry[]): Map<string, DatasetEntry> {
   const idx = new Map<string, DatasetEntry>()
-  for (const e of entries) {
-    if (e.english) idx.set(norm(e.english), e)
-    if (e.gloss)   idx.set(norm(e.gloss),   e)
+
+  const setIndex = (key: string, entry: DatasetEntry) => {
+    const n = norm(key)
+    if (!n) return
+
+    const clean = cleanEntry(entry)
+    const current = idx.get(n)
+    if (!current) {
+      idx.set(n, clean)
+      return
+    }
+
+    const currentIsMojibake = looksMojibake(`${current.gloss} ${current.english}`)
+    const nextIsMojibake = looksMojibake(`${clean.gloss} ${clean.english}`)
+    if (currentIsMojibake && !nextIsMojibake) idx.set(n, clean)
   }
+
+  for (const e of entries) {
+    const clean = cleanEntry(e)
+    setIndex(e.english, clean)
+    setIndex(e.gloss, clean)
+    setIndex(clean.english, clean)
+    setIndex(clean.gloss, clean)
+
+    /*
+    // Index by english gloss (primary key)
+    if (e.english) idx.set(norm(e.english), e)
+    // Index by gloss field (may differ from english)
+    if (e.gloss && e.gloss !== e.english) idx.set(norm(e.gloss), e)
+
+    // Also index individual words in multi-word glosses
+    // e.g. "Water Cycle" → also index "cycle" separately
+    const words = (e.english || e.gloss).split(/\s+/)
+    if (words.length > 1) {
+      for (const w of words) {
+        const nw = norm(w)
+        if (nw.length > 2 && !idx.has(nw)) idx.set(nw, e)
+      }
+    }
+    */
+  }
+
   return idx
 }
 
-const SUFFIXES = ['tion','sion','ness','ment','ing','ers','ies','ed','er','es','ly','s','e']
-
-function lookupIndexedWord(idx: Map<string, DatasetEntry>, word: string): DatasetEntry | null {
-  const n = norm(word)
-  if (!n) return null
-  if (idx.has(n)) return idx.get(n)!
-
-  for (const sfx of SUFFIXES) {
-    if (n.length > sfx.length + 3 && n.endsWith(sfx)) {
-      const stem = n.slice(0, -sfx.length)
-      if (idx.has(stem))       return idx.get(stem)!
-      if (idx.has(stem + 'e')) return idx.get(stem + 'e')!
-      if (idx.has(stem + 'y')) return idx.get(stem + 'y')!
-    }
-  }
-  return null
-}
-
-function bengaliVariants(normalized: string): string[] {
-  return BN_SUFFIXES
-    .map((suffix) => (normalized.endsWith(suffix) ? normalized.slice(0, -suffix.length) : ''))
-    .filter((variant) => variant && variant !== normalized)
-}
-
+// ─── Word lookup with aggressive fallback chain ───────────────────────────────
 function lookupWord(
   idx: Map<string, DatasetEntry>,
   word: string,
   llmTranslations: LlmTranslations = {},
 ): DatasetEntry | null {
-  const direct = lookupIndexedWord(idx, word)
-  if (direct) return direct
+  const n = norm(word)
+  if (!n || n.length < 2) return null
 
-  const normalized = norm(word)
-  const translated = EXTRA_BN_TO_EN[word.trim()] ?? EXTRA_BN_TO_EN[normalized] ?? BN_TO_EN[word.trim()] ?? BN_TO_EN[normalized]
-  if (translated) {
-    const translatedEntry = lookupIndexedWord(idx, translated)
-    if (translatedEntry) return translatedEntry
+  // 1. Direct normalised match
+  if (idx.has(n)) return idx.get(n)!
+
+  // 2. English suffix stripping
+  for (const stem of stripEnSuffix(n)) {
+    if (idx.has(stem)) return idx.get(stem)!
   }
 
-  const llmCandidates = llmTranslations[normalized] ?? []
+  // 3. Bengali → English direct lookup
+  const directBn = BN_TO_EN_OVERRIDES[word.trim()] ?? BN_TO_EN_OVERRIDES[norm(word)] ?? BN_TO_EN[word.trim()] ?? BN_TO_EN[norm(word)]
+  if (directBn) {
+    const e = idx.get(norm(directBn))
+    if (e) return e
+    // Also try stem of the translation
+    for (const stem of stripEnSuffix(norm(directBn))) {
+      if (idx.has(stem)) return idx.get(stem)!
+    }
+  }
+
+  // 4. Bengali suffix stripping → lookup
+  const stripped = stripBnSuffix(word.trim())
+  if (stripped !== word.trim()) {
+    const strippedBn = BN_TO_EN_OVERRIDES[stripped] ?? BN_TO_EN_OVERRIDES[norm(stripped)] ?? BN_TO_EN[stripped] ?? BN_TO_EN[norm(stripped)]
+    if (strippedBn) {
+      const e = idx.get(norm(strippedBn))
+      if (e) return e
+    }
+    // Also try direct index lookup on stripped Bengali
+    const strippedN = norm(stripped)
+    if (idx.has(strippedN)) return idx.get(strippedN)!
+    for (const stem of stripEnSuffix(strippedN)) {
+      if (idx.has(stem)) return idx.get(stem)!
+    }
+  }
+
+  // 5. LLM translation candidates
+  const llmCandidates = llmTranslations[n] ?? llmTranslations[norm(stripped)] ?? []
   for (const candidate of llmCandidates) {
-    const llmEntry = lookupIndexedWord(idx, candidate)
-    if (llmEntry) return llmEntry
+    const cn = norm(candidate)
+    if (idx.has(cn)) return idx.get(cn)!
+    for (const stem of stripEnSuffix(cn)) {
+      if (idx.has(stem)) return idx.get(stem)!
+    }
   }
 
-  for (const variant of bengaliVariants(normalized)) {
-    const translatedVariant = EXTRA_BN_TO_EN[variant] ?? BN_TO_EN[variant]
-    if (translatedVariant) {
-      const variantEntry = lookupIndexedWord(idx, translatedVariant)
-      if (variantEntry) return variantEntry
+  // 6. Substring match (last resort for short words)
+  // Only for words ≥ 4 chars to avoid false positives
+  if (n.length >= 4) {
+    for (const [key, entry] of idx) {
+      if (key.startsWith(n) && key.length - n.length <= 3) return entry
+      if (n.startsWith(key) && n.length - key.length <= 3) return entry
     }
-    for (const candidate of llmTranslations[variant] ?? []) {
-      const llmVariantEntry = lookupIndexedWord(idx, candidate)
-      if (llmVariantEntry) return llmVariantEntry
-    }
-    const directVariant = lookupIndexedWord(idx, variant)
-    if (directVariant) return directVariant
   }
 
   return null
 }
 
-// ─── Core tokeniser — works on cleaned LLM output ────────────────────────────
-function tokeniseText(rawText: string, idx: Map<string, DatasetEntry>, llmTranslations: LlmTranslations = {}): SignToken[] {
+// ─── Tokeniser ────────────────────────────────────────────────────────────────
+function tokeniseText(
+  rawText: string,
+  idx: Map<string, DatasetEntry>,
+  llmTranslations: LlmTranslations = {},
+): SignToken[] {
   const cleaned = cleanLLMText(rawText)
   if (!cleaned) return []
 
   const rawWords = cleaned.split(/\s+/).filter((w) => w.length > 0)
-
-  // Try 2-word phrases first (dataset has 559 multi-word glosses)
   const tokens: SignToken[] = []
   let i = 0
-  while (i < rawWords.length && tokens.length < 16) {
+
+  while (i < rawWords.length && tokens.length < 20) {
     const w1 = rawWords[i]
     const w2 = rawWords[i + 1]
-    // Attempt 2-word match
+    const w3 = rawWords[i + 2]
+
+    // Try 3-word phrase first
+    if (w2 && w3) {
+      const phrase3 = `${w1} ${w2} ${w3}`
+      const e3 = lookupWord(idx, phrase3, llmTranslations)
+      if (e3) {
+        tokens.push({ word: phrase3, gloss: e3.gloss, english: e3.english, category: e3.category, sigmlPath: e3.sigmlPath, datasetRoot: e3.datasetRoot, known: true })
+        i += 3
+        continue
+      }
+    }
+
+    // Try 2-word phrase
     if (w2) {
-      const phrase = w1 + ' ' + w2
-      const phraseEntry = lookupWord(idx, phrase, llmTranslations) ?? idx.get(norm(phrase)) ?? null
-      if (phraseEntry) {
-        tokens.push({ word: phrase, gloss: phraseEntry.gloss, english: phraseEntry.english, category: phraseEntry.category, sigmlPath: phraseEntry.sigmlPath, datasetRoot: phraseEntry.datasetRoot, known: true })
+      const phrase2 = `${w1} ${w2}`
+      const e2 = lookupWord(idx, phrase2, llmTranslations)
+      if (e2) {
+        tokens.push({ word: phrase2, gloss: e2.gloss, english: e2.english, category: e2.category, sigmlPath: e2.sigmlPath, datasetRoot: e2.datasetRoot, known: true })
         i += 2
         continue
       }
     }
-    // Single word: skip stop words unless in index
-    const inIndex = lookupWord(idx, w1, llmTranslations) !== null
+
+    // Single word
+    const entry = lookupWord(idx, w1, llmTranslations)
+    const inIndex = entry !== null
+
+    // Skip stop words only if they have no sign
     if (!inIndex && isStopWord(w1)) { i++; continue }
     if (w1.length < 2) { i++; continue }
 
-    const entry = lookupWord(idx, w1, llmTranslations)
     if (entry) {
       tokens.push({ word: w1, gloss: entry.gloss, english: entry.english, category: entry.category, sigmlPath: entry.sigmlPath, datasetRoot: entry.datasetRoot, known: true })
     } else {
-      // Unknown word — still show it as fingerspell so we never return empty
+      // Include unknown content words as fingerspell
       tokens.push({ word: w1, gloss: w1, english: w1, category: 'Unknown', sigmlPath: '', known: false })
     }
     i++
@@ -702,7 +612,7 @@ function tokeniseText(rawText: string, idx: Map<string, DatasetEntry>, llmTransl
   return tokens
 }
 
-// ─── Waveform ─────────────────────────────────────────────────────────────────
+// ─── SiGML XML parser for hand motion ────────────────────────────────────────
 type RigFrame = {
   left: [number, number, number]
   right: [number, number, number]
@@ -719,7 +629,8 @@ type RigMotion = {
 }
 
 const degToRad = (value: number) => (value * Math.PI) / 180
-const frame = (
+
+const f = (
   left: [number, number, number],
   right: [number, number, number],
   leftRot: [number, number, number] = [0, -18, -8],
@@ -727,39 +638,28 @@ const frame = (
 ): RigFrame => ({ left, right, leftRot, rightRot })
 
 const LOCATION_POINTS: Record<string, [number, number, number]> = {
-  neutral: [0, 1.35, 0.25],
-  shoulders: [0.78, 1.7, 0.18],
-  shoulder: [0.78, 1.7, 0.18],
-  chest: [0.18, 1.35, 0.42],
-  sternum: [0.16, 1.42, 0.42],
-  head: [0.32, 2.08, 0.18],
-  face: [0.18, 1.92, 0.46],
-  mouth: [0.1, 1.84, 0.58],
-  chin: [0.1, 1.76, 0.55],
-  hand: [0.54, 1.42, 0.35],
+  neutral:  [0,    1.35, 0.25],
+  shoulder: [0.78, 1.7,  0.18],
+  chest:    [0.18, 1.35, 0.42],
+  sternum:  [0.16, 1.42, 0.42],
+  head:     [0.32, 2.08, 0.18],
+  face:     [0.18, 1.92, 0.46],
+  mouth:    [0.1,  1.84, 0.58],
+  chin:     [0.1,  1.76, 0.55],
+  hand:     [0.54, 1.42, 0.35],
 }
 
 const DEFAULT_MOTIONS: Record<HandVariant, RigMotion> = {
-  open: { leftHand: 'open', rightHand: 'open', speed: 1, source: 'fallback', frames: [frame([-0.8, 1.25, 0.18], [0.62, 1.5, 0.58]), frame([-0.78, 1.3, 0.2], [0.92, 1.62, 0.68], [0, -18, -8], [-12, 32, 18]), frame([-0.8, 1.25, 0.18], [0.62, 1.5, 0.58])] },
-  point: { leftHand: 'open', rightHand: 'point', speed: 1, source: 'fallback', frames: [frame([-0.82, 1.22, 0.16], [0.48, 1.58, 0.7]), frame([-0.82, 1.22, 0.16], [0.68, 1.8, 0.85], [0, -18, -8], [-24, 18, 5]), frame([-0.82, 1.22, 0.16], [0.48, 1.58, 0.7])] },
-  flat: { leftHand: 'flat', rightHand: 'flat', speed: 1, source: 'fallback', frames: [frame([-0.58, 1.28, 0.45], [0.58, 1.28, 0.45], [8, -20, -8], [8, 20, 8]), frame([-0.24, 1.58, 0.62], [0.24, 1.58, 0.62], [-4, -6, 6], [-4, 6, -6]), frame([-0.58, 1.28, 0.45], [0.58, 1.28, 0.45], [8, -20, -8], [8, 20, 8])] },
-  peace: { leftHand: 'open', rightHand: 'peace', speed: 1, source: 'fallback', frames: [frame([-0.72, 1.24, 0.16], [0.45, 1.48, 0.62]), frame([-0.72, 1.24, 0.16], [0.78, 1.62, 0.76], [0, -18, -8], [-12, 28, 18]), frame([-0.72, 1.24, 0.16], [0.45, 1.48, 0.62])] },
-  fist: { leftHand: 'fist', rightHand: 'fist', speed: 1, source: 'fallback', frames: [frame([-0.48, 1.24, 0.42], [0.48, 1.24, 0.42]), frame([-0.34, 1.48, 0.62], [0.34, 1.48, 0.62]), frame([-0.48, 1.24, 0.42], [0.48, 1.24, 0.42])] },
-  thumb: { leftHand: 'fist', rightHand: 'thumb', speed: 1, source: 'fallback', frames: [frame([-0.72, 1.24, 0.16], [0.48, 1.44, 0.62]), frame([-0.72, 1.24, 0.16], [0.72, 1.62, 0.72], [0, -18, -8], [-22, 18, 18]), frame([-0.72, 1.24, 0.16], [0.48, 1.44, 0.62])] },
-}
-
-function sigmlUrl(token: SignToken) {
-  if (!token.sigmlPath) return null
-  if (!token.datasetRoot) return null
-  if (/^https?:\/\//i.test(token.sigmlPath)) return token.sigmlPath
-  const rootBase = DATASET_URL.replace('/dataset.json', '')
-  const root = `${rootBase}/${encodeURIComponent(token.datasetRoot)}`
-  const file = encodeURIComponent(token.sigmlPath.replaceAll('\\', '/').split('/').pop() ?? token.sigmlPath)
-  return `${root}/${file}`
+  open:  { leftHand: 'open',  rightHand: 'open',  speed: 1, source: 'fallback', frames: [f([-0.8, 1.25, 0.18], [0.62, 1.5, 0.58]), f([-0.78, 1.3, 0.2], [0.92, 1.62, 0.68], [0, -18, -8], [-12, 32, 18]), f([-0.8, 1.25, 0.18], [0.62, 1.5, 0.58])] },
+  point: { leftHand: 'open',  rightHand: 'point', speed: 1, source: 'fallback', frames: [f([-0.82, 1.22, 0.16], [0.48, 1.58, 0.7]), f([-0.82, 1.22, 0.16], [0.68, 1.8, 0.85], [0, -18, -8], [-24, 18, 5]), f([-0.82, 1.22, 0.16], [0.48, 1.58, 0.7])] },
+  flat:  { leftHand: 'flat',  rightHand: 'flat',  speed: 1, source: 'fallback', frames: [f([-0.58, 1.28, 0.45], [0.58, 1.28, 0.45], [8, -20, -8], [8, 20, 8]), f([-0.24, 1.58, 0.62], [0.24, 1.58, 0.62], [-4, -6, 6], [-4, 6, -6]), f([-0.58, 1.28, 0.45], [0.58, 1.28, 0.45], [8, -20, -8], [8, 20, 8])] },
+  peace: { leftHand: 'open',  rightHand: 'peace', speed: 1, source: 'fallback', frames: [f([-0.72, 1.24, 0.16], [0.45, 1.48, 0.62]), f([-0.72, 1.24, 0.16], [0.78, 1.62, 0.76], [0, -18, -8], [-12, 28, 18]), f([-0.72, 1.24, 0.16], [0.45, 1.48, 0.62])] },
+  fist:  { leftHand: 'fist',  rightHand: 'fist',  speed: 1, source: 'fallback', frames: [f([-0.48, 1.24, 0.42], [0.48, 1.24, 0.42]), f([-0.34, 1.48, 0.62], [0.34, 1.48, 0.62]), f([-0.48, 1.24, 0.42], [0.48, 1.24, 0.42])] },
+  thumb: { leftHand: 'fist',  rightHand: 'thumb', speed: 1, source: 'fallback', frames: [f([-0.72, 1.24, 0.16], [0.48, 1.44, 0.62]), f([-0.72, 1.24, 0.16], [0.72, 1.62, 0.72], [0, -18, -8], [-22, 18, 18]), f([-0.72, 1.24, 0.16], [0.48, 1.44, 0.62])] },
 }
 
 function handFromHam(tags: string, fallback: HandVariant): HandVariant {
-  if (/hamfist|hamceeall|hamfingerbendmod|hamclose/.test(tags)) return 'fist'
+  if (/hamfist|hamceeall|hamclose/.test(tags)) return 'fist'
   if (/hamfinger23|hamvsign/.test(tags)) return 'peace'
   if (/hamflathand|hampalmd/.test(tags)) return 'flat'
   if (/hamfinger2|hamindex|hamextfingeru|hamextfingerl/.test(tags)) return 'point'
@@ -779,29 +679,32 @@ function parseSigmlMotion(xml: string, fallback: HandVariant): RigMotion {
   const leftBase: [number, number, number] = [-Math.abs(base[0] || 0.64), base[1], base[2]]
   const rightBase: [number, number, number] = [Math.abs(base[0] || 0.64), base[1], base[2]]
   const dx = tags.includes('haml') ? -0.28 : tags.includes('hamr') ? 0.28 : 0.18
-  const dy = tags.includes('hamup') ? 0.32 : tags.includes('hamdown') ? -0.28 : tags.includes('hamcircle') ? 0.18 : 0.08
-  const dz = tags.includes('hamclose') ? -0.18 : tags.includes('hamfar') || tags.includes('hamforward') ? 0.32 : 0.16
+  const dy = tags.includes('hamup') ? 0.32 : tags.includes('hamdown') ? -0.28 : 0.08
+  const dz = tags.includes('hamclose') ? -0.18 : tags.includes('hamforward') ? 0.32 : 0.16
   const both = /hambetween|hamboth|hamcircle|hamrepeat/.test(tags)
   const midR: [number, number, number] = [rightBase[0] + dx, rightBase[1] + dy, rightBase[2] + dz]
   const midL: [number, number, number] = both ? [leftBase[0] - dx, leftBase[1] + dy, leftBase[2] + dz] : [-0.82, 1.22, 0.16]
   const frames = tags.includes('hamcircle')
-    ? [frame(leftBase, rightBase), frame(midL, midR, [8, -24, -18], [8, 24, 18]), frame([leftBase[0], leftBase[1] - 0.12, leftBase[2] + 0.22], [rightBase[0], rightBase[1] - 0.12, rightBase[2] + 0.22], [-8, -12, 18], [-8, 12, -18]), frame(leftBase, rightBase)]
-    : [frame(leftBase, rightBase), frame(midL, midR), frame(leftBase, rightBase)]
+    ? [f(leftBase, rightBase), f(midL, midR, [8, -24, -18], [8, 24, 18]), f([leftBase[0], leftBase[1] - 0.12, leftBase[2] + 0.22], [rightBase[0], rightBase[1] - 0.12, rightBase[2] + 0.22], [-8, -12, 18], [-8, 12, -18]), f(leftBase, rightBase)]
+    : [f(leftBase, rightBase), f(midL, midR), f(leftBase, rightBase)]
   return { frames, leftHand: both ? hand : 'open', rightHand: hand, speed: tags.includes('hamslow') ? 1.35 : tags.includes('hamfast') ? 0.7 : 1, source: 'sigml' }
 }
 
-function sampleFrame(frames: RigFrame[], phase: number) {
+function sampleBdslFrame(frames: RigFrame[], phase: number) {
   const scaled = (phase % 1) * (frames.length - 1)
   const i = Math.floor(scaled)
   const ni = Math.min(i + 1, frames.length - 1)
   const t = scaled - i
-  const mix = (a: [number, number, number], b: [number, number, number]): [number, number, number] => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+  const mix = (a: [number, number, number], b: [number, number, number]): [number, number, number] => [
+    a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t,
+  ]
   return { left: mix(frames[i].left, frames[ni].left), right: mix(frames[i].right, frames[ni].right), leftRot: mix(frames[i].leftRot, frames[ni].leftRot), rightRot: mix(frames[i].rightRot, frames[ni].rightRot) }
 }
 
+// ─── Waveform ──────────────────────────────────────────────────────────────────
 function SignWaveform({ color, playing }: { color: string; playing: boolean }) {
   return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'3px', height:'44px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', height: '44px' }}>
       {Array.from({ length: 24 }, (_, i) => (
         <div key={i} style={{
           width: '3px', borderRadius: '2px', backgroundColor: color, opacity: 0.75,
@@ -817,7 +720,7 @@ function SignWaveform({ color, playing }: { color: string; playing: boolean }) {
   )
 }
 
-// ─── Sign card ────────────────────────────────────────────────────────────────
+// ─── 3D Rig ────────────────────────────────────────────────────────────────────
 function makeRigHand(material: THREE.Material) {
   const hand = new THREE.Group()
   const palm = new THREE.Mesh(new THREE.SphereGeometry(0.24, 24, 16), material)
@@ -828,9 +731,9 @@ function makeRigHand(material: THREE.Material) {
   for (let i = 0; i < 4; i++) {
     const finger = new THREE.Group()
     finger.position.set(-0.15 + i * 0.1, 0.22, 0.02)
-    const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.027, 0.22 + (i === 1 ? 0.06 : 0), 8, 10), material)
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.22 + (i === 1 ? 0.06 : 0), 8), material)
     lower.position.y = 0.12
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.024, 0.18 + (i === 1 ? 0.04 : 0), 8, 10), material)
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.18 + (i === 1 ? 0.04 : 0), 8), material)
     upper.position.y = 0.34
     finger.add(lower, upper)
     hand.add(finger)
@@ -838,7 +741,7 @@ function makeRigHand(material: THREE.Material) {
   }
   const thumb = new THREE.Group()
   thumb.position.set(-0.23, -0.02, 0.04)
-  const thumbMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.032, 0.28, 8, 10), material)
+  const thumbMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.28, 8), material)
   thumbMesh.position.y = 0.12
   thumb.add(thumbMesh)
   hand.add(thumb)
@@ -848,8 +751,8 @@ function makeRigHand(material: THREE.Material) {
 }
 
 function applyRigHandShape(hand: THREE.Group, shape: HandVariant) {
-  const fingers = hand.userData.fingers as THREE.Group[] | undefined
-  const thumb = hand.userData.thumb as THREE.Group | undefined
+  const fingers = hand.userData.fingers as THREE.Group[]
+  const thumb = hand.userData.thumb as THREE.Group
   if (!fingers) return
   fingers.forEach((finger, i) => {
     const isPoint = shape === 'point' && i === 1
@@ -857,7 +760,6 @@ function applyRigHandShape(hand: THREE.Group, shape: HandVariant) {
     const curl = shape === 'fist' ? 1.35 : shape === 'thumb' ? 1.25 : isPoint || isPeace || shape === 'flat' || shape === 'open' ? 0.05 : 1.1
     finger.rotation.x = curl
     finger.rotation.z = degToRad((i - 1.5) * (shape === 'open' ? -8 : 3))
-    finger.scale.y = isPoint || isPeace ? 1.12 : shape === 'fist' || shape === 'thumb' ? 0.84 : 1
   })
   if (thumb) {
     thumb.rotation.z = shape === 'thumb' ? degToRad(-72) : shape === 'fist' ? degToRad(-12) : degToRad(-42)
@@ -866,24 +768,20 @@ function applyRigHandShape(hand: THREE.Group, shape: HandVariant) {
 }
 
 function ThreeSignRig({ token, fallbackShape, accent, playing }: {
-  token: SignToken
-  fallbackShape: HandVariant
-  accent: string
-  playing: boolean
+  token: SignToken; fallbackShape: HandVariant; accent: string; playing: boolean
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
-  const motionRef = useRef<BdslRigMotion>(DEFAULT_BDSL_MOTIONS[fallbackShape])
+  const motionRef = useRef<RigMotion>(DEFAULT_MOTIONS[fallbackShape])
 
+  // Load SiGML and parse motion
   useEffect(() => {
-    motionRef.current = DEFAULT_BDSL_MOTIONS[fallbackShape]
+    motionRef.current = DEFAULT_MOTIONS[fallbackShape]
     const url = sigmlUrlForEntry(token)
     if (!url || !token.known) return
     let cancelled = false
     fetch(url)
       .then((res) => (res.ok ? res.text() : null))
-      .then((xml) => {
-        if (!cancelled && xml) motionRef.current = parseIsharaKothaSigml(xml, fallbackShape)
-      })
+      .then((xml) => { if (!cancelled && xml) motionRef.current = parseSigmlMotion(xml, fallbackShape) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [fallbackShape, token])
@@ -905,7 +803,6 @@ function ThreeSignRig({ token, fallbackShape, accent, playing }: {
     leftHand.scale.setScalar(1.28)
     rightHand.scale.setScalar(1.28)
     scene.add(leftHand, rightHand)
-
     const key = new THREE.DirectionalLight(0xffffff, 2.5)
     key.position.set(2.6, 3.6, 4.2)
     key.castShadow = true
@@ -942,17 +839,15 @@ function ThreeSignRig({ token, fallbackShape, accent, playing }: {
       window.cancelAnimationFrame(raf)
       observer.disconnect()
       renderer.dispose()
-      scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh
-        mesh.geometry?.dispose()
-      })
+      scene.traverse((obj) => { (obj as THREE.Mesh).geometry?.dispose() })
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement)
     }
   }, [accent, playing])
 
-  return <div ref={hostRef} style={{ width:'100%', height:'196px' }} aria-label="3D BdSL SiGML hand rig" />
+  return <div ref={hostRef} style={{ width: '100%', height: '196px' }} aria-label="3D BdSL SiGML hand rig" />
 }
 
+// ─── CWASA Avatar ──────────────────────────────────────────────────────────────
 function CwasaSignAvatar({ token, playing }: { token: SignToken; playing: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const initializedRef = useRef(false)
@@ -967,44 +862,28 @@ function CwasaSignAvatar({ token, playing }: { token: SignToken; playing: boolea
       const input = host.querySelector<HTMLInputElement | HTMLTextAreaElement>(
         '.CWASASiGMLURL input, .CWASASiGMLURL textarea',
       )
-
       if (input) {
         input.value = absoluteUrl
         input.dispatchEvent(new Event('input', { bubbles: true }))
         input.dispatchEvent(new Event('change', { bubbles: true }))
-
         const controls = Array.from(host.querySelectorAll<HTMLElement>('.CWASAPlay button, .CWASAPlay input, .CWASAPlay a, .CWASAPlay [role="button"], .CWASAPlay *'))
-        const playButton = controls.find((button) => {
-          const value = button instanceof HTMLInputElement ? button.value : ''
-          const title = button.getAttribute('title') ?? button.getAttribute('aria-label') ?? ''
-          const label = `${button.textContent ?? ''} ${value} ${title}`.toLowerCase()
+        const playButton = controls.find((btn) => {
+          const value = btn instanceof HTMLInputElement ? btn.value : ''
+          const title = btn.getAttribute('title') ?? btn.getAttribute('aria-label') ?? ''
+          const label = `${btn.textContent ?? ''} ${value} ${title}`.toLowerCase()
           return label.includes('play') || label.includes('sign')
-        }) ?? controls.find((button) => typeof button.click === 'function')
-
-        if (playButton) {
-          playButton.click()
-          setStatus('Playing IsharaKotha SiGML')
-          return
-        }
-
-        setStatus('CWASA play button not ready')
-        return
+        }) ?? controls.find((btn) => typeof btn.click === 'function')
+        if (playButton) { playButton.click(); setStatus('Playing IsharaKotha SiGML'); return }
+        setStatus('CWASA play button not ready'); return
       }
-
-      setStatus('CWASA URL field not ready')
-      return
+      setStatus('CWASA URL field not ready'); return
     }
-
     try {
       window.CWASA?.playSiGMLURL?.(absoluteUrl)
       setStatus('Playing IsharaKotha SiGML')
     } catch {
-      try {
-        window.CWASA?.playSiGMLURL?.(0, absoluteUrl)
-        setStatus('Playing IsharaKotha SiGML')
-      } catch {
-        setStatus('Playback failed')
-      }
+      try { window.CWASA?.playSiGMLURL?.(0, absoluteUrl); setStatus('Playing IsharaKotha SiGML') }
+      catch { setStatus('Playback failed') }
     }
   }, [])
 
@@ -1018,64 +897,44 @@ function CwasaSignAvatar({ token, playing }: { token: SignToken; playing: boolea
         setStatus('Avatar ready')
         if (pendingUrlRef.current) {
           window.setTimeout(() => {
-            if (!cancelled && pendingUrlRef.current) {
-              playUrl(pendingUrlRef.current)
-              pendingUrlRef.current = null
-            }
+            if (!cancelled && pendingUrlRef.current) { playUrl(pendingUrlRef.current); pendingUrlRef.current = null }
           }, 700)
         }
       })
-      .catch(() => {
-        if (!cancelled) setStatus('CWASA could not load')
-      })
-
+      .catch(() => { if (!cancelled) setStatus('CWASA could not load') })
     return () => { cancelled = true }
   }, [playUrl])
 
   useEffect(() => {
-    if (!token.known || !currentUrl) {
-      setStatus('No sign found')
-      return
-    }
-    if (!initializedRef.current) {
-      pendingUrlRef.current = currentUrl
-      return
-    }
+    if (!token.known || !currentUrl) { setStatus('No sign found'); return }
+    if (!initializedRef.current) { pendingUrlRef.current = currentUrl; return }
     if (!playing) return
-
     const timer = window.setTimeout(() => playUrl(currentUrl), 400)
     return () => window.clearTimeout(timer)
   }, [currentUrl, token.known, playing, playUrl])
 
-  useEffect(() => {
-    if (!playing) window.CWASA?.stopSiGML?.(0)
-  }, [playing])
+  useEffect(() => { if (!playing) window.CWASA?.stopSiGML?.(0) }, [playing])
 
   return (
-    <div ref={hostRef} style={{ position:'relative', width:'100%', height:'340px', overflow:'hidden' }} aria-label="CWASA BdSL signing avatar">
-      <div style={{ width:'100%', height:'306px', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
-        <div className="CWASAAvatar av0" style={{ textAlign:'center' }} />
+    <div ref={hostRef} style={{ position: 'relative', width: '100%', height: '340px', overflow: 'hidden' }} aria-label="CWASA BdSL signing avatar">
+      <div style={{ width: '100%', height: '306px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <div className="CWASAAvatar av0" style={{ textAlign: 'center' }} />
       </div>
-      <div style={{ position:'absolute', left:'-9999px', top:'0', width:'360px', height:'1px', overflow:'hidden' }}>
-        <span className="CWASAAvMenu av0" />
-        <span className="CWASAAmbBox av0" />
-        <span className="CWASASpeed av0" />
-        <div className="CWASASiGMLURL av0" />
-        <div className="CWASASiGMLText av0" />
-        <div className="CWASAPlay av0" />
-        <span className="CWASAPlayExtra av0" />
-        <span className="CWASAFrames av0" />
-        <div className="CWASAProgress av0" />
-        <div className="CWASAStatus av0" />
-        <div className="SToCA" style={{ textAlign:'center' }} />
+      <div style={{ position: 'absolute', left: '-9999px', top: '0', width: '360px', height: '1px', overflow: 'hidden' }}>
+        <span className="CWASAAvMenu av0" /><span className="CWASAAmbBox av0" /><span className="CWASASpeed av0" />
+        <div className="CWASASiGMLURL av0" /><div className="CWASASiGMLText av0" />
+        <div className="CWASAPlay av0" /><span className="CWASAPlayExtra av0" /><span className="CWASAFrames av0" />
+        <div className="CWASAProgress av0" /><div className="CWASAStatus av0" />
+        <div className="SToCA" style={{ textAlign: 'center' }} />
       </div>
-      <div style={{ position:'absolute', left:'10px', right:'10px', bottom:'2px', textAlign:'center', fontSize:'11px', color:'var(--color-text-tertiary)' }}>
+      <div style={{ position: 'absolute', left: '10px', right: '10px', bottom: '2px', textAlign: 'center', fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
         {status}
       </div>
     </div>
   )
 }
 
+// ─── Sign card ─────────────────────────────────────────────────────────────────
 function SignCard({ token, index, playing }: { token: SignToken; index: number; playing: boolean }) {
   const col = getColor(token.category)
   return (
@@ -1085,69 +944,52 @@ function SignCard({ token, index, playing }: { token: SignToken; index: number; 
       animate={{ opacity: 1, scale: 1,    y: 0  }}
       exit={{    opacity: 0, scale: 0.88, y: -12 }}
       transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-      style={{
-        background: col.bg,
-        border: `2px solid ${col.dot}`,
-        borderRadius: '16px',
-        padding: '18px 20px 14px',
-        display: 'flex', flexDirection: 'column', gap: '10px',
-        width: '100%', boxSizing: 'border-box',
-      }}
+      style={{ background: col.bg, border: `2px solid ${col.dot}`, borderRadius: '16px', padding: '18px 20px 14px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}
     >
-      {/* Waveform */}
       <SignWaveform color={col.dot} playing={playing} />
-
-      {/* Label */}
       <div>
-        <div style={{ fontSize:'20px', fontWeight:500, color:col.text, letterSpacing:'-0.02em', lineHeight:1.2, marginBottom:'3px' }}>
-          {token.gloss}
-        </div>
+        <div style={{ fontSize: '20px', fontWeight: 500, color: col.text, letterSpacing: '-0.02em', lineHeight: 1.2, marginBottom: '3px' }}>{token.gloss}</div>
         {token.word && token.word.toLowerCase() !== token.gloss.toLowerCase() && (
-          <div style={{ fontSize:'12px', color:col.text, lineHeight:1.25, marginBottom:'3px' }}>
-            Matched word: <span style={{ fontWeight:500 }}>{token.word}</span>
+          <div style={{ fontSize: '12px', color: col.text, lineHeight: 1.25, marginBottom: '3px' }}>
+            Matched word: <span style={{ fontWeight: 500 }}>{token.word}</span>
           </div>
         )}
         {token.english !== token.gloss && (
-          <div style={{ fontSize:'12px', color:col.dot, fontStyle:'italic' }}>{token.english}</div>
+          <div style={{ fontSize: '12px', color: col.dot, fontStyle: 'italic' }}>{token.english}</div>
         )}
       </div>
-
-      {/* Badges */}
-      <div style={{ display:'flex', gap:'5px', flexWrap:'wrap' }}>
-        <span style={{ fontSize:'10px', fontWeight:500, background:`${col.dot}22`, color:col.text, padding:'3px 7px', borderRadius:'5px' }}>
-          {token.category}
-        </span>
-        <span style={{ fontSize:'10px', fontWeight:500, background:`${col.dot}11`, color:col.text, padding:'3px 7px', borderRadius:'5px' }}>
-          {token.known ? 'lexical' : 'fingerspell'}
-        </span>
+      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '10px', fontWeight: 500, background: `${col.dot}22`, color: col.text, padding: '3px 7px', borderRadius: '5px' }}>{token.category}</span>
+        <span style={{ fontSize: '10px', fontWeight: 500, background: `${col.dot}11`, color: col.text, padding: '3px 7px', borderRadius: '5px' }}>{token.known ? 'lexical' : 'fingerspell'}</span>
+        {!token.sigmlPath && token.known && (
+          <span style={{ fontSize: '10px', fontWeight: 500, background: '#FFF3CD', color: '#856404', padding: '3px 7px', borderRadius: '5px' }}>no SiGML</span>
+        )}
       </div>
     </motion.div>
   )
 }
 
-// ─── Token pills ──────────────────────────────────────────────────────────────
-function TokenStrip({ tokens, activeIndex, onSelect }: {
-  tokens: SignToken[]; activeIndex: number; onSelect: (i: number) => void
-}) {
+// ─── Token pills ───────────────────────────────────────────────────────────────
+function TokenStrip({ tokens, activeIndex, onSelect }: { tokens: SignToken[]; activeIndex: number; onSelect: (i: number) => void }) {
   return (
-    <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', paddingTop:'4px' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', paddingTop: '4px' }}>
       {tokens.map((t, i) => {
         const c = getColor(t.category)
         const active = i === activeIndex
         return (
           <button key={i} onClick={() => onSelect(i)} style={{
-            fontSize:'12px', fontWeight: active ? 500 : 400,
-            padding:'4px 11px', borderRadius:'20px', cursor:'pointer',
+            fontSize: '12px', fontWeight: active ? 500 : 400,
+            padding: '4px 11px', borderRadius: '20px', cursor: 'pointer',
             border: active ? `1.5px solid ${c.dot}` : '0.5px solid var(--color-border-tertiary)',
             background: active ? c.bg : 'transparent',
             color: active ? c.text : 'var(--color-text-secondary)',
-            transition:'all 0.15s',
-            display:'inline-flex', flexDirection:'column', alignItems:'center', gap:'1px',
-            lineHeight:1.1, minHeight:'28px',
+            transition: 'all 0.15s',
+            display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '1px',
+            lineHeight: 1.1, minHeight: '28px',
           }}>
             <span>{t.word}</span>
             {t.known && t.word.toLowerCase() !== t.gloss.toLowerCase() && (
-              <span style={{ fontSize:'10px', opacity:0.75 }}>{t.gloss}</span>
+              <span style={{ fontSize: '10px', opacity: 0.75 }}>{t.gloss}</span>
             )}
           </button>
         )
@@ -1156,61 +998,92 @@ function TokenStrip({ tokens, activeIndex, onSelect }: {
   )
 }
 
-// ─── Progress bar ─────────────────────────────────────────────────────────────
+// ─── Progress bar ──────────────────────────────────────────────────────────────
 function ProgressBar({ current, total, color }: { current: number; total: number; color: string }) {
   const pct = total > 0 ? Math.round(((current + 1) / total) * 100) : 0
   return (
-    <div style={{ height:'3px', background:'var(--color-border-tertiary)', borderRadius:'2px', overflow:'hidden', width:'100%' }}>
-      <motion.div animate={{ width:`${pct}%` }} transition={{ duration:0.3, ease:'easeOut' }}
-        style={{ height:'100%', background:color, borderRadius:'2px' }} />
+    <div style={{ height: '3px', background: 'var(--color-border-tertiary)', borderRadius: '2px', overflow: 'hidden', width: '100%' }}>
+      <motion.div animate={{ width: `${pct}%` }} transition={{ duration: 0.3, ease: 'easeOut' }}
+        style={{ height: '100%', background: color, borderRadius: '2px' }} />
     </div>
   )
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Match stats banner ────────────────────────────────────────────────────────
+function MatchStatsBanner({ tokens }: { tokens: SignToken[] }) {
+  if (tokens.length === 0) return null
+  const known = tokens.filter(t => t.known)
+  const withSigml = known.filter(t => t.sigmlPath)
+  const pct = Math.round((known.length / tokens.length) * 100)
+  const col = pct >= 75 ? '#1D9E75' : pct >= 40 ? '#BA7517' : '#A32D2D'
+  return (
+    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+      {[
+        { label: 'Total tokens', value: tokens.length, bg: '#E6F1FB', text: '#185FA5' },
+        { label: 'Matched', value: `${known.length} (${pct}%)`, bg: '#E1F5EE', text: '#0F6E56' },
+        { label: 'With SiGML', value: withSigml.length, bg: '#EEEDFE', text: '#3C3489' },
+        { label: 'Fingerspell', value: tokens.length - known.length, bg: '#F1EFE8', text: '#5F5E5A' },
+      ].map(s => (
+        <div key={s.label} style={{ background: s.bg, color: s.text, borderRadius: '8px', padding: '4px 10px', fontSize: '11px', fontWeight: 500 }}>
+          {s.label}: <strong>{s.value}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 export default function BdslAvatar({ active, text }: Props) {
-  const [entries, setEntries]   = useState<DatasetEntry[]>(SEED)
+  const [entries, setEntries]     = useState<DatasetEntry[]>([])
   const [loadState, setLoadState] = useState<'idle'|'loading'|'done'|'error'>('idle')
   const [loadError, setLoadError] = useState<string|null>(null)
-  const [playing, setPlaying]   = useState(true)
+  const [playing, setPlaying]     = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [llmTranslations, setLlmTranslations] = useState<LlmTranslations>({})
   const [resolvingSigns, setResolvingSigns] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval>|null>(null)
 
-  // Load full dataset
+  // Load IsharaKotha dataset
   useEffect(() => {
     if (!active || loadState !== 'idle') return
     setLoadState('loading')
     loadDataset()
       .then((data) => {
+        // Deduplicate by english+gloss key, dataset entries take priority over seed
         const seen = new Set<string>()
-        const merged = [...data, ...SEED].filter((entry) => {
-          const key = `${norm(entry.english)}:${norm(entry.gloss)}`
+        const deduped = data.filter((e) => {
+          const key = `${norm(e.english)}:${norm(e.gloss)}`
           if (seen.has(key)) return false
           seen.add(key)
           return true
         })
-        setEntries(merged)
+        setEntries(deduped)
         setLoadState('done')
       })
-      .catch((err) => { setLoadError(String(err)); setLoadState('error') })
+      .catch((err) => {
+        setLoadError(String(err))
+        setLoadState('error')
+      })
   }, [active, loadState])
 
   const idx = useMemo(() => buildIndex(entries), [entries])
 
-  // Re-tokenise whenever text OR the index changes
   const rawTokens = useMemo(() => {
-    if (!text?.trim()) return []
+    if (!text?.trim() || entries.length === 0) return []
     return tokeniseText(text, idx, llmTranslations)
-  }, [text, idx, llmTranslations])
-  const tokens = useMemo(() => {
-    const playable = rawTokens.filter((token) => token.known && token.sigmlPath && token.datasetRoot)
-    return playable.length > 0 ? playable : rawTokens
-  }, [rawTokens])
-  const preparing = resolvingSigns || loadState === 'loading'
+  }, [text, idx, llmTranslations, entries.length])
 
-  // Reset playhead when sentence changes
+  // Prefer tokens that have a SiGML file, but don't hide the others
+  const tokens = useMemo(() => {
+    if (rawTokens.length === 0) return []
+    const playable = rawTokens.filter(t => t.known && t.sigmlPath)
+    // Show all matched tokens regardless of SiGML availability
+    return rawTokens
+  }, [rawTokens])
+
+  const preparing = resolvingSigns || loadState === 'loading' || loadState === 'idle'
+
+  // Reset when text changes
   useEffect(() => {
     setActiveIndex(0)
     setPlaying(false)
@@ -1218,29 +1091,20 @@ export default function BdslAvatar({ active, text }: Props) {
     setResolvingSigns(!!text?.trim())
   }, [text])
 
-  // Resolve the whole sign sequence first, then allow playback.
+  // Resolve unknown words via LLM translation API then start playback
   useEffect(() => {
-    if (!active || !text?.trim()) {
-      setResolvingSigns(false)
-      return
-    }
-    if (loadState === 'loading' || loadState === 'idle') {
-      setResolvingSigns(true)
-      return
-    }
+    if (!active || !text?.trim()) { setResolvingSigns(false); return }
+    if (loadState === 'loading' || loadState === 'idle') { setResolvingSigns(true); return }
+    if (loadState === 'error') { setResolvingSigns(false); setPlaying(true); return }
 
     const localTokens = tokeniseText(text, idx)
     const unknownWords = localTokens
-      .filter((token) => !token.known)
-      .map((token) => token.word)
-      .filter((word, index, list) => list.indexOf(word) === index)
-      .slice(0, 8)
+      .filter(t => !t.known)
+      .map(t => t.word)
+      .filter((w, i, a) => a.indexOf(w) === i)
+      .slice(0, 10)
 
-    if (unknownWords.length === 0) {
-      setResolvingSigns(false)
-      setPlaying(true)
-      return
-    }
+    if (unknownWords.length === 0) { setResolvingSigns(false); setPlaying(true); return }
 
     let cancelled = false
     setResolvingSigns(true)
@@ -1249,41 +1113,32 @@ export default function BdslAvatar({ active, text }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ words: unknownWords, context: text }),
     })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload) => {
+      .then(res => (res.ok ? res.json() : null))
+      .then(payload => {
         if (cancelled || !payload || !Array.isArray(payload.translations)) return
-        setLlmTranslations((prev) => {
+        setLlmTranslations(prev => {
           const next = { ...prev }
-          for (const word of unknownWords) {
-            const key = norm(word)
-            if (key && !next[key]) next[key] = []
-          }
           for (const item of payload.translations) {
             if (!item || typeof item.word !== 'string' || !Array.isArray(item.candidates)) continue
             const key = norm(item.word)
-            const candidates = item.candidates.filter((candidate: unknown): candidate is string => typeof candidate === 'string')
+            const candidates = item.candidates.filter((c: unknown): c is string => typeof c === 'string')
             if (key && candidates.length > 0) next[key] = candidates
           }
           return next
         })
       })
       .catch(() => {})
-      .finally(() => {
-        if (!cancelled) {
-          setResolvingSigns(false)
-          setPlaying(true)
-        }
-      })
+      .finally(() => { if (!cancelled) { setResolvingSigns(false); setPlaying(true) } })
 
     return () => { cancelled = true }
   }, [active, idx, loadState, text])
 
-  // Auto-advance through tokens
+  // Auto-advance
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
     if (preparing || !playing || tokens.length <= 1) return
     intervalRef.current = setInterval(() => {
-      setActiveIndex((i) => (i + 1) % tokens.length)
+      setActiveIndex(i => (i + 1) % tokens.length)
     }, 6500)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [playing, preparing, tokens.length])
@@ -1292,58 +1147,61 @@ export default function BdslAvatar({ active, text }: Props) {
     if (activeIndex >= tokens.length) setActiveIndex(0)
   }, [activeIndex, tokens.length])
 
-  const handleSelect  = useCallback((i: number) => { setActiveIndex(i); setPlaying(false) }, [])
-  const togglePlay    = useCallback(() => setPlaying((p) => !p), [])
-  const restart       = useCallback(() => { setActiveIndex(0); setPlaying(true) }, [])
+  const handleSelect = useCallback((i: number) => { setActiveIndex(i); setPlaying(false) }, [])
+  const togglePlay   = useCallback(() => setPlaying(p => !p), [])
+  const restart      = useCallback(() => { setActiveIndex(0); setPlaying(true) }, [])
 
   if (!active) return null
 
-  const current      = tokens[activeIndex]
+  const current = tokens[activeIndex]
   const currentColor = current ? getColor(current.category) : getColor('Unknown')
-  const knownCount   = tokens.filter((t) => t.known).length
+  const knownCount = tokens.filter(t => t.known).length
 
   return (
-    <div style={{ fontFamily:'var(--font-sans)', width:'100%' }}>
+    <div style={{ fontFamily: 'var(--font-sans)', width: '100%' }}>
 
-      {/* ── Header ── */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexWrap:'wrap', gap:'8px' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-          <span style={{ fontSize:'13px', fontWeight:500, color:'var(--color-text-primary)' }}>BdSL Finger Signs</span>
-          <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', background:'var(--color-background-secondary)', padding:'2px 8px', borderRadius:'10px' }}>
-            {loadState === 'done' ? `${entries.length} signs` : loadState === 'loading' ? 'Loading…' : `${SEED.length} seed signs`}
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-primary)' }}>BdSL Finger Signs</span>
+          <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', background: 'var(--color-background-secondary)', padding: '2px 8px', borderRadius: '10px' }}>
+            {loadState === 'done' ? `${entries.length.toLocaleString()} signs` : loadState === 'loading' ? 'Loading IsharaKotha…' : loadState === 'idle' ? 'Waiting…' : 'Error'}
           </span>
           {tokens.length > 0 && (
-            <span style={{ fontSize:'11px', color:'var(--color-text-secondary)', background:'var(--color-background-secondary)', padding:'2px 8px', borderRadius:'10px' }}>
-              {preparing ? 'Preparing signs' : `${knownCount}/${tokens.length} matched`}
+            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', background: 'var(--color-background-secondary)', padding: '2px 8px', borderRadius: '10px' }}>
+              {preparing ? 'Preparing…' : `${knownCount}/${tokens.length} matched`}
             </span>
           )}
         </div>
-        <div style={{ display:'flex', gap:'6px' }}>
-          <button onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} disabled={preparing}
-            style={{ width:'32px', height:'32px', borderRadius:'8px', border:'0.5px solid var(--color-border-secondary)', background:'var(--color-background-primary)', cursor:preparing ? 'not-allowed' : 'pointer', opacity:preparing ? 0.55 : 1, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', color:'var(--color-text-primary)' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} disabled={preparing || tokens.length === 0}
+            style={{ width: '32px', height: '32px', borderRadius: '8px', border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-primary)', cursor: (preparing || tokens.length === 0) ? 'not-allowed' : 'pointer', opacity: (preparing || tokens.length === 0) ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: 'var(--color-text-primary)' }}>
             {playing ? '⏸' : '▶'}
           </button>
-          <button onClick={restart} aria-label="Restart" disabled={preparing}
-            style={{ width:'32px', height:'32px', borderRadius:'8px', border:'0.5px solid var(--color-border-secondary)', background:'var(--color-background-primary)', cursor:preparing ? 'not-allowed' : 'pointer', opacity:preparing ? 0.55 : 1, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', color:'var(--color-text-primary)' }}>
+          <button onClick={restart} aria-label="Restart" disabled={preparing || tokens.length === 0}
+            style={{ width: '32px', height: '32px', borderRadius: '8px', border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-primary)', cursor: (preparing || tokens.length === 0) ? 'not-allowed' : 'pointer', opacity: (preparing || tokens.length === 0) ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', color: 'var(--color-text-primary)' }}>
             ↺
           </button>
         </div>
       </div>
 
-      {/* ── Error banner ── */}
+      {/* Error banner */}
       {loadError && (
-        <div style={{ marginBottom:'10px', padding:'8px 12px', borderRadius:'8px', background:'var(--color-background-warning)', color:'var(--color-text-warning)', fontSize:'12px', border:'0.5px solid var(--color-border-warning)' }}>
-          ⚠ {loadError} — using seed signs
+        <div style={{ marginBottom: '10px', padding: '8px 12px', borderRadius: '8px', background: 'var(--color-background-warning)', color: 'var(--color-text-warning)', fontSize: '12px', border: '0.5px solid var(--color-border-warning)' }}>
+          ⚠ Dataset load error: {loadError}
         </div>
       )}
 
-      {/* ── Main body ── */}
-      {!preparing && tokens.length > 0 && current ? (
-        <div style={{ display:'grid', gridTemplateColumns:'190px 1fr', gap:'16px', alignItems:'start' }}>
+      {/* Match stats */}
+      {!preparing && tokens.length > 0 && <MatchStatsBanner tokens={tokens} />}
 
-          {/* Left: persistent CWASA canvas + animated sign metadata */}
-          <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-            <div style={{ height:'340px', overflow:'hidden', borderRadius:'12px', background:`linear-gradient(180deg, ${currentColor.bg} 0%, rgba(255,255,255,0.45) 100%)`, border:`2px solid ${currentColor.dot}` }}>
+      {/* Main body */}
+      {!preparing && tokens.length > 0 && current ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr', gap: '16px', alignItems: 'start' }}>
+
+          {/* Left column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ height: '340px', overflow: 'hidden', borderRadius: '12px', background: `linear-gradient(180deg, ${currentColor.bg} 0%, rgba(255,255,255,0.45) 100%)`, border: `2px solid ${currentColor.dot}` }}>
               <CwasaSignAvatar token={current} playing={playing} />
             </div>
             <AnimatePresence mode="wait">
@@ -1351,36 +1209,36 @@ export default function BdslAvatar({ active, text }: Props) {
             </AnimatePresence>
           </div>
 
-          {/* Right: info + strip */}
-          <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+          {/* Right column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
-            {/* Info panel */}
-            <div style={{ background:'var(--color-background-secondary)', borderRadius:'12px', padding:'16px' }}>
-              <div style={{ fontSize:'10px', fontWeight:500, color:'var(--color-text-tertiary)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:'10px' }}>
+            <div style={{ background: 'var(--color-background-secondary)', borderRadius: '12px', padding: '16px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 500, color: 'var(--color-text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
                 IsharaKotha · {activeIndex + 1} of {tokens.length}
               </div>
               <AnimatePresence mode="wait">
                 <motion.div key={`info-${activeIndex}`}
-                  initial={{ opacity:0, x:8 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0, x:-8 }}
-                  transition={{ duration:0.18 }}>
-                  <div style={{ fontSize:'26px', fontWeight:500, color:'var(--color-text-primary)', letterSpacing:'-0.03em', lineHeight:1.1, marginBottom:'5px' }}>
-                    {current.gloss}
+                  initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.18 }}>
+                  <div style={{ fontSize: '26px', fontWeight: 500, color: 'var(--color-text-primary)', letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: '5px' }}>{current.gloss}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+                    Matched word: <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{current.word}</span>
                   </div>
-                  <div style={{ fontSize:'12px', color:'var(--color-text-secondary)', marginBottom:'6px' }}>
-                    Matched word: <span style={{ fontWeight:500, color:'var(--color-text-primary)' }}>{current.word}</span>
-                  </div>
-                  <div style={{ fontSize:'13px', color:'var(--color-text-secondary)', marginBottom:'12px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
                     {current.category}{current.english !== current.gloss ? ` · ${current.english}` : ''}
                   </div>
-                  <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
-                    <span style={{ fontSize:'11px', padding:'3px 8px', borderRadius:'6px', fontWeight:500,
-                      background: current.known ? currentColor.bg : 'var(--color-background-warning)',
-                      color:      current.known ? currentColor.text : 'var(--color-text-warning)' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', fontWeight: 500, background: current.known ? currentColor.bg : 'var(--color-background-warning)', color: current.known ? currentColor.text : 'var(--color-text-warning)' }}>
                       {current.known ? 'lexical sign' : 'fingerspell'}
                     </span>
                     {current.sigmlPath && (
-                      <span style={{ fontSize:'11px', padding:'3px 8px', borderRadius:'6px', background:'var(--color-background-primary)', color:'var(--color-text-tertiary)', border:'0.5px solid var(--color-border-tertiary)' }}>
+                      <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: 'var(--color-background-primary)', color: 'var(--color-text-tertiary)', border: '0.5px solid var(--color-border-tertiary)' }}>
                         SiGML: {current.sigmlPath}
+                      </span>
+                    )}
+                    {!current.sigmlPath && current.known && (
+                      <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: '#FFF3CD', color: '#856404' }}>
+                        No SiGML file in dataset
                       </span>
                     )}
                   </div>
@@ -1388,23 +1246,22 @@ export default function BdslAvatar({ active, text }: Props) {
               </AnimatePresence>
             </div>
 
-            {/* Progress */}
             <ProgressBar current={activeIndex} total={tokens.length} color={currentColor.dot} />
-
-            {/* Token pills */}
             <TokenStrip tokens={tokens} activeIndex={activeIndex} onSelect={handleSelect} />
           </div>
         </div>
 
       ) : (
-        <div style={{ padding:'32px', textAlign:'center', color:'var(--color-text-tertiary)', fontSize:'14px', background:'var(--color-background-secondary)', borderRadius:'12px' }}>
-          {loadState === 'loading'
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: '14px', background: 'var(--color-background-secondary)', borderRadius: '12px' }}>
+          {loadState === 'loading' || loadState === 'idle'
             ? 'Loading IsharaKotha dataset…'
             : resolvingSigns
               ? 'Preparing all BdSL signs…'
               : !text?.trim()
                 ? 'Waiting for text…'
-                : 'Processing…'}
+                : entries.length === 0
+                  ? 'Dataset empty — check /data/Sections/dataset.json'
+                  : 'No signs matched. Try more content words.'}
         </div>
       )}
     </div>
