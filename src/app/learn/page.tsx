@@ -91,6 +91,115 @@ function loadImage(file: File) {
   })
 }
 
+const ANSWER_SECTION_LABELS = [
+  'প্রদত্ত:',
+  'সূত্র/ধারণা:',
+  'সূত্র:',
+  'ধারণা:',
+  'সমাধান:',
+  'গণনা:',
+  'চূড়ান্ত উত্তর:',
+  'চূড়ান্ত উত্তর:',
+  'সাধারণ ভুল:',
+  'যাচাই:',
+  'সংজ্ঞা:',
+  'অবস্থান:',
+  'ধাপ:',
+  'উৎপন্ন পদার্থ/ফলাফল:',
+  'ফলাফল:',
+  'গুরুত্ব:',
+]
+
+function renderMathInline(text: string) {
+  const tokenPattern = /(1\/[A-Za-z]\^\d+|\d+\/\d+|\^\([^)]+\)|\^\d+|√\([^)]+\)|√\d+)/g
+  const nodes: JSX.Element[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(<span key={`t-${cursor}`}>{text.slice(cursor, match.index)}</span>)
+    }
+
+    const token = match[0]
+    if (token.startsWith('1/') && token.includes('^')) {
+      const denominator = token.slice(2)
+      nodes.push(
+        <span key={`f-${match.index}`} className="mx-0.5 inline-flex translate-y-1 flex-col items-center align-middle text-[0.92em] leading-none">
+          <span className="border-b border-ink/60 px-1">1</span>
+          <span className="px-1">{renderMathInline(denominator)}</span>
+        </span>
+      )
+    } else if (/^\d+\/\d+$/.test(token)) {
+      const [numerator, denominator] = token.split('/')
+      nodes.push(
+        <span key={`f-${match.index}`} className="mx-0.5 inline-flex translate-y-1 flex-col items-center align-middle text-[0.92em] leading-none">
+          <span className="border-b border-ink/60 px-1">{numerator}</span>
+          <span className="px-1">{denominator}</span>
+        </span>
+      )
+    } else if (token.startsWith('^')) {
+      const power = token.slice(1).replace(/^\((.*)\)$/, '$1')
+      nodes.push(<sup key={`p-${match.index}`} className="ml-0.5 text-[0.68em] font-semibold leading-none">{power}</sup>)
+    } else {
+      nodes.push(<span key={`r-${match.index}`}>{token}</span>)
+    }
+
+    cursor = match.index + token.length
+  }
+
+  if (cursor < text.length) nodes.push(<span key={`t-${cursor}`}>{text.slice(cursor)}</span>)
+  return nodes
+}
+
+function looksLikeEquationLine(text: string) {
+  return /([=+\-*/]|√|\^|\d+\/\d+|π|θ| m\/s| kg| N\b| M\b)/.test(text) && /[0-9A-Za-z]/.test(text)
+}
+
+function FormattedAnswer({ text }: { text: string }) {
+  const lines = text.replace(/\r/g, '').split('\n')
+
+  return (
+    <div className="bangla space-y-2 leading-relaxed text-ink">
+      {lines.map((line, index) => {
+        const trimmed = line.trim()
+        if (!trimmed) return <div key={index} className="h-1" />
+
+        const isFinal = /^চূ[ড়ড়]ান্ত উত্তর:/.test(trimmed)
+        const isSection = ANSWER_SECTION_LABELS.some(label => trimmed === label || trimmed.startsWith(label))
+
+        if (isFinal) {
+          const [, value = ''] = trimmed.split(/চূ[ড়ড়]ান্ত উত্তর:\s*/)
+          return (
+            <div key={index} className="rounded-lg border border-forest/20 bg-forest/8 px-3 py-2 font-semibold text-forest">
+              <span>চূড়ান্ত উত্তর</span>
+              {value && <span className="ml-2 text-ink">{value}</span>}
+            </div>
+          )
+        }
+
+        if (isSection) {
+          return (
+            <div key={index} className="pt-1 text-sm font-semibold text-indigo">
+              {trimmed}
+            </div>
+          )
+        }
+
+        if (looksLikeEquationLine(trimmed)) {
+          return (
+            <div key={index} className="overflow-x-auto rounded-md bg-white/60 px-3 py-2 font-mono text-[0.96rem] leading-7 text-ink shadow-sm ring-1 ring-indigo/8">
+              {renderMathInline(trimmed)}
+            </div>
+          )
+        }
+
+        return <p key={index}>{renderMathInline(trimmed)}</p>
+      })}
+    </div>
+  )
+}
+
 interface Message {
   id: string
   role: 'user' | 'ai'
@@ -621,6 +730,7 @@ export default function LearnPage() {
           outputMode,
           emotion: localEmotion,
           language,
+          selected_target_language: LANGUAGE_LABEL_BY_CODE[language],
           repeatCount,
           studentProfile,
           chatContext,
@@ -920,7 +1030,7 @@ export default function LearnPage() {
                               {EXPERIMENTAL_VOICE_MESSAGE}
                             </p>
                           )}
-                          <p className="bangla whitespace-pre-line leading-relaxed text-ink">{msg.text}</p>
+                          <FormattedAnswer text={msg.text} />
                         </div>
                         {((msg.outputMode === 'video' && msg.animationKey) || msg.animationKey || msg.diagram) && (
                           <div className="card p-4">
