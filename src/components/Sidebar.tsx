@@ -3,13 +3,14 @@
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Globe, History, Home, LogOut, Mic, Settings, TrendingUp, User, UserRoundPlus, Users, X } from 'lucide-react'
+import { Brain, Globe, History, Home, LogOut, Mic, Settings, TrendingUp, User, UserRoundPlus, Users, X } from 'lucide-react'
 import { clearDemoAuthCookie, clearGuestAuthCookie } from '@/lib/authFlow'
 import { createClient } from '@/lib/supabase/client'
 
 const nav = [
   { href: '/', icon: Home, label: 'Home', sub: 'Overview' },
   { href: '/learn', icon: Mic, label: 'Learn', sub: 'Voice tutor' },
+  { href: '/voice-practice', icon: Brain, label: 'Voice Practice', sub: 'Speak answers' },
   { href: '/history', icon: History, label: 'History', sub: 'Saved Q&A' },
   { href: '/profile', icon: User, label: 'Profile', sub: 'Student dashboard' },
   { href: '/progress', icon: TrendingUp, label: 'Student Analytics', sub: 'Learning signals' },
