@@ -90,15 +90,61 @@ CREATE TABLE IF NOT EXISTS curriculum_embeddings (
   subject   TEXT NOT NULL,
   chapter   TEXT,
   topic     TEXT,
+  contextual_summary TEXT,
+  source_doc_id TEXT,
+  chunk_index INT DEFAULT 0,
+  chunk_type TEXT DEFAULT 'fixed',
+  token_count INT,
+  embedding_text TEXT,
+  source_type TEXT DEFAULT 'curriculum',
+  level TEXT,
+  source_dataset TEXT,
+  question_text TEXT,
+  answer_text TEXT,
+  correct_answer TEXT,
+  distractor_answers JSONB DEFAULT '[]',
+  hints JSONB DEFAULT '[]',
+  convergence JSONB,
+  topic_tags TEXT[] DEFAULT '{}',
+  metadata JSONB DEFAULT '{}',
   embedding VECTOR(384),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE curriculum_embeddings
+  ADD COLUMN IF NOT EXISTS contextual_summary TEXT,
+  ADD COLUMN IF NOT EXISTS source_doc_id TEXT,
+  ADD COLUMN IF NOT EXISTS chunk_index INT DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS chunk_type TEXT DEFAULT 'fixed',
+  ADD COLUMN IF NOT EXISTS token_count INT,
+  ADD COLUMN IF NOT EXISTS embedding_text TEXT,
+  ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'curriculum',
+  ADD COLUMN IF NOT EXISTS level TEXT,
+  ADD COLUMN IF NOT EXISTS source_dataset TEXT,
+  ADD COLUMN IF NOT EXISTS question_text TEXT,
+  ADD COLUMN IF NOT EXISTS answer_text TEXT,
+  ADD COLUMN IF NOT EXISTS correct_answer TEXT,
+  ADD COLUMN IF NOT EXISTS distractor_answers JSONB DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS hints JSONB DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS convergence JSONB,
+  ADD COLUMN IF NOT EXISTS topic_tags TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
 
 -- HNSW index for fast cosine similarity search
 CREATE INDEX IF NOT EXISTS curriculum_embeddings_hnsw
   ON curriculum_embeddings
   USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
+
+CREATE INDEX IF NOT EXISTS curriculum_embeddings_level_subject_idx
+  ON curriculum_embeddings (level, subject);
+
+CREATE INDEX IF NOT EXISTS curriculum_embeddings_source_dataset_idx
+  ON curriculum_embeddings (source_dataset);
+
+CREATE UNIQUE INDEX IF NOT EXISTS curriculum_embeddings_source_doc_unique_idx
+  ON curriculum_embeddings (source_doc_id)
+  WHERE source_doc_id IS NOT NULL;
 
 -- ── PWN: anonymized question embeddings ───────
 CREATE TABLE IF NOT EXISTS pwn_questions (
@@ -265,4 +311,72 @@ BEGIN
   ORDER BY ce.embedding <=> query_embedding
   LIMIT match_count;
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION search_curriculum(
+  query_embedding VECTOR(384),
+  similarity_threshold FLOAT DEFAULT 0.5,
+  match_count INT DEFAULT 3,
+  match_level TEXT DEFAULT NULL,
+  match_subject TEXT DEFAULT NULL,
+  preferred_source_dataset TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  contextual_summary TEXT,
+  context_text TEXT,
+  subject TEXT,
+  chapter TEXT,
+  topic TEXT,
+  source_doc_id TEXT,
+  chunk_index INT,
+  chunk_type TEXT,
+  level TEXT,
+  source_dataset TEXT,
+  question_text TEXT,
+  answer_text TEXT,
+  correct_answer TEXT,
+  distractor_answers JSONB,
+  hints JSONB,
+  convergence JSONB,
+  topic_tags TEXT[],
+  similarity FLOAT
+)
+LANGUAGE SQL STABLE AS $$
+  SELECT
+    ce.id,
+    ce.content,
+    ce.contextual_summary,
+    concat_ws(E'\n\n', ce.contextual_summary, ce.content) AS context_text,
+    ce.subject,
+    ce.chapter,
+    ce.topic,
+    ce.source_doc_id,
+    ce.chunk_index,
+    ce.chunk_type,
+    ce.level,
+    ce.source_dataset,
+    ce.question_text,
+    ce.answer_text,
+    ce.correct_answer,
+    ce.distractor_answers,
+    ce.hints,
+    ce.convergence,
+    ce.topic_tags,
+    1 - (ce.embedding <=> query_embedding) AS similarity
+  FROM curriculum_embeddings ce
+  WHERE
+    1 - (ce.embedding <=> query_embedding) > similarity_threshold
+    AND lower(trim(ce.content)) NOT LIKE 'student question:%'
+    AND coalesce(ce.source_type, 'curriculum') = 'curriculum'
+    AND (match_level IS NULL OR ce.level IS NULL OR lower(ce.level) = lower(match_level))
+    AND (match_subject IS NULL OR ce.subject IS NULL OR lower(ce.subject) = lower(match_subject))
+  ORDER BY
+    CASE
+      WHEN preferred_source_dataset IS NOT NULL AND lower(coalesce(ce.source_dataset, '')) = lower(preferred_source_dataset) THEN 0
+      ELSE 1
+    END,
+    similarity DESC
+  LIMIT match_count;
 $$;

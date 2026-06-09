@@ -393,23 +393,38 @@ function stripEnSuffix(n: string): string[] {
 }
 
 // ─── Dataset ──────────────────────────────────────────────────────────────────
-const DATASET_URL = '/data/Sections/dataset.json'
+function normalizeDatasetEntry(item: Record<string, string>, datasetRoot: string): DatasetEntry {
+  return cleanEntry({
+    gloss: item.gloss ?? '',
+    english: item.english ?? item.gloss ?? '',
+    category: item.sectionEn ?? item.category ?? 'Unknown',
+    sigmlPath: item.sigmlPath ?? '',
+    datasetRoot,
+  })
+}
 
 async function loadDataset(): Promise<DatasetEntry[]> {
-  const res = await fetch(DATASET_URL)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const raw = await res.json() as Record<string, string>[]
-  return raw
-    .filter((item) => !!item && typeof item === 'object')
-    .map((item) => ({
-      gloss:      item.gloss     ?? '',
-      english:    item.english   ?? item.gloss ?? '',
-      category:   item.sectionEn ?? item.category ?? 'Unknown',
-      sigmlPath:  item.sigmlPath ?? '',
-      datasetRoot: item.datasetRoot ?? item.root ?? item.folder ?? '',
-    }))
-    .map(cleanEntry)
-    .filter((e) => e.english.trim() || e.gloss.trim())
+  const sources: { url: string; root: string; type: 'ishara' | 'bdslw60' | 'bdslw401' }[] = [
+    { url: '/data/Sections/dataset.json', root: '/data/Sections', type: 'ishara' },
+    { url: '/data/bdslw60/dataset.json', root: '/data/bdslw60', type: 'bdslw60' },
+    { url: '/data/bdslw401/dataset.json', root: '/data/bdslw401', type: 'bdslw401' },
+  ]
+
+  const results = await Promise.allSettled(
+    sources.map(src =>
+      fetch(src.url)
+        .then(r => r.ok ? r.json() : [])
+        .then((entries: Record<string, string>[]) =>
+          entries
+            .filter((item) => !!item && typeof item === 'object')
+            .map((item) => normalizeDatasetEntry(item, src.root))
+            .filter((e) => e.english.trim() || e.gloss.trim())
+        )
+        .catch(() => [] as DatasetEntry[])
+    )
+  )
+
+  return results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
 }
 
 // ─── SiGML URL builder ────────────────────────────────────────────────────────
@@ -421,21 +436,14 @@ function sigmlUrlForEntry(token: SignToken): string | null {
   // Absolute URL — use as-is
   if (/^https?:\/\//i.test(token.sigmlPath)) return token.sigmlPath
 
-  const rootBase = DATASET_URL.replace('/dataset.json', '')
-
   // Normalise Windows-style paths
   const cleanPath = token.sigmlPath.replace(/\\/g, '/')
+  const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/')
 
-  if (token.datasetRoot) {
-    // Try to avoid double-encoding: build path segments individually
-    const rootSegment = encodeURIComponent(token.datasetRoot)
-    const fileSegment = cleanPath.split('/').map(encodeURIComponent).join('/')
-    return `${rootBase}/${rootSegment}/${fileSegment}`
-  }
+  if (cleanPath.startsWith('/')) return encodePath(cleanPath)
 
-  // No datasetRoot — try direct path relative to dataset base
-  const fileSegment = cleanPath.split('/').map(encodeURIComponent).join('/')
-  return `${rootBase}/${fileSegment}`
+  const rootBase = (token.datasetRoot || '/data/Sections').replace(/\/$/, '')
+  return `${rootBase}/${encodePath(cleanPath)}`
 }
 
 // ─── Index building ───────────────────────────────────────────────────────────

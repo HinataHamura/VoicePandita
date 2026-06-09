@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "dev:tts": "uvicorn scripts.tts_server:app --port 8001 --reload",
+    "dev:tts": "python -m uvicorn scripts.tts_server:app --port 8001 --reload",
     "dev:seed": "python scripts/seed_curriculum.py",
+    "manim:list": "python scripts/manim/render_manim.py --list",
+    "manim:render": "python scripts/manim/render_manim.py --key all --quality low",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:tts\"",
     "build": "node --max-old-space-size=4096 node_modules/next/dist/bin/next build",
     "start": "next start",
@@ -13,8 +15,8 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.15.0",
-    "@supabase/ssr": "^0.3.0",
-    "@supabase/supabase-js": "^2.43.4",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.107.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.2.10",
     "groq-sdk": "^0.5.0",
@@ -24,6 +26,7 @@
     "next": "14.2.3",
     "next-pwa": "^5.6.0",
     "onnxruntime-web": "^1.18.0",
+    "pdf-parse": "^1.1.1",
     "react": "^18",
     "react-dom": "^18",
     "tailwind-merge": "^2.3.0",
@@ -32,6 +35,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/three": "^0.184.1",

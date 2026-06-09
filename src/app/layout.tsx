@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { DM_Sans, JetBrains_Mono, Noto_Sans_Bengali, Playfair_Display } from 'next/font/google'
+import AppChrome from '@/components/AppChrome'
 import './globals.css'
 
 const display = Playfair_Display({
@@ -48,7 +49,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="bn" className={`${display.variable} ${body.variable} ${bangla.variable} ${mono.variable}`}>
-      <body className="bg-cream text-ink antialiased">{children}</body>
+      <body className="bg-cream text-ink antialiased">
+        {children}
+        <AppChrome />
+      </body>
     </html>
   )
 }

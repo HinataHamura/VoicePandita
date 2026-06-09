@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Compass,
   Ear,
+  FileText,
   Globe2,
   HeartHandshake,
   Map,
@@ -187,6 +188,10 @@ export default function HomePage() {
             Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span>
           </Link>
           <div className="flex items-center gap-2">
+            <Link href="/docs" className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium text-ink/58 hover:bg-white/70 hover:text-ink">
+              <FileText size={15} className="text-forest" />
+              Docs
+            </Link>
             <Link href="/login" className="rounded-full px-4 py-2 text-sm font-medium text-ink/58 hover:bg-white/70 hover:text-ink">
               Login
             </Link>

@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 
-export type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'generic_concept'
+export type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
 
 export interface TeachingAnimationProps {
   active?: boolean
