@@ -105,6 +105,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; dot: string }>
   'Unknown':               { bg: '#F1EFE8', text: '#888780', dot: '#B4B2A9' },
 }
 const getColor = (cat: string) => CATEGORY_COLORS[cat] ?? CATEGORY_COLORS['Unknown']
+const isPlayableToken = (token?: SignToken) => !!token?.known && !!token.sigmlPath
 
 // ─── Hand shape types ─────────────────────────────────────────────────────────
 type HandVariant = 'open' | 'point' | 'fist' | 'flat' | 'peace' | 'thumb'
@@ -144,6 +145,7 @@ function looksMojibake(value: string) {
 
 function cleanDatasetLabel(value: string) {
   const trimmed = value.trim()
+  if (trimmed === 'Earth_s Surface') return 'Earth'
   const underscoreLabel = trimmed.match(/_([^_]+)$/)?.[1]
   const parenLabel = trimmed.match(/\(([^()]+)\)\s*$/)?.[1]
   return (underscoreLabel || parenLabel || trimmed).trim()
@@ -326,6 +328,34 @@ const BN_TO_EN: Record<string, string> = {
 }
 
 const BN_TO_EN_OVERRIDES: Record<string, string> = {
+  '\u099C\u09B2\u09AC\u09BE\u09AF\u09BC\u09C1': 'Wind',
+  '\u099C\u09B2\u09AC\u09BE\u09DF\u09C1': 'Wind',
+  '\u0986\u09AC\u09B9\u09BE\u0993\u09AF\u09BC\u09BE': 'Wind',
+  '\u0986\u09AC\u09B9\u09BE\u0993\u09DF\u09BE': 'Wind',
+  '\u09AA\u09C3\u09A5\u09BF\u09AC\u09C0': 'Earth_s Surface',
+  '\u09AA\u09C3\u09A5\u09BF\u09AC\u09C0\u09B0': 'Earth_s Surface',
+  '\u09AA\u09C3\u09A5\u09BF\u09AC\u09C0\u09A4\u09C7': 'Earth_s Surface',
+  '\u09AD\u09C2\u09AA\u09C3\u09B7\u09CD\u09A0': 'Earth_s Surface',
+  '\u09AD\u09C2\u09AA\u09C3\u09B7\u09CD\u09A0\u09C7': 'Earth_s Surface',
+  '\u09AD\u09C2\u09AE\u09BF': 'Earth_s Surface',
+  '\u09AD\u09C2\u09AE\u09BF\u09B0': 'Earth_s Surface',
+  '\u0985\u0982\u09B6': 'Part',
+  '\u0985\u0982\u09B6\u09C7': 'Part',
+  '\u0997\u09C1\u09B0\u09C1\u09A4\u09CD\u09AC\u09AA\u09C2\u09B0\u09CD\u09A3': 'Important',
+  '\u0997\u09C1\u09B0\u09C1\u09A4\u09CD\u09AC\u09AA\u09C2\u09B0\u09CD\u09A3\u09A4\u09BE': 'Important',
+  '\u099C\u09B2\u09BE\u09B6\u09AF\u09BC': 'Water',
+  '\u099C\u09B2\u09BE\u09B6\u09DF': 'Water',
+  '\u09AC\u09BE\u09DF\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2': 'Sky',
+  '\u09AC\u09BE\u09AF\u09BC\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2': 'Sky',
+  '\u09AC\u09BE\u09DF\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2\u09C7': 'Sky',
+  '\u09AC\u09BE\u09AF\u09BC\u09C1\u09AE\u09A3\u09CD\u09A1\u09B2\u09C7': 'Sky',
+  '\u09AE\u09C7\u0998': 'Fog',
+  '\u09AE\u09C7\u0998\u09C7': 'Fog',
+  '\u09AE\u09C7\u0998\u09C7\u09B0': 'Fog',
+  '\u09A0\u09BE\u09A8\u09CD\u09A1\u09BE': 'Cold',
+  '\u09A0\u09BE\u09A8\u09CD\u09A1\u09BE\u09B0': 'Cold',
+  '\u0989\u09AA\u09B0\u09C7': 'above',
+  '\u0989\u09AA\u09B0\u09C7\u09B0': 'above',
   '\u09AC\u09B0\u09AB': 'Ice',
   '\u09AC\u09B0\u09AB\u09C7': 'Ice',
   '\u09AC\u09B0\u09AB\u09C7\u09B0': 'Ice',
@@ -356,6 +386,16 @@ const BN_TO_EN_OVERRIDES: Record<string, string> = {
   '\u09A6\u09B6\u09BE\u09AF\u09BC': 'Condition',
   '\u09A6\u09B6\u09BE\u09DF': 'Condition',
 }
+
+const EARTH_WORDS = new Set([
+  '\u09AA\u09C3\u09A5\u09BF\u09AC\u09C0',
+  '\u09AA\u09C3\u09A5\u09BF\u09AC\u09C0\u09B0',
+  '\u09AA\u09C3\u09A5\u09BF\u09AC\u09C0\u09A4\u09C7',
+  '\u09AD\u09C2\u09AA\u09C3\u09B7\u09CD\u09A0',
+  '\u09AD\u09C2\u09AA\u09C3\u09B7\u09CD\u09A0\u09C7',
+  '\u09AD\u09C2\u09AE\u09BF',
+  '\u09AD\u09C2\u09AE\u09BF\u09B0',
+])
 
 // Bengali suffix stripping (longest first for greedy match)
 const BN_SUFFIXES = [
@@ -394,12 +434,16 @@ function stripEnSuffix(n: string): string[] {
 
 // ─── Dataset ──────────────────────────────────────────────────────────────────
 function normalizeDatasetEntry(item: Record<string, string>, datasetRoot: string): DatasetEntry {
+  const entryRoot = item.datasetRoot
+    ? `${datasetRoot.replace(/\/$/, '')}/${item.datasetRoot.replace(/^\/+|\/+$/g, '')}`
+    : datasetRoot
+
   return cleanEntry({
     gloss: item.gloss ?? '',
     english: item.english ?? item.gloss ?? '',
     category: item.sectionEn ?? item.category ?? 'Unknown',
     sigmlPath: item.sigmlPath ?? '',
-    datasetRoot,
+    datasetRoot: entryRoot,
   })
 }
 
@@ -443,7 +487,7 @@ function sigmlUrlForEntry(token: SignToken): string | null {
   if (cleanPath.startsWith('/')) return encodePath(cleanPath)
 
   const rootBase = (token.datasetRoot || '/data/Sections').replace(/\/$/, '')
-  return `${rootBase}/${encodePath(cleanPath)}`
+  return encodePath(`${rootBase}/${cleanPath}`)
 }
 
 // ─── Index building ───────────────────────────────────────────────────────────
@@ -502,6 +546,11 @@ function lookupWord(
 ): DatasetEntry | null {
   const n = norm(word)
   if (!n || n.length < 2) return null
+
+  if (EARTH_WORDS.has(word.trim()) || EARTH_WORDS.has(n)) {
+    const earth = idx.get(norm('Earth_s Surface')) ?? idx.get(norm('Earth'))
+    if (earth) return earth
+  }
 
   // 1. Direct normalised match
   if (idx.has(n)) return idx.get(n)!
@@ -621,6 +670,22 @@ function tokeniseText(
 }
 
 // ─── SiGML XML parser for hand motion ────────────────────────────────────────
+function compactSignTokens(tokens: SignToken[]): SignToken[] {
+  const seen = new Set<string>()
+  const compacted: SignToken[] = []
+
+  for (const token of tokens) {
+    const key = token.known
+      ? `sign:${norm(token.english || token.gloss)}`
+      : `unknown:${norm(token.word)}`
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    compacted.push(token)
+  }
+
+  return compacted
+}
+
 type RigFrame = {
   left: [number, number, number]
   right: [number, number, number]
@@ -865,6 +930,23 @@ function CwasaSignAvatar({ token, playing }: { token: SignToken; playing: boolea
 
   const playUrl = useCallback((url: string) => {
     const absoluteUrl = /^https?:\/\//i.test(url) ? url : `${window.location.origin}${url}`
+    if (typeof window.CWASA?.playSiGMLURL === 'function') {
+      try {
+        window.CWASA?.stopSiGML?.(0)
+        window.CWASA.playSiGMLURL(absoluteUrl)
+        setStatus('Playing IsharaKotha SiGML')
+        return
+      } catch {
+        try {
+          window.CWASA.playSiGMLURL(0, absoluteUrl)
+          setStatus('Playing IsharaKotha SiGML')
+          return
+        } catch {
+          // Fall back to the controls generated by CWASA.init().
+        }
+      }
+    }
+
     const host = hostRef.current
     if (host) {
       const input = host.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -1084,9 +1166,7 @@ export default function BdslAvatar({ active, text }: Props) {
   // Prefer tokens that have a SiGML file, but don't hide the others
   const tokens = useMemo(() => {
     if (rawTokens.length === 0) return []
-    const playable = rawTokens.filter(t => t.known && t.sigmlPath)
-    // Show all matched tokens regardless of SiGML availability
-    return rawTokens
+    return compactSignTokens(rawTokens)
   }, [rawTokens])
 
   const preparing = resolvingSigns || loadState === 'loading' || loadState === 'idle'
@@ -1146,16 +1226,28 @@ export default function BdslAvatar({ active, text }: Props) {
     if (intervalRef.current) clearInterval(intervalRef.current)
     if (preparing || !playing || tokens.length <= 1) return
     intervalRef.current = setInterval(() => {
-      setActiveIndex(i => (i + 1) % tokens.length)
-    }, 6500)
+      setActiveIndex(i => {
+        for (let offset = 1; offset <= tokens.length; offset++) {
+          const next = (i + offset) % tokens.length
+          if (isPlayableToken(tokens[next])) return next
+        }
+        return (i + 1) % tokens.length
+      })
+    }, 4800)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [playing, preparing, tokens.length])
+  }, [playing, preparing, tokens])
+
+  useEffect(() => {
+    if (!playing || preparing || tokens.length === 0 || isPlayableToken(tokens[activeIndex])) return
+    const nextPlayable = tokens.findIndex(isPlayableToken)
+    if (nextPlayable >= 0 && nextPlayable !== activeIndex) setActiveIndex(nextPlayable)
+  }, [activeIndex, playing, preparing, tokens])
 
   useEffect(() => {
     if (activeIndex >= tokens.length) setActiveIndex(0)
   }, [activeIndex, tokens.length])
 
-  const handleSelect = useCallback((i: number) => { setActiveIndex(i); setPlaying(false) }, [])
+  const handleSelect = useCallback((i: number) => { setActiveIndex(i); setPlaying(isPlayableToken(tokens[i])) }, [tokens])
   const togglePlay   = useCallback(() => setPlaying(p => !p), [])
   const restart      = useCallback(() => { setActiveIndex(0); setPlaying(true) }, [])
 
