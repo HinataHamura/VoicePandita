@@ -2,21 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Accessibility, Camera, FileText, Globe, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
+import { Accessibility, Camera, FileText, Globe, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, ThumbsDown, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
+import StudyBuddyInviteCard from '@/components/study-buddy/StudyBuddyInviteCard'
 import ManimVideoAnimation from '@/components/animations/ManimVideoAnimation'
 import TeachingAnimation from '@/components/animations/TeachingAnimation'
 import type { AnimationKey } from '@/components/animations/types'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { getConceptMemory, getStudentProfile, recordChatHistory, recordConceptMemory, recordPractice } from '@/lib/studentStore'
 import { searchCurriculum } from '@/lib/embeddings'
-import { createClient } from '@/lib/supabase/client'
-import { appendChatMessages, createChatSession, fetchChatMessages, migrateLocalHistoryToSupabase, recordOfflineChat } from '@/lib/services/chatHistory'
+import { createClient, syncSupabaseAuthRefreshWithNetwork } from '@/lib/supabase/client'
+import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
+import { isOnline as getNetworkOnline, subscribeNetworkChanges } from '@/lib/network'
+import { appendChatMessages, createChatSession, fetchChatMessages, flushPendingHistorySync, migrateLocalHistoryToSupabase, queuePendingHistorySync, recordOfflineChat } from '@/lib/services/chatHistory'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -105,6 +108,8 @@ interface Message {
   pwnMessage?: string
   graphPath?: string[]
   outputMode?: OutputMode
+  studyQuestion?: string
+  studyConceptHint?: string
   grounding?: {
     grounded: boolean
     label?: string
@@ -258,6 +263,7 @@ export default function LearnPage() {
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [questionHistory, setQuestionHistory] = useState<string[]>([])
+  const [manualStudyInvite, setManualStudyInvite] = useState<{ messageId: string; questionText: string; conceptHint?: string } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
@@ -270,7 +276,7 @@ export default function LearnPage() {
         window.location.replace('/login?next=/learn')
       }
     })
-    setIsOnline(navigator.onLine)
+    setIsOnline(getNetworkOnline())
     const params = new URLSearchParams(window.location.search)
     const seededQuestion = params.get('q')
     const seededSession = params.get('session')
@@ -296,7 +302,12 @@ export default function LearnPage() {
       window.speechSynthesis.getVoices()
       window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices()
     }
+    syncSupabaseAuthRefreshWithNetwork(getNetworkOnline())
     migrateLocalHistoryToSupabase()
+    flushPendingHistorySync()
+    searchOffline('newton photosynthesis acid trigonometry', { limit: 1 }).catch(() => {
+      // Offline cache warm-up is best-effort for live demos.
+    })
     if (seededSession) {
       setHistoryLoading(true)
       setActiveChatSessionId(seededSession)
@@ -315,17 +326,20 @@ export default function LearnPage() {
               graphPath: row.graph_path || undefined,
               grounding: row.metadata?.grounding as Message['grounding'],
               outputMode: (row.metadata?.outputMode as OutputMode | undefined) || undefined,
+              studyQuestion: row.metadata?.studyQuestion as string | undefined,
+              studyConceptHint: row.metadata?.studyConceptHint as string | undefined,
             }))
           setMessages(restored)
         })
         .finally(() => setHistoryLoading(false))
     }
-    const update = () => setIsOnline(navigator.onLine)
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
+    const unsubscribeNetwork = subscribeNetworkChanges(online => {
+      setIsOnline(online)
+      syncSupabaseAuthRefreshWithNetwork(online)
+      if (online) flushPendingHistorySync()
+    })
     return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
+      unsubscribeNetwork()
     }
   }, [])
 
@@ -544,29 +558,42 @@ export default function LearnPage() {
     setMessages(prev => [...prev, userMsg, loadingMsg])
     setIsLoading(true)
     let cloudSessionId = activeChatSessionId
-    if (!cloudSessionId && navigator.onLine) {
+    if (!cloudSessionId && isOnline) {
       const session = await createChatSession({ firstQuestion: question, subject, outputMode })
       cloudSessionId = session?.id || null
       if (cloudSessionId) setActiveChatSessionId(cloudSessionId)
     }
 
-    if (!navigator.onLine) {
-      const offline = OFFLINE_ANSWERS[subject] || OFFLINE_ANSWERS.physics
-      const offlineAnswer = `${offline} Online হলে GraphRAG + Gemini দিয়ে আরও বিস্তারিত visual explanation দেব।`
+    if (!isOnline) {
+      const [offlineResult] = await searchOffline(question, { limit: 1 })
+      const offline = buildOfflineAnswer(offlineResult, question)
       setMessages(prev => prev.map(msg =>
         msg.id === loadingMsg.id
-          ? { ...msg, text: offlineAnswer, emotion: localEmotion, loading: false }
+          ? {
+              ...msg,
+              text: offline.answer,
+              diagram: outputMode === 'whiteboard' ? offline.diagram : null,
+              emotion: localEmotion,
+              graphPath: offline.graphPath,
+              outputMode,
+              pwnMessage: 'Offline Mode: using locally cached curriculum.',
+              loading: false,
+            }
           : msg
       ))
+      if (voiceOutput) speakText(offline.answer, localEmotion)
       recordPractice(subject, question)
-      recordOfflineChat({
+      const offlineHistory = {
         question,
-        answer: offlineAnswer,
+        answer: offline.answer,
         subject,
         outputMode,
         language,
         source: 'offline-pack',
-      })
+        graphPath: offline.graphPath,
+      }
+      recordOfflineChat(offlineHistory)
+      queuePendingHistorySync(offlineHistory)
       setIsLoading(false)
       return
     }
@@ -627,6 +654,8 @@ export default function LearnPage() {
               graphPath: data.graphPath,
               grounding: data.grounding,
               outputMode,
+              studyQuestion: nextEmotion === 'confused' || nextEmotion === 'frustrated' ? question : undefined,
+              studyConceptHint: Array.isArray(data.graphPath) ? data.graphPath.slice(-1)[0] : undefined,
               loading: false,
             }
           : msg
@@ -651,6 +680,8 @@ export default function LearnPage() {
             pwnMessage: data.pwnMessage,
             animationKey: answerAnimationKey,
             grounding: data.grounding,
+            studyQuestion: nextEmotion === 'confused' || nextEmotion === 'frustrated' ? question : undefined,
+            studyConceptHint: Array.isArray(data.graphPath) ? data.graphPath.slice(-1)[0] : undefined,
           },
         },
       ])
@@ -715,6 +746,14 @@ export default function LearnPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <span className={`inline-flex max-w-[9rem] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-semibold sm:max-w-none sm:px-3 ${
+              isOnline
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-orange-200 bg-orange-50 text-orange-700'
+            }`}>
+              <span>{isOnline ? '● Online' : '● Offline'}</span>
+              {!isOnline && <span className="hidden sm:inline">Learning Mode</span>}
+            </span>
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
             <button
@@ -769,7 +808,7 @@ export default function LearnPage() {
 
         {!isOnline && (
           <div className="offline-banner flex items-center justify-center gap-2">
-            <WifiOff size={14} /> Offline pack active - cached answers are available.
+            <WifiOff size={14} /> Offline Mode active - using locally cached curriculum. PWN and Graph Memory sync will resume online.
           </div>
         )}
 
@@ -905,6 +944,30 @@ export default function LearnPage() {
                           </div>
                         )}
                         <BdslAvatar active={deafMode} text={msg.text} />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setManualStudyInvite({
+                              messageId: msg.id,
+                              questionText: msg.studyQuestion || messages.slice().reverse().find(item => item.role === 'user')?.text || msg.text.slice(0, 160),
+                              conceptHint: msg.studyConceptHint || msg.graphPath?.slice(-1)[0],
+                            })}
+                            className="inline-flex items-center gap-2 rounded-xl border border-forest/20 bg-white/75 px-3 py-2 text-xs font-semibold text-forest shadow-sm hover:bg-white"
+                          >
+                            <ThumbsDown size={13} />
+                            Bujhi Nai
+                          </button>
+                        </div>
+                        {(msg.studyQuestion || manualStudyInvite?.messageId === msg.id) && (
+                          <StudyBuddyInviteCard
+                            questionText={manualStudyInvite?.messageId === msg.id ? manualStudyInvite.questionText : msg.studyQuestion || msg.text.slice(0, 160)}
+                            subject={subject}
+                            language={language === 'bn' ? 'bn' : language === 'ckm' ? 'chakma' : language === 'mrm' ? 'marma' : 'garo'}
+                            emotionLabel={msg.emotion === 'frustrated' ? 'frustrated' : 'confused'}
+                            conceptHint={manualStudyInvite?.messageId === msg.id ? manualStudyInvite.conceptHint : msg.studyConceptHint || msg.graphPath?.slice(-1)[0]}
+                            anonymousSessionId={getSessionId()}
+                          />
+                        )}
                       </>
                     )}
                   </div>

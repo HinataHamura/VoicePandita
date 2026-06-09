@@ -172,7 +172,8 @@ answer = generate_answer(
 | `/onboarding` | 5-step student profiling |
 | `/learn` | Main voice tutor interface |
 | `/profile` | Student dashboard |
-| `/progress` | Weak topics & analytics |
+| `/progress` | Student Analytics Dashboard |
+| `/study-buddy` | Bondhu Study Room |
 | `/chakma` | Chakma ethnic language mode |
 | `/pwn` | Peer Wisdom Network hotspots |
 | `/settings` | App preferences |
@@ -283,7 +284,8 @@ src/
 │   ├── onboarding/page.tsx   ← 5-step onboarding
 │   ├── learn/page.tsx        ← Voice tutor (main)
 │   ├── profile/page.tsx      ← Student dashboard
-│   ├── progress/page.tsx     ← Weak topics
+│   ├── progress/page.tsx     ← Student analytics
+│   ├── study-buddy/          ← Bondhu Study Room
 │   ├── chakma/page.tsx       ← Ethnic language mode
 │   ├── pwn/page.tsx          ← Peer Wisdom Network
 │   ├── settings/page.tsx     ← Settings

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const routes = ['/', '/learn', '/profile', '/progress', '/pwn', '/settings', '/chakma', '/onboarding', '/login']
+const routes = ['/', '/learn', '/profile', '/progress', '/study-buddy', '/pwn', '/settings', '/chakma', '/onboarding', '/login']
 
 test('student routes render without crashing', async ({ page }) => {
   for (const route of routes) {

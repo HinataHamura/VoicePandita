@@ -125,7 +125,7 @@ export default function ProfilePage() {
         <section className="space-y-2">
           {[
             { href: '/learn', title: 'Ask a new question', sub: 'Voice, text or photo input', icon: Mic },
-            { href: '/progress', title: 'Review progress', sub: 'Weak topics and next practice', icon: TrendingUp },
+            { href: '/progress', title: 'Student Analytics Dashboard', sub: 'Learning signals and next steps', icon: TrendingUp },
             { href: '/pwn', title: 'Peer Wisdom Network', sub: 'See common confusion hotspots', icon: BookOpen },
           ].map(action => (
             <Link key={action.href} href={action.href} className="card p-4 flex items-center gap-4 hover:border-forest/30 transition-colors">
