@@ -84,6 +84,12 @@ function fallbackResult(answerText: string, detection: LanguageDetectionResult):
   }
 }
 
+function selectedLanguageIsBangla(value?: string | null) {
+  if (!value) return false
+  const normalized = String(value).trim().toLowerCase()
+  return normalized === 'bn' || normalized === 'bangla' || normalized === 'bengali'
+}
+
 function hasScript(text: string, script: LearnerScript) {
   if (script === 'unknown') return true
 
@@ -182,6 +188,17 @@ export async function localizeAnswer(input: LocalizeAnswerInput): Promise<Locali
   const detection = input.languageDetection
   const sourceScript = input.scriptDetection.script === 'unknown' ? detection.script : input.scriptDetection.script
   const sourceLanguage = detection.language
+
+  if (selectedLanguageIsBangla(input.selectedLanguage)) {
+    return banglaResult(input.banglaAnswer, {
+      ...detection,
+      language: 'bn',
+      script: sourceScript === 'unknown' ? 'bengali' : sourceScript,
+      confidence: Math.max(detection.confidence, 0.9),
+      shouldFallback: false,
+      reasons: [...detection.reasons, 'selected-bangla-output'],
+    })
+  }
 
   if (detection.shouldFallback || sourceLanguage === 'unknown') {
     return fallbackResult(input.banglaAnswer, {

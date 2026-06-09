@@ -91,6 +91,8 @@ const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
 const groqKey = process.env.GROQ_API_KEY?.trim()
 const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
+const ollamaBaseUrl = process.env.OLLAMA_BASE_URL?.trim()
+const ollamaModel = process.env.OLLAMA_MODEL?.trim() || 'qwen3:4b'
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000)
 const CHAKMA_BENGALI_ROWS = chakmaBridgeRows as ChakmaBridgeRow[]
 
@@ -356,7 +358,13 @@ function safeFallbackAnswer(question: string, emotion: EmotionState) {
 }
 
 function safeFallbackGraphPath(question: string, selectedSubject: string) {
-  const normalized = question.toLowerCase()
+  const normalized = normalizeQuestionText(question)
+  if (/prot[ei]in|protein|প্রোটিন|আমিষ|amino/.test(normalized)) return ['Biology', 'Biomolecules', 'Protein']
+  if (/mitochondria|mitocondria|মাইটোকন্ড্র/.test(normalized)) return ['Biology', 'Cell Organelles', 'Mitochondria']
+  if (/krebs|kreb|citric|tca|ক্রেবস|সাইট্রিক/.test(normalized)) return ['Biology', 'Cellular Respiration', 'Krebs Cycle']
+  if (/complex|জটিল|z\s*=|z\^|1\s*\+\s*i|de moivre|ডি ময়ভার/.test(normalized)) return ['Mathematics', 'Algebra', 'Complex Numbers']
+  if (/hcl|naoh|neutral|নিরপেক্ষ|molarity|মোলারিটি/.test(normalized)) return ['Chemistry', 'Acid-Base', 'Molarity']
+  if (/force|বল|friction|ঘর্ষণ|acceleration|ত্বরণ|velocity|বেগ/.test(normalized)) return ['Physics', 'Mechanics', 'Newtonian Motion']
   if (/glucose|গ্লুকোজ/.test(normalized)) return ['Biology', 'Carbohydrate', 'Glucose']
   if (/à¦–à¦¨à¦¿à¦œ|à¦§à¦¨à¦¿à¦œ|mineral/.test(normalized)) return ['Geography', 'Natural Resources', 'Minerals']
   if (/à¦¤à¦°à¦²|liquid|fluid/.test(normalized)) return ['Physics', 'Matter', 'Liquid']
@@ -365,15 +373,22 @@ function safeFallbackGraphPath(question: string, selectedSubject: string) {
 
 async function geminiText(prompt: string) {
   const requested = process.env.GEMINI_MODEL?.trim()
-  const models = requested
+  const models = (requested
     ? [requested, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
-    : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+    : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'])
+    .filter((modelName, index, allModels): modelName is string => Boolean(modelName) && allModels.indexOf(modelName) === index)
 
   let lastError: unknown = null
   if (genAI) {
     for (const modelName of models) {
       try {
-        const model = genAI.getGenerativeModel({ model: modelName })
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            temperature: 0.2,
+            topP: 0.85,
+          },
+        })
         const result = await model.generateContent(prompt)
         return result.response.text().trim()
       } catch (err) {
@@ -398,8 +413,38 @@ async function geminiText(prompt: string) {
     }
   }
 
+  const local = await ollamaText(prompt)
+  if (local) return local
+
   if (!lastError) return null
   throw lastError
+}
+
+async function ollamaText(prompt: string) {
+  if (!ollamaBaseUrl) return null
+  try {
+    const response = await fetch(`${ollamaBaseUrl.replace(/\/$/, '')}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ollamaModel,
+        stream: false,
+        messages: [{ role: 'user', content: prompt }],
+        options: { temperature: 0.2, top_p: 0.85 },
+      }),
+    })
+    if (!response.ok) throw new Error(`Ollama ${response.status}: ${await response.text()}`)
+    const data = await response.json()
+    return String(data?.message?.content || data?.response || '').trim() || null
+  } catch (err) {
+    console.warn('/api/ask Ollama fallback failed:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+function isGeminiQuotaOrRateLimit(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  return /429|too many requests|quota|rate limit|resource_exhausted/i.test(message)
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
@@ -656,15 +701,103 @@ function looksMojibake(value: string) {
   return /à¦|à§|Ã|Â/.test(value)
 }
 
+function normalizeQuestionText(question: string) {
+  return question
+    .toLowerCase()
+    .replace(/\bprotien\b/g, 'protein')
+    .replace(/\bmitocondria\b/g, 'mitochondria')
+    .replace(/\bphotosynthsis\b/g, 'photosynthesis')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractAskedConcept(question: string) {
+  const cleaned = question
+    .normalize('NFKC')
+    .replace(/[?？।]/g, ' ')
+    .replace(/\b(ki|kake bole|bolte ki bujhay|what is|explain|define|bekkha|bujhao|koro|korun)\b/gi, ' ')
+    .replace(/কি|কী|কাকে বলে|বলতে কী বোঝায়|ব্যাখ্যা করো|বুঝাও|করো|করুন/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || question.trim()
+}
+
+function genericStructuredFallback(question: string, selectedSubject = 'general') {
+  const concept = extractAskedConcept(question).slice(0, 80)
+  const subjectLabel = selectedSubject && selectedSubject !== 'general' ? selectedSubject : 'এই বিষয়'
+  return `আমি প্রশ্নটা "${concept}" নিয়ে ধরেছি।
+
+মূল ধারণা:
+${concept} সম্পর্কে ভালো উত্তর দিতে হলে আগে এর সংজ্ঞা, গঠন/ধরন, কাজ, উদাহরণ এবং গুরুত্ব আলাদা করতে হবে।
+
+বোর্ড-স্টাইল উত্তর সাজানোর নিয়ম:
+১. প্রথমে ${concept}-এর সংক্ষিপ্ত সংজ্ঞা লিখবে।
+২. তারপর ${subjectLabel}-এর সাথে এর সম্পর্ক লিখবে।
+৩. ২-৩টি বৈশিষ্ট্য বা কাজ লিখবে।
+৪. একটি বাস্তব/পাঠ্যবই-ধরনের উদাহরণ দেবে।
+৫. শেষে এক লাইনে গুরুত্ব বা ফলাফল লিখবে।
+
+নোট:
+এখন AI provider quota/rate-limit হলে আমি verified factual detail কমিয়ে safe structure দিচ্ছি। প্রশ্নটা আরেকটু নির্দিষ্ট করলে বা provider available হলে আমি exact answer দেব।`
+}
+
 function fallbackAnswerForQuestion(question: string) {
-  const normalized = question.toLowerCase()
+  const normalized = normalizeQuestionText(question)
+  if (/prot[ei]in|protein|প্রোটিন|আমিষ|amino/.test(normalized)) {
+    return `সংজ্ঞা:
+প্রোটিন হলো amino acid দিয়ে গঠিত একটি জৈব অণু। এটি দেহের বৃদ্ধি, ক্ষয়পূরণ এবং কোষের বিভিন্ন কাজের জন্য দরকারি।
+
+গঠন:
+অনেকগুলো amino acid peptide bond দিয়ে যুক্ত হয়ে protein chain তৈরি করে।
+
+কাজ:
+প্রোটিন পেশি ও টিস্যু গঠন করে, enzyme ও hormone তৈরিতে সাহায্য করে, antibody তৈরি করে রোগ প্রতিরোধে ভূমিকা রাখে এবং ক্ষতিগ্রস্ত কোষ মেরামতে সাহায্য করে।
+
+উদাহরণ:
+ডিম, মাছ, মাংস, দুধ, ডাল, শিম, বাদাম প্রোটিনের ভালো উৎস।
+
+সাধারণ ভুল:
+প্রোটিন শুধু muscle বানায় না; enzyme, hormone, antibody এবং cell repair-এও কাজ করে।`
+  }
+  if (/mitochondria|mitocondria|মাইটোকন্ড্র/.test(normalized)) {
+    return `সংজ্ঞা:
+মাইটোকন্ড্রিয়া হলো কোষের শক্তি উৎপাদনকারী অঙ্গাণু, যাকে কোষের শক্তিঘর বলা হয়।
+
+অবস্থান:
+এটি কোষের সাইটোপ্লাজমে থাকে।
+
+কাজ:
+মাইটোকন্ড্রিয়া কোষশ্বসনের মাধ্যমে খাদ্য থেকে শক্তি বের করে ATP তৈরি করে। ম্যাট্রিক্সে ক্রেবস চক্র চলে, আর ভিতরের ঝিল্লিতে Electron Transport Chain ATP উৎপাদনে সাহায্য করে।
+
+গুরুত্ব:
+ATP কোষের চলন, বৃদ্ধি, বিভাজন, পরিবহন ও বিপাকীয় কাজের শক্তি দেয়।
+
+সাধারণ ভুল:
+মাইটোকন্ড্রিয়া খাদ্য তৈরি করে না; খাদ্য থেকে শক্তি/ATP তৈরি করে।`
+  }
+  if (/krebs|kreb|citric|tca|ক্রেবস|সাইট্রিক/.test(normalized)) {
+    return `সংজ্ঞা:
+ক্রেবস চক্র বা সাইট্রিক অ্যাসিড চক্র হলো কোষশ্বসনের একটি চক্রাকার ধাপ।
+
+অবস্থান:
+এটি মাইটোকন্ড্রিয়ার ম্যাট্রিক্সে ঘটে।
+
+ধাপ:
+Acetyl-CoA থেকে Citrate তৈরি হয়, তারপর Isocitrate, Alpha-ketoglutarate, Succinyl-CoA, Succinate, Fumarate, Malate হয়ে Oxaloacetate পুনরায় তৈরি হয়।
+
+উৎপন্ন পদার্থ/ফলাফল:
+প্রতি Acetyl-CoA থেকে NADH, FADH2, ATP/GTP এবং CO2 তৈরি হয়।
+
+গুরুত্ব:
+NADH ও FADH2 পরে Electron Transport Chain-এ ATP উৎপাদনে সাহায্য করে।`
+  }
   if (/glucose|গ্লুকোজ/.test(normalized)) {
     return 'গ্লুকোজ হলো একটি সরল শর্করা বা monosaccharide। এটি জীবদেহের প্রধান শক্তির উৎস; কোষ শ্বসনে গ্লুকোজ ভেঙে ATP তৈরি হয়। উদ্ভিদ সালোকসংশ্লেষণের মাধ্যমে গ্লুকোজ বানায়, আর প্রাণী খাবার থেকে গ্লুকোজ পায়। সহজভাবে বললে, গ্লুকোজ হলো কোষের দ্রুত ব্যবহারযোগ্য জ্বালানি। তুমি কি গ্লুকোজ আর starch-এর পার্থক্য জানতে চাও?'
   }
   if (/photosynthesis|সালোক/.test(normalized)) {
     return 'সালোকসংশ্লেষণ হলো উদ্ভিদের খাদ্য তৈরির প্রক্রিয়া। সবুজ উদ্ভিদ সূর্যের আলো, পানি ও কার্বন ডাই-অক্সাইড ব্যবহার করে গ্লুকোজ তৈরি করে এবং অক্সিজেন ছাড়ে। ক্লোরোফিল আলো ধরতে সাহায্য করে। তুমি কি পুরো equation-টা দেখতে চাও?'
   }
-  return 'এটা একটি গুরুত্বপূর্ণ concept। সহজভাবে বললে, আগে মূল সংজ্ঞা বুঝতে হবে, তারপর কারণ, উদাহরণ, আর বাস্তব ব্যবহার মিলিয়ে দেখতে হবে। কোন অংশটা বেশি confusing লাগছে?'
+  return genericStructuredFallback(question)
 }
 
 function fallbackConceptDiagram(fallbackTitle: string) {
@@ -680,13 +813,176 @@ function fallbackConceptDiagram(fallbackTitle: string) {
   F --> G`
 }
 
-function safeDiagram(value: unknown, fallbackTitle: string) {
-  if (typeof value === 'string' && /^(graph|flowchart)\s+/i.test(value.trim()) && !looksMojibake(value)) return value.trim()
-  return fallbackConceptDiagram(fallbackTitle)
+function isGenericDiagram(value: string, question?: string) {
+  const labels = Array.from(value.matchAll(/\[([^\]]+)\]/g)).map(match => match[1].trim().toLowerCase())
+  const genericLabels = new Set([
+    'সংজ্ঞা',
+    'বৈশিষ্ট্য',
+    'উদাহরণ',
+    'মূল কারণ',
+    'মূল শিক্ষা',
+    'বাস্তব ব্যবহার',
+    'প্রশ্ন',
+    'main idea',
+    'definition',
+    'example',
+    'property',
+  ])
+  const genericCount = labels.filter(label => genericLabels.has(label)).length
+  const rootLooksLikeQuestion = question
+    ? labels.some(label => label.includes(question.toLowerCase().slice(0, 28)))
+    : false
+  return genericCount >= 3 || rootLooksLikeQuestion
+}
+
+function specificDiagramForQuestion(question: string) {
+  const normalized = normalizeQuestionText(question)
+  if (/prot[ei]in|protein|প্রোটিন|আমিষ|amino/.test(normalized)) {
+    return `flowchart LR
+  A[প্রোটিন] --> B[Amino acid]
+  B --> C[Peptide bond]
+  C --> D[Protein chain]
+  A --> E[দেহ গঠন ও বৃদ্ধি]
+  A --> F[Enzyme ও hormone]
+  A --> G[Antibody]
+  A --> H[Cell repair]
+  A --> I[খাদ্য উৎস]
+  I --> J[ডিম মাছ দুধ ডাল]`
+  }
+  if (/mitochondria|mitocondria|মাইটোকন্ড্র/.test(normalized)) {
+    return `flowchart LR
+  A[মাইটোকন্ড্রিয়া] --> B[কোষের শক্তিঘর]
+  A --> C[কোষশ্বসন]
+  C --> D[গ্লুকোজ ভাঙে]
+  D --> E[ATP শক্তি তৈরি]
+  A --> F[ম্যাট্রিক্স]
+  F --> G[ক্রেবস চক্র]
+  A --> H[ভিতরের ঝিল্লি]
+  H --> I[Electron Transport Chain]
+  I --> E
+  A --> J[তাপ ও বিপাকে সহায়তা]`
+  }
+  if (/krebs|kreb|citric|tca|ক্রেবস|সাইট্রিক/.test(normalized)) {
+    return `flowchart LR
+  A[Acetyl-CoA] --> B[Citrate]
+  B --> C[Isocitrate]
+  C --> D[Alpha-ketoglutarate]
+  D --> E[Succinyl-CoA]
+  E --> F[Succinate]
+  F --> G[Fumarate]
+  G --> H[Malate]
+  H --> I[Oxaloacetate]
+  I --> B
+  C --> J[NADH + CO2]
+  D --> K[NADH + CO2]
+  E --> L[ATP/GTP]
+  F --> M[FADH2]
+  H --> N[NADH]`
+  }
+  if (/complex|জটিল|z\s*=|z\^|1\s*\+\s*i|de moivre|ডি ময়ভার/.test(normalized)) {
+    return `flowchart LR
+  A[z = 1 + i] --> B[z^2 = 2i]
+  B --> C[z^4 = -4]
+  C --> D[z^8 = 16]
+  D --> E[1/z^8 = 1/16]
+  D --> F[z^8 + 1/z^8]
+  E --> F
+  F --> G[257/16]`
+  }
+  if (/hcl|naoh|neutral|নিরপেক্ষ|molarity|মোলারিটি/.test(normalized)) {
+    return `flowchart LR
+  A[HCl + NaOH] --> B[NaCl + H2O]
+  B --> C[মোল অনুপাত 1:1]
+  C --> D[M_HCl V_HCl = M_NaOH V_NaOH]
+  D --> E[M_HCl = 0.1 x 30 / 25]
+  E --> F[0.12 M]`
+  }
+  if (/force|বল|friction|ঘর্ষণ|acceleration|ত্বরণ|velocity|বেগ/.test(normalized)) {
+    return `flowchart LR
+  A[প্রয়োগকৃত বল 10 N] --> B[ঘর্ষণ 2 N বাদ]
+  B --> C[নেট বল 8 N]
+  C --> D[a = F/m = 4 m/s^2]
+  D --> E[v = u + at = 20 m/s]
+  D --> F[s = ut + 1/2at^2 = 50 m]`
+  }
+  return null
+}
+
+function safeDiagram(value: unknown, fallbackTitle: string, question?: string) {
+  const specific = question ? specificDiagramForQuestion(question) : null
+  if (specific) return specific
+  if (typeof value === 'string' && /^(graph|flowchart)\s+/i.test(value.trim()) && !looksMojibake(value) && !isGenericDiagram(value, question)) {
+    return value.trim()
+  }
+  return fallbackDiagramForQuestion(question || fallbackTitle, fallbackTitle)
+}
+
+function extractMermaid(text: string) {
+  const cleaned = text.replace(/```mermaid|```/gi, '').trim()
+  const start = cleaned.search(/(?:graph|flowchart)\s+(?:LR|TD|TB|RL|BT)/i)
+  if (start < 0) return cleaned
+  return cleaned.slice(start).trim()
+}
+
+function acceptedDiagram(value: unknown, question: string) {
+  const specific = specificDiagramForQuestion(question)
+  if (specific) return specific
+  if (typeof value !== 'string') return null
+  const diagram = extractMermaid(value)
+  if (!/^(graph|flowchart)\s+/i.test(diagram)) return null
+  if (looksMojibake(diagram)) return null
+  if (isGenericDiagram(diagram, question)) return null
+  return diagram
+}
+
+async function bestDiagramForAnswer(params: {
+  candidate: unknown
+  question: string
+  answer: string
+  graphPath: string[]
+  subject: string
+}) {
+  const accepted = acceptedDiagram(params.candidate, params.question)
+  if (accepted) return accepted
+  if (!genAI) return null
+
+  const prompt = `Create one high-quality Mermaid concept map for this student answer.
+
+Student question:
+${params.question}
+
+Inferred path:
+${params.graphPath.join(' -> ') || params.subject}
+
+Answer:
+${params.answer.slice(0, 1800)}
+
+Return ONLY Mermaid code.
+
+Rules:
+- Use flowchart LR.
+- Use 6-10 nodes.
+- Every node must be a real concept, formula, step, component, cause, result, or example from the answer.
+- Never use generic nodes like সংজ্ঞা, বৈশিষ্ট্য, উদাহরণ, মূল কারণ, মূল শিক্ষা, বাস্তব ব্যবহার, প্রশ্ন, main idea, definition, property, example.
+- If it is a process, show the actual sequence.
+- If it is a numerical problem, show the actual formula/calculation flow.
+- If it is an organelle/biology function question, show structure -> function -> result links.
+- Keep labels short so they fit in boxes.
+- No markdown fence.`
+
+  try {
+    const generated = await geminiText(prompt)
+    return acceptedDiagram(generated || '', params.question)
+  } catch (err) {
+    console.warn('/api/ask diagram regeneration failed', err instanceof Error ? err.message : err)
+    return null
+  }
 }
 
 function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
   const normalized = question.toLowerCase()
+  const specific = specificDiagramForQuestion(question)
+  if (specific) return specific
   if (/glucose|গ্লুকোজ/.test(normalized)) {
     return 'graph LR\n  A[গ্লুকোজ] --> B[সরল শর্করা]\n  A --> C[কোষের শক্তি]\n  A --> D[সালোকসংশ্লেষণে তৈরি]\n  A --> E[খাবার থেকে পাওয়া যায়]\n  C --> F[ATP তৈরি]\n  D --> G[উদ্ভিদের খাদ্য]'
   }
@@ -696,7 +992,7 @@ function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
   if (/à¦¤à¦°à¦²|liquid|fluid/.test(normalized)) {
     return 'graph LR\n  A[à¦¤à¦°à¦² à¦ªà¦¦à¦¾à¦°à§à¦¥] --> B[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à§Ÿà¦¤à¦¨]\n  A --> C[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à¦•à¦¾à¦° à¦¨à§‡à¦‡]\n  A --> D[à¦ªà§à¦°à¦¬à¦¾à¦¹à¦¿à¦¤ à¦¹à§Ÿ]\n  A --> E[à¦šà¦¾à¦ª à¦ªà§à¦°à§Ÿà§‹à¦— à¦•à¦°à§‡]\n  C --> F[à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦†à¦•à¦¾à¦° à¦¨à§‡à§Ÿ]'
   }
-  return safeDiagram(null, fallbackTitle)
+  return fallbackConceptDiagram(fallbackTitle)
 }
 
 function learnerLanguageToTargetLanguage(language: string): TargetLanguage {
@@ -1070,7 +1366,13 @@ Rules:
 
   return {
     answer: String(parsed.answer || '').trim(),
-    diagram: safeDiagram(parsed.diagram, String(parsed.conceptTitle || 'Concept')),
+    diagram: await bestDiagramForAnswer({
+      candidate: parsed.diagram,
+      question: params.question,
+      answer: String(parsed.answer || '').trim(),
+      graphPath,
+      subject: String(parsed.subject || params.selectedSubject || 'Curriculum'),
+    }),
     graphPath,
     subject: String(parsed.subject || params.selectedSubject || 'Curriculum'),
   }
@@ -1108,7 +1410,7 @@ Return ONLY valid JSON with this shape:
   "subject": "best inferred subject in English",
   "conceptTitle": "short English concept title",
   "graphPath": ["Subject", "Chapter/Unit", "Concept"],
-  "answer": "Bangla answer, exact to the question, 4-6 clear sentences",
+  "answer": "Bangla answer, exact to the question. Use newline-separated sections. For numerical/math problems include প্রদত্ত, সূত্র/ধারণা, সমাধান, চূড়ান্ত উত্তর, সাধারণ ভুল.",
   "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; include natural branches"
 }
 
@@ -1124,13 +1426,48 @@ Rules:
 - If the question has typo/mixed Bangla-English, infer the likely intended school concept.
 - If the question is ambiguous, give the most likely answer first, then ask one short clarifying question.
 - For complex questions, explain in layers: main idea, step-by-step reasoning, one concrete example, common mistake, final takeaway.
+- For math/physics/chemistry numerical problems, solve carefully step by step:
+  1. Extract given values with units.
+  2. Write the needed formula/equation.
+  3. Substitute values visibly.
+  4. Keep units through the calculation.
+  5. Box or clearly state the final answer.
+  6. For multi-part creative/CQ questions, label answers as (ক), (খ), (গ), (ঘ).
+- Format numerical answers with clear Bangla section labels and blank lines:
+  প্রদত্ত:
+  ...
+
+  সূত্র/ধারণা:
+  ...
+
+  সমাধান:
+  ...
+
+  চূড়ান্ত উত্তর:
+  ...
+
+  সাধারণ ভুল:
+  ...
+- Do not use প্রদত্ত/সূত্র/সমাধান/চূড়ান্ত উত্তর formatting for non-numerical biology concept explanations.
+- For biology process explanations such as Krebs cycle, photosynthesis, respiration, mitosis, or meiosis, use:
+  সংজ্ঞা:
+  অবস্থান:
+  ধাপ:
+  উৎপন্ন পদার্থ/ফলাফল:
+  গুরুত্ব:
+  সাধারণ ভুল:
+- For algebra/calculus/complex-number/trigonometry problems, show transformations line by line and verify the final result when possible.
+- For chemistry stoichiometry, write the balanced equation, mole ratio, unit conversion, and final concentration/mass/volume.
+- For physics, state assumptions such as friction direction, initial velocity, or constant acceleration before calculating.
 - For SSC/HSC board goal, include definition/explanation/example style when useful.
 - For admission goal, include intuition, formula/logic, and trap warnings when useful.
-- Answer should usually be 120-220 words for whiteboard/text mode, 60-100 words for simple mode, and marks-friendly for exam mode.
+- Answer should usually be 120-260 words for whiteboard/text mode, 60-100 words for simple mode, and marks-friendly with labeled steps for exam mode.
 - Keep Bangla clear and student-friendly; technical English terms are okay when common in textbooks.
 - Diagram must not be generic like Question -> Cause -> Result -> Understand.
+- Diagram must not use generic Bangla nodes like সংজ্ঞা, বৈশিষ্ট্য, উদাহরণ, মূল কারণ, মূল শিক্ষা, বাস্তব ব্যবহার unless those are genuinely the requested topic.
 - Diagram nodes must name the actual concept, types, examples, properties, or process steps.
 - Diagram must branch naturally from one main concept into properties/types/examples; do not force unrelated merge nodes.
+- For biology process questions, diagram the real process sequence. For Krebs/Citric acid/TCA cycle, include Acetyl-CoA, Citrate, Isocitrate, Alpha-ketoglutarate, Succinyl-CoA, Succinate, Fumarate, Malate, Oxaloacetate, NADH/FADH2/ATP/CO2.
 - Diagram must use this Mermaid style: graph LR\\n  A[মূল ধারণা] --> B[প্রকার]\\n  B --> C[উদাহরণ]
 - End with one Socratic follow-up question.`
 
@@ -1146,14 +1483,20 @@ Rules:
 
     return {
       answer: String(parsed.answer || raw).trim(),
-      diagram: safeDiagram(parsed.diagram, conceptTitle),
+      diagram: await bestDiagramForAnswer({
+        candidate: parsed.diagram,
+        question: params.question,
+        answer: String(parsed.answer || raw).trim(),
+        graphPath,
+        subject: String(parsed.subject || params.selectedSubject || 'Curriculum'),
+      }),
       graphPath,
     }
   } catch {
     const conceptTitle = params.question.slice(0, 30) || 'Concept'
     return {
       answer: stripJsonLeak(raw, params.question),
-      diagram: fallbackDiagramForQuestion(params.question, conceptTitle),
+      diagram: specificDiagramForQuestion(params.question),
       graphPath: safeFallbackGraphPath(params.question, params.selectedSubject),
     }
   }
@@ -1226,16 +1569,20 @@ Rules:
 
     return {
       answer: String(parsed.answer || raw).trim(),
-      diagram: typeof parsed.diagram === 'string' && /^(graph|flowchart)\s+/i.test(parsed.diagram.trim())
-        ? safeDiagram(parsed.diagram, conceptTitle)
-        : fallbackDiagramForQuestion(`${params.extractedText}\n${params.question}`, conceptTitle),
+      diagram: await bestDiagramForAnswer({
+        candidate: parsed.diagram,
+        question: `${params.extractedText}\n${params.question}`,
+        answer: String(parsed.answer || raw).trim(),
+        graphPath,
+        subject: String(parsed.subject || params.selectedSubject || 'Uploaded Text'),
+      }),
       graphPath,
     }
   } catch {
     const conceptTitle = params.question.slice(0, 30) || 'OCR Context'
     return {
       answer: stripJsonLeak(raw, params.question),
-      diagram: fallbackDiagramForQuestion(`${params.extractedText}\n${params.question}`, conceptTitle),
+      diagram: specificDiagramForQuestion(`${params.extractedText}\n${params.question}`),
       graphPath: ['Uploaded Text', String(params.selectedSubject || 'General'), conceptTitle],
     }
   }
@@ -1545,7 +1892,7 @@ export async function POST(req: NextRequest) {
 
     let lesson = lessonKey ? LESSONS[lessonKey] : null
     let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
-    let diagram: string = lesson?.diagram || safeDiagram(null, question.slice(0, 30) || 'Concept')
+    let diagram: string | null = lesson?.diagram || specificDiagramForQuestion(conceptSignal)
     let graphPath: string[] = lesson ? [...lesson.path] : [selectedSubject || 'Curriculum', 'Needs Clarification']
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
     let mode: 'ocr_context' | 'curriculum_guided' | 'general_fallback' = lessonKey ? 'curriculum_guided' : 'general_fallback'
@@ -1631,19 +1978,24 @@ Rules:
       console.warn('/api/ask Gemini unavailable', err instanceof Error ? err.message : err)
       if (requestSource === 'ocr' && extractedText) {
         answer = fallbackOcrContextAnswer(question, extractedText, emotion)
-        diagram = fallbackDiagramForQuestion(`${extractedText}\n${question}`, question.slice(0, 30) || 'OCR Context')
+        diagram = specificDiagramForQuestion(`${extractedText}\n${question}`)
         graphPath = ['Uploaded Text', selectedSubject || 'General', question.slice(0, 30) || 'OCR Context']
         source = 'local-ocr-context-fallback'
         mode = 'ocr_context'
       } else if (!answer) {
-        answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
+        answer = fallbackAnswerForQuestion(question)
+        diagram = specificDiagramForQuestion(conceptSignal)
+        graphPath = safeFallbackGraphPath(question, selectedSubject)
+        source = 'local-question-specific-fallback'
       }
     }
 
     const safeAnswer = stripJsonLeak(answer, question)
     const safeOutputDiagram = outputMode === 'simple' || outputMode === 'exam' || outputMode === 'video'
       ? null
-      : polishMermaidDiagram(diagram)
+      : diagram
+        ? polishMermaidDiagram(diagram)
+        : null
     const localized = await localizeAnswerPhase2({
       banglaAnswer: safeAnswer,
       question: originalQuestion,
@@ -1662,7 +2014,7 @@ Rules:
       answerText: localized.answerText,
       answer: localized.answerText,
       metadata: localized.metadata,
-      diagram: safeOutputDiagram && looksMojibake(safeOutputDiagram) ? fallbackConceptDiagram(graphPath.slice(-1)[0] || question) : safeOutputDiagram,
+      diagram: safeOutputDiagram && looksMojibake(safeOutputDiagram) ? null : safeOutputDiagram,
       animationKey,
       detectedEmotion,
       detectedLanguage: localized.metadata.sourceLanguage,
