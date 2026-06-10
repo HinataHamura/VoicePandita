@@ -114,9 +114,10 @@ async function geminiText(prompt: string) {
   throw lastError || new GeminiSummaryError('summary_failed', 'Gemini summary failed.')
 }
 
-function summaryPrompt(pdfText: string) {
-  return `You are VoicePandita, a Bangla study assistant.
-Summarize this PDF in clean, simple Bangla.
+function summaryPrompt(pdfText: string, language: 'bn' | 'en') {
+  const outputLanguage = language === 'en' ? 'simple English' : 'clean, simple Bangla'
+  return `You are VoicePandita, a study assistant.
+Summarize this PDF in ${outputLanguage}.
 Return valid JSON only with:
 shortSummary,
 detailedSummary,
@@ -127,8 +128,8 @@ Do not copy raw text. Do not repeat lines. Preserve important formulas.
 Do not invent facts not present in the document.
 
 Rules:
-- shortSummary must be exactly 3 Bangla sentences.
-- detailedSummary should be student-friendly Bangla notes.
+- shortSummary must be exactly 3 sentences in ${outputLanguage}.
+- detailedSummary should be student-friendly notes in ${outputLanguage}.
 - keyPoints must be 5-8 strings.
 - importantTerms must include formulas/terms if available, otherwise key vocabulary.
 - studyNotes must be exam-style notes.
@@ -141,6 +142,8 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
     const uploaded = form.get('file')
+    const requestedLanguage = form.get('language')
+    const summaryLanguage = requestedLanguage === 'en' ? 'en' : 'bn'
     const file = uploaded instanceof File ? uploaded : null
     if (!file) {
       return NextResponse.json({ success: false, error: 'No PDF uploaded.' }, { status: 400 })
@@ -172,7 +175,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const quotaSafeText = text.slice(0, PDF_SUMMARY_LIMITS.chunkChars * 2)
-      const finalRaw = await geminiText(summaryPrompt(quotaSafeText))
+      const finalRaw = await geminiText(summaryPrompt(quotaSafeText, summaryLanguage))
       normalized = normalizeSummaryJson(extractJsonObject(finalRaw))
     } catch (summaryErr) {
       const geminiError = classifyGeminiError(summaryErr)
@@ -181,7 +184,7 @@ export async function POST(req: NextRequest) {
         model: geminiError.model,
         message: geminiError.message,
       })
-      normalized = createLocalPdfSummary(text, file.name, pages)
+      normalized = createLocalPdfSummary(text, file.name, pages, summaryLanguage)
       warning = userMessageForGeminiError(geminiError)
       fallbackReason = geminiError.type
     }
@@ -191,7 +194,7 @@ export async function POST(req: NextRequest) {
       fileName: file.name,
       pages,
       pdfType: 'text_pdf',
-      summaryLanguage: 'bn',
+      summaryLanguage,
       ...normalized,
       extractedText: text,
       warning: warning || normalized.warning,

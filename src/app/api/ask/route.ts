@@ -95,6 +95,20 @@ const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000)
 const CHAKMA_BENGALI_ROWS = chakmaBridgeRows as ChakmaBridgeRow[]
 
+function responseLanguageName(language: string) {
+  return language === 'en' ? 'simple English' : 'simple Bangla'
+}
+
+function diagramLanguageName(language: string) {
+  return language === 'en' ? 'English-labeled' : 'Bangla-labeled'
+}
+
+function diagramSeedLabels(language: string) {
+  return language === 'en'
+    ? { main: 'Main concept', type: 'Type', example: 'Example' }
+    : { main: 'মূল ধারণা', type: 'প্রকার', example: 'উদাহরণ' }
+}
+
 function profileInstruction(profile?: StudentProfileContext) {
   const level = String(profile?.level || '').toUpperCase()
   const goal = String(profile?.goal || '')
@@ -342,8 +356,58 @@ function introFor(emotion: EmotionState) {
   return 'à¦­à¦¾à¦²à§‹ à¦ªà§à¦°à¦¶à§à¦¨à¥¤'
 }
 
+function introForLanguage(emotion: EmotionState, language = 'bn') {
+  if (language !== 'en') return introFor(emotion)
+  if (emotion === 'frustrated') return "Don't worry, let's break it down simply."
+  if (emotion === 'confused') return "Let's start with an easy example."
+  return 'Good question.'
+}
+
 function answerFromLesson(lessonKey: LessonKey, mode: OutputMode, emotion: EmotionState, language: string) {
   const lesson = LESSONS[lessonKey]
+  if (language === 'en') {
+    const intro = introForLanguage(emotion, 'en')
+    const englishFacts: Record<LessonKey, string[]> = {
+      newton_second_law: [
+        "Newton's second law says force equals mass times acceleration: F = ma.",
+        'For the same mass, a bigger force creates more acceleration. For the same force, a bigger mass creates less acceleration.',
+        'Example: an empty cart is easier to push than a loaded cart because the loaded cart has more mass.',
+      ],
+      metallic_bond: [
+        'A metallic bond is the attraction between positive metal ions and free-moving electrons around them.',
+        'The outer electrons are not strongly attached to only one atom; they spread through the metal like a sea of electrons.',
+        'Because of these free electrons, metals conduct electricity, are malleable, and often look shiny.',
+      ],
+      ionic_bond: [
+        'An ionic bond forms when one atom gives away electrons and another atom accepts them.',
+        'The atom that loses electrons becomes a positive ion, and the atom that gains electrons becomes a negative ion.',
+        'The attraction between opposite charges holds the ionic bond together.',
+      ],
+      photosynthesis: [
+        'Photosynthesis is the process where green plants use sunlight to make food.',
+        'Plants need light, water, carbon dioxide, and chlorophyll for this process.',
+        'The products are glucose and oxygen.',
+      ],
+      quadratic_formula: [
+        'A quadratic equation usually looks like ax² + bx + c = 0.',
+        'Its solution formula is x = (-b ± √(b² - 4ac)) / 2a.',
+        'First identify a, b, and c, then substitute them into the formula step by step.',
+      ],
+      creative_answer: [
+        'A creative answer should start with the main idea, then explain it, then add a relevant example.',
+        'Read the command word carefully, such as explain, analyze, or evaluate.',
+        'Clear paragraphs and textbook-linked examples help improve marks.',
+      ],
+    }
+    const facts = englishFacts[lessonKey]
+    if (mode === 'exam') {
+      return `Definition: ${facts[0]}\n\nExplanation: ${facts[1]}\n\nImportance/example: ${facts[2]}\n\nSocratic check: Which feature or cause is most important here?`
+    }
+    if (mode === 'simple') {
+      return `${intro} ${facts[0]} ${facts[2]} Now say it in one line: what is the main cause or relationship here?`
+    }
+    return `${intro} ${facts.join(' ')} Socratic check: Which earlier idea do you need to know to understand this concept?`
+  }
   const cultural = language !== 'bn' ? 'CHT example à¦§à¦°à¦²à§‡, jhum farming-à¦à¦° à¦®à¦¤à§‹ à¦à¦–à¦¾à¦¨à§‡ à¦›à§‹à¦Ÿ à¦›à§‹à¦Ÿ à¦…à¦‚à¦¶ à¦®à¦¿à¦²à§‡ à¦ªà§à¦°à§‹ à¦ªà§à¦°à¦•à§à¦°à¦¿à¦¯à¦¼à¦¾ à¦¤à§ˆà¦°à¦¿ à¦¹à¦¯à¦¼à¥¤ ' : ''
 
   if (mode === 'exam') {
@@ -800,8 +864,19 @@ NADH ও FADH2 পরে Electron Transport Chain-এ ATP উৎপাদনে 
   return genericStructuredFallback(question)
 }
 
-function fallbackConceptDiagram(fallbackTitle: string) {
+function fallbackConceptDiagram(fallbackTitle: string, language = 'bn') {
   const title = (fallbackTitle || 'Concept').replace(/[[\]{}|"`]/g, ' ').slice(0, 36)
+  if (language === 'en') {
+    return `flowchart LR
+  A[${title}] --> B[Definition]
+  A --> C[Key features]
+  A --> D[Example]
+  B --> E[Main reason]
+  C --> E
+  D --> F[Real use]
+  E --> G[Core idea]
+  F --> G`
+  }
   return `flowchart LR
   A[${title}] --> B[সংজ্ঞা]
   A --> C[বৈশিষ্ট্য]
@@ -908,13 +983,13 @@ function specificDiagramForQuestion(question: string) {
   return null
 }
 
-function safeDiagram(value: unknown, fallbackTitle: string, question?: string) {
+function safeDiagram(value: unknown, fallbackTitle: string, question?: string, language = 'bn') {
   const specific = question ? specificDiagramForQuestion(question) : null
   if (specific) return specific
   if (typeof value === 'string' && /^(graph|flowchart)\s+/i.test(value.trim()) && !looksMojibake(value) && !isGenericDiagram(value, question)) {
     return value.trim()
   }
-  return fallbackDiagramForQuestion(question || fallbackTitle, fallbackTitle)
+  return fallbackDiagramForQuestion(question || fallbackTitle, fallbackTitle, language)
 }
 
 function extractMermaid(text: string) {
@@ -979,20 +1054,52 @@ Rules:
   }
 }
 
-function fallbackDiagramForQuestion(question: string, fallbackTitle: string) {
+function fallbackDiagramForQuestion(question: string, fallbackTitle: string, language = 'bn') {
   const normalized = question.toLowerCase()
   const specific = specificDiagramForQuestion(question)
   if (specific) return specific
   if (/glucose|গ্লুকোজ/.test(normalized)) {
+    if (language === 'en') {
+      return 'graph LR\n  A[Glucose] --> B[Simple sugar]\n  A --> C[Cell energy]\n  A --> D[Made by photosynthesis]\n  A --> E[Comes from food]\n  C --> F[ATP production]\n  D --> G[Plant food]'
+    }
     return 'graph LR\n  A[গ্লুকোজ] --> B[সরল শর্করা]\n  A --> C[কোষের শক্তি]\n  A --> D[সালোকসংশ্লেষণে তৈরি]\n  A --> E[খাবার থেকে পাওয়া যায়]\n  C --> F[ATP তৈরি]\n  D --> G[উদ্ভিদের খাদ্য]'
   }
   if (/à¦–à¦¨à¦¿à¦œ|à¦§à¦¨à¦¿à¦œ|mineral/.test(normalized)) {
+    if (language === 'en') {
+      return 'graph LR\n  A[Natural source] --> B[Mineral substance]\n  B --> C[Metallic mineral]\n  B --> D[Non-metallic mineral]\n  B --> E[Fuel mineral]\n  C --> F[Iron and copper]\n  D --> G[Salt and limestone]\n  E --> H[Coal and gas]'
+    }
     return 'graph LR\n  A[à¦ªà§à¦°à¦¾à¦•à§ƒà¦¤à¦¿à¦• à¦‰à§Žà¦¸] --> B[à¦–à¦¨à¦¿à¦œ à¦ªà¦¦à¦¾à¦°à§à¦¥]\n  B --> C[à¦§à¦¾à¦¤à¦¬ à¦–à¦¨à¦¿à¦œ]\n  B --> D[à¦…à¦§à¦¾à¦¤à¦¬ à¦–à¦¨à¦¿à¦œ]\n  B --> E[à¦œà§à¦¬à¦¾à¦²à¦¾à¦¨à¦¿ à¦–à¦¨à¦¿à¦œ]\n  C --> F[à¦²à§‹à¦¹à¦¾ à¦“ à¦¤à¦¾à¦®à¦¾]\n  D --> G[à¦²à¦¬à¦£ à¦“ à¦šà§à¦¨à¦¾à¦ªà¦¾à¦¥à¦°]\n  E --> H[à¦•à§Ÿà¦²à¦¾ à¦“ à¦—à§à¦¯à¦¾à¦¸]'
   }
   if (/à¦¤à¦°à¦²|liquid|fluid/.test(normalized)) {
+    if (language === 'en') {
+      return 'graph LR\n  A[Liquid substance] --> B[Fixed volume]\n  A --> C[No fixed shape]\n  A --> D[Can flow]\n  A --> E[Applies pressure]\n  C --> F[Takes container shape]'
+    }
     return 'graph LR\n  A[à¦¤à¦°à¦² à¦ªà¦¦à¦¾à¦°à§à¦¥] --> B[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à§Ÿà¦¤à¦¨]\n  A --> C[à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ à¦†à¦•à¦¾à¦° à¦¨à§‡à¦‡]\n  A --> D[à¦ªà§à¦°à¦¬à¦¾à¦¹à¦¿à¦¤ à¦¹à§Ÿ]\n  A --> E[à¦šà¦¾à¦ª à¦ªà§à¦°à§Ÿà§‹à¦— à¦•à¦°à§‡]\n  C --> F[à¦ªà¦¾à¦¤à§à¦°à§‡à¦° à¦†à¦•à¦¾à¦° à¦¨à§‡à§Ÿ]'
   }
-  return fallbackConceptDiagram(fallbackTitle)
+  return fallbackConceptDiagram(fallbackTitle, language)
+}
+
+function lessonDiagram(lessonKey: LessonKey, language = 'bn') {
+  if (language !== 'en') return LESSONS[lessonKey].diagram
+  if (lessonKey === 'newton_second_law') {
+    return 'graph LR\n  A[Force F] --> B[Mass m]\n  A --> C[Acceleration a]\n  B --> D[F = ma]\n  C --> D\n  D --> E[Motion change]'
+  }
+  if (lessonKey === 'metallic_bond') {
+    return 'graph LR\n  A[Metal atom] --> B[Free electrons]\n  A --> C[Positive metal ion]\n  B --> D[Sea of electrons]\n  C --> E[Attraction]\n  D --> E\n  E --> F[Metallic bond]'
+  }
+  if (lessonKey === 'ionic_bond') {
+    return 'graph LR\n  A[Metal] --> B[Loses electron]\n  C[Non-metal] --> D[Gains electron]\n  B --> E[Positive ion]\n  D --> F[Negative ion]\n  E --> G[Ionic bond]\n  F --> G'
+  }
+  if (lessonKey === 'photosynthesis') {
+    return 'graph LR\n  A[Light] --> D[Photosynthesis]\n  B[CO2] --> D\n  C[Water] --> D\n  D --> E[Glucose]\n  D --> F[Oxygen]'
+  }
+  if (lessonKey === 'quadratic_formula') {
+    return 'graph LR\n  A[ax²+bx+c=0] --> B[Find a,b,c]\n  B --> C[Use formula]\n  C --> D[Value of x]\n  D --> E[Check answer]'
+  }
+  if (lessonKey === 'creative_answer') {
+    return 'graph LR\n  A[Read question] --> B[Find command word]\n  B --> C[Main idea]\n  C --> D[Explanation]\n  D --> E[Example]'
+  }
+  return fallbackConceptDiagram('Concept', language)
 }
 
 function learnerLanguageToTargetLanguage(language: string): TargetLanguage {
@@ -1288,9 +1395,12 @@ Rules:
   }
 }
 
-function fallbackOcrContextAnswer(question: string, extractedText: string, emotion: EmotionState) {
-  const intro = introFor(emotion)
+function fallbackOcrContextAnswer(question: string, extractedText: string, emotion: EmotionState, language = 'bn') {
+  const intro = introForLanguage(emotion, language)
   const readable = extractedText.replace(/\s+/g, ' ').trim().slice(0, 520)
+  if (language === 'en') {
+    return `${intro} From the uploaded text, I can read: ${readable}${extractedText.length > 520 ? '...' : ''}\n\nYour question: ${question}\n\nUse the readable text first: identify the main idea, keywords, formulas, or question number, then answer that exact part. If you mention a specific question number, I can focus the answer more directly. Quick check: which line or keyword in the uploaded text looks most important?`
+  }
   return `${intro} Uploaded text à¦¥à§‡à¦•à§‡ à¦¯à¦¾ à¦ªà§œà¦¾ à¦¯à¦¾à¦šà§à¦›à§‡: ${readable}${extractedText.length > 520 ? '...' : ''}\n\nà¦¤à§‹à¦®à¦¾à¦° à¦ªà§à¦°à¦¶à§à¦¨: ${question}\n\nà¦à¦‡ text-à¦à¦° à¦­à¦¿à¦¤à§à¦¤à¦¿à¦¤à§‡ à¦†à¦—à§‡ main idea, keyword, à¦†à¦° à¦•à§‹à¦¨à§‹ equation/question number à¦šà¦¿à¦¹à§à¦¨à¦¿à¦¤ à¦•à¦°à§‹à¥¤ à¦¤à¦¾à¦°à¦ªà¦° à¦“à¦‡ à¦…à¦‚à¦¶ à¦§à¦°à§‡ à¦‰à¦¤à§à¦¤à¦° à¦¸à¦¾à¦œà¦¾à¦“à¥¤ à¦¯à¦¦à¦¿ à¦¤à§à¦®à¦¿ specific question number à¦¬à¦²à§‹, à¦†à¦®à¦¿ à¦¸à§‡à¦‡ à¦…à¦‚à¦¶ à¦§à¦°à§‡ à¦†à¦°à¦“ à¦¸à¦°à¦¾à¦¸à¦°à¦¿ answer à¦¸à¦¾à¦œà¦¿à§Ÿà§‡ à¦¦à§‡à¦¬à¥¤ Socratic check: à¦à¦‡ uploaded text-à¦ à¦•à§‹à¦¨ line à¦¬à¦¾ keyword à¦¸à¦¬à¦šà§‡à§Ÿà§‡ à¦—à§à¦°à§à¦¤à§à¦¬à¦ªà§‚à¦°à§à¦£ à¦®à¦¨à§‡ à¦¹à¦šà§à¦›à§‡?`
 }
 
@@ -1314,6 +1424,8 @@ async function dynamicGeminiNode(params: {
     : ''
 
   const curriculumContext = curriculumContextText(params.curriculumChunks)
+  const answerLanguage = responseLanguageName(params.language)
+  const diagramLanguage = diagramLanguageName(params.language)
 
   const prompt = `You are VoicePandita's dynamic GraphRAG planner for SSC/HSC/admission students in Bangladesh.
 The question may be new and not in the local graph. Create a fresh curriculum-safe concept node.
@@ -1338,13 +1450,14 @@ Return ONLY valid JSON with this shape:
   "subject": "Physics/Chemistry/Biology/Math/Bangla/English",
   "conceptTitle": "short concept title",
   "graphPath": ["Subject", "Chapter", "Topic", "Subtopic"],
-  "answer": "Bangla answer, max 130 words, exact to the question, no unrelated concept",
-  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; use a natural concept-map shape with branches"
+  "answer": "Answer in ${answerLanguage}, max 130 words, exact to the question, no unrelated concept",
+  "diagram": "valid Mermaid flowchart LR with 5-8 specific ${diagramLanguage} nodes; use a natural concept-map shape with branches"
 }
 
 Rules:
 - Infer the true school subject from the question first; the selected subject may be wrong.
 - Must answer the exact question.
+- Answer in ${answerLanguage}.
 - If the question refers to "this/ei/eta/related/previous", resolve it from recent chat context and keep the same concept unless the student clearly changes topic.
 - If the student asks repeated words like 'à¦•à¦°à§‹ à¦•à¦°à§‹ à¦•à¦°à§‹', ignore repetition.
 - If emotion is confused, use a simple analogy.
@@ -1389,7 +1502,10 @@ async function directGeminiAnswer(params: {
   curriculumChunks?: RetrievedCurriculumChunk[]
 }) {
   const isFollowUp = looksLikeFollowUp(params.question)
-  const prompt = `You are VoicePandita, a careful Bangla tutor and concept-map builder for SSC/HSC/admission students in Bangladesh.
+  const answerLanguage = responseLanguageName(params.language)
+  const diagramLanguage = diagramLanguageName(params.language)
+  const diagramLabels = diagramSeedLabels(params.language)
+  const prompt = `You are VoicePandita, a careful tutor and concept-map builder for SSC/HSC/admission students in Bangladesh.
 
 Student question: ${params.question}
 Selected subject from UI (weak hint only, may be wrong): ${params.selectedSubject}
@@ -1410,12 +1526,13 @@ Return ONLY valid JSON with this shape:
   "subject": "best inferred subject in English",
   "conceptTitle": "short English concept title",
   "graphPath": ["Subject", "Chapter/Unit", "Concept"],
-  "answer": "Bangla answer, exact to the question. Use newline-separated sections. For numerical/math problems include প্রদত্ত, সূত্র/ধারণা, সমাধান, চূড়ান্ত উত্তর, সাধারণ ভুল.",
-  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes; include natural branches"
+  "answer": "Answer in ${answerLanguage}, exact to the question. Use newline-separated sections. For numerical/math problems include clear given/formula/solution/final-answer/common-mistake sections in the selected language.",
+  "diagram": "valid Mermaid flowchart LR with 5-8 specific ${diagramLanguage} nodes; include natural branches"
 }
 
 Rules:
 - Do not say curriculum context is missing.
+- Answer in ${answerLanguage}.
 - Do not switch to Newton's law, bonding, or another unrelated concept.
 - If this is a follow-up, keep the same topic/chapter from recent chat context unless the student clearly names a new topic.
 - For questions like "HSC te ei related ki ki question aste pare?", answer for the previous concept and list likely HSC-style questions for that concept.
@@ -1462,13 +1579,13 @@ Rules:
 - For SSC/HSC board goal, include definition/explanation/example style when useful.
 - For admission goal, include intuition, formula/logic, and trap warnings when useful.
 - Answer should usually be 120-260 words for whiteboard/text mode, 60-100 words for simple mode, and marks-friendly with labeled steps for exam mode.
-- Keep Bangla clear and student-friendly; technical English terms are okay when common in textbooks.
+- Keep the answer clear and student-friendly; technical English terms are okay when common in textbooks.
 - Diagram must not be generic like Question -> Cause -> Result -> Understand.
 - Diagram must not use generic Bangla nodes like সংজ্ঞা, বৈশিষ্ট্য, উদাহরণ, মূল কারণ, মূল শিক্ষা, বাস্তব ব্যবহার unless those are genuinely the requested topic.
 - Diagram nodes must name the actual concept, types, examples, properties, or process steps.
 - Diagram must branch naturally from one main concept into properties/types/examples; do not force unrelated merge nodes.
 - For biology process questions, diagram the real process sequence. For Krebs/Citric acid/TCA cycle, include Acetyl-CoA, Citrate, Isocitrate, Alpha-ketoglutarate, Succinyl-CoA, Succinate, Fumarate, Malate, Oxaloacetate, NADH/FADH2/ATP/CO2.
-- Diagram must use this Mermaid style: graph LR\\n  A[মূল ধারণা] --> B[প্রকার]\\n  B --> C[উদাহরণ]
+- Diagram must use this Mermaid style: graph LR\\n  A[${diagramLabels.main}] --> B[${diagramLabels.type}]\\n  B --> C[${diagramLabels.example}]
 - End with one Socratic follow-up question.`
 
   const raw = await geminiText(prompt)
@@ -1514,6 +1631,8 @@ async function ocrContextGeminiAnswer(params: {
   curriculumChunks?: RetrievedCurriculumChunk[]
 }) {
   const curriculumContext = curriculumContextText(params.curriculumChunks)
+  const answerLanguage = responseLanguageName(params.language)
+  const diagramLanguage = diagramLanguageName(params.language)
 
   const prompt = `You are VoicePandita, a helpful tutor for students in Bangladesh.
 The student uploaded educational text from an image. Use the extracted text as the primary context.
@@ -1543,15 +1662,16 @@ Return ONLY valid JSON with this shape:
   "subject": "best inferred subject in English",
   "conceptTitle": "short English concept title",
   "graphPath": ["Subject", "Chapter/Unit", "Concept"],
-  "answer": "Bangla answer, exact to the student's question, clear and helpful",
-  "diagram": "valid Mermaid flowchart LR with 5-8 specific Bangla-labeled nodes"
+  "answer": "Answer in ${answerLanguage}, exact to the student's question, clear and helpful",
+  "diagram": "valid Mermaid flowchart LR with 5-8 specific ${diagramLanguage} nodes"
 }
 
 Rules:
 - Use the extracted text first.
+- Answer in ${answerLanguage}. Keep extracted source text as-is when quoting it.
 - Use retrieved curriculum context only when it is relevant.
 - If the student asks for an answer to a numbered question, answer that question from the extracted text.
-- If the student asks to explain, explain simply in Bangla.
+- If the student asks to explain, explain simply in ${answerLanguage}.
 - If the uploaded text is incomplete, say what is readable and continue with the most likely explanation.
 - Do not say "not in curriculum" unless the student explicitly asks for curriculum-only mode.
 - Do not invent fake citations or textbook page numbers.
@@ -1829,8 +1949,14 @@ export async function POST(req: NextRequest) {
     if (!originalQuestion) return NextResponse.json({ error: 'Question required' }, { status: 400 })
 
     const outputMode = String(body.outputMode || 'whiteboard') as OutputMode
+    const uiLanguage = String(body.uiLanguage || '').toLowerCase() === 'en' ? 'en' : 'bn'
+    const learnerLanguage = String(body.language || 'bn').toLowerCase()
     const selectedTargetLanguage = normalizeTargetLanguage(body.selected_target_language || body.target_language || body.language || 'Bangla')
-    const selectedLanguageForDetection = normalizeSelectedLearnLanguage(body.language || body.selected_target_language || body.target_language || selectedTargetLanguage)
+    const selectedLanguageForDetection = normalizeSelectedLearnLanguage(
+      learnerLanguage !== 'bn'
+        ? learnerLanguage
+        : body.uiLanguage || body.language || body.selected_target_language || body.target_language || selectedTargetLanguage
+    )
     const scriptDetection = detectScriptWithConfidence(originalQuestion)
     const languageDetection = detectLanguage({
       text: originalQuestion,
@@ -1838,7 +1964,7 @@ export async function POST(req: NextRequest) {
     })
     const route = detectMultilingualRoute(originalQuestion, selectedTargetLanguage)
     const targetLanguage = route.targetLanguage
-    const language = targetLanguageToCode(targetLanguage)
+    const language = learnerLanguage !== 'bn' ? targetLanguageToCode(targetLanguage) : uiLanguage
     const inputLanguage = languageDetection.language
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
@@ -1903,7 +2029,7 @@ export async function POST(req: NextRequest) {
 
     let lesson = lessonKey ? LESSONS[lessonKey] : null
     let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
-    let diagram: string | null = lesson?.diagram || specificDiagramForQuestion(conceptSignal)
+    let diagram: string | null = lessonKey ? lessonDiagram(lessonKey, language) : specificDiagramForQuestion(conceptSignal)
     let graphPath: string[] = lesson ? [...lesson.path] : [selectedSubject || 'Curriculum', 'Needs Clarification']
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
     let mode: 'ocr_context' | 'curriculum_guided' | 'general_fallback' = lessonKey ? 'curriculum_guided' : 'general_fallback'
@@ -1923,7 +2049,7 @@ export async function POST(req: NextRequest) {
     try {
       if (/glucose|গ্লুকোজ/.test(conceptSignal.toLowerCase())) {
         answer = fallbackAnswerForQuestion(question)
-        diagram = fallbackDiagramForQuestion(question, 'Glucose')
+        diagram = fallbackDiagramForQuestion(question, 'Glucose', language)
         graphPath = ['Biology', 'Carbohydrate', 'Glucose']
         source = 'local-known-concept'
         mode = 'curriculum_guided'
@@ -1963,7 +2089,7 @@ export async function POST(req: NextRequest) {
       } else {
         const activeLesson = lesson
         if (!activeLesson) throw new Error('Lesson not found')
-        const prompt = `You are VoicePandita, a Bangla tutor for SSC/HSC/admission students.
+        const prompt = `You are VoicePandita, a careful tutor for SSC/HSC/admission students.
 Answer the student's exact question using ONLY this curriculum node.
 
 Graph path: ${activeLesson.path.join(' -> ')}
@@ -1981,7 +2107,7 @@ Recent chat context:
 ${chatContextText(chatContext)}
 
 Rules:
-- Answer in Bangla.
+- Answer in ${responseLanguageName(language)}.
 - Must answer the exact question. Do not switch to another bonding/concept.
 - If the student asks a follow-up using "ei/eta/related/previous", keep the topic from recent chat context.
 - Explain clearly for the student's level and goal.
@@ -2081,7 +2207,9 @@ Rules:
       translatedQuestion: question !== originalQuestion ? question : null,
       curriculumChunkCount: curriculumChunks.length,
       graphPath,
-      pwnMessage: 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
+      pwnMessage: language === 'en'
+        ? 'You are not alone - many students get stuck on this concept.'
+        : 'তুমি একা নও - এই concept নিয়ে অনেক student আটকে যায়।',
       source: languageSource,
       mode,
       grounding,

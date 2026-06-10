@@ -40,6 +40,7 @@ export function hasGuestAuthCookie() {
 export async function getAuthenticatedStudent(): Promise<StudentIdentity | null> {
   try {
     const current = getCurrentStudent()
+    if (current.isGuest) return current
     if (current.isDemo || hasDemoAuthCookie()) {
       if (!current.isDemo) setCurrentStudent(DEMO_STUDENT)
       return current.isDemo ? current : DEMO_STUDENT
@@ -56,7 +57,8 @@ export async function getAuthenticatedStudent(): Promise<StudentIdentity | null>
     const student = {
       id: data.user.id,
       email: data.user.email || 'student@voicepandita.local',
-      name: data.user.email?.split('@')[0] || 'Student',
+      name: data.user.user_metadata?.full_name || data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'Student',
+      avatarUrl: data.user.user_metadata?.avatar_url || data.user.user_metadata?.picture,
     }
     setCurrentStudent(student)
     return student

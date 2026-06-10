@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check, ChevronDown, ChevronUp, Clipboard, FileText, Loader2, Upload, X } from 'lucide-react'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { useLanguage } from '@/components/LanguageProvider'
 
 type PdfSummaryResponse = {
   success: boolean
@@ -10,7 +12,7 @@ type PdfSummaryResponse = {
   fileName?: string
   pages?: number
   pdfType?: 'text_pdf' | 'scanned_or_empty'
-  summaryLanguage?: 'bn'
+  summaryLanguage?: 'bn' | 'en'
   shortSummary?: string
   detailedSummary?: string
   keyPoints?: string[]
@@ -21,9 +23,6 @@ type PdfSummaryResponse = {
   warning?: string
   fallbackReason?: string
 }
-
-const scannedMessage = 'এই PDF থেকে text পাওয়া যায়নি। এটি scanned PDF হতে পারে। অনুগ্রহ করে text-based PDF upload করুন অথবা OCR/manual text mode ব্যবহার করুন।'
-const fallbackMessage = 'Gemini quota reached. Showing local study summary.'
 
 function SummaryList({ items }: { items?: string[] }) {
   if (!items?.length) return <p className="text-sm leading-6 text-ink/50">এই অংশে আলাদা তথ্য পাওয়া যায়নি।</p>
@@ -88,6 +87,7 @@ function Paragraphs({ text }: { text?: string }) {
 }
 
 export default function PdfSummaryPage() {
+  const { language, t } = useLanguage()
   const fileRef = useRef<HTMLInputElement>(null)
   const [summary, setSummary] = useState<PdfSummaryResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -108,18 +108,19 @@ export default function PdfSummaryPage() {
     try {
       const form = new FormData()
       form.append('file', file)
+      form.append('language', language)
       const res = await fetch('/api/pdf-summary', { method: 'POST', body: form })
       const data = (await res.json()) as PdfSummaryResponse
 
       if (!data.success) {
-        setError(data.pdfType === 'scanned_or_empty' ? scannedMessage : data.error || scannedMessage)
+        setError(data.pdfType === 'scanned_or_empty' ? t('pdf.scannedError') : data.error || t('pdf.scannedError'))
         setSummary(data)
         return
       }
 
       setSummary(data)
     } catch {
-      setError('PDF summary তৈরি করা যায়নি। একটু পরে আবার চেষ্টা করুন।')
+      setError(t('pdf.genericError'))
     } finally {
       setLoading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -176,10 +177,11 @@ export default function PdfSummaryPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link href="/learn" className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/75 px-4 py-2 text-sm font-semibold text-ink/70 shadow-sm hover:text-forest">
-            <ArrowLeft size={16} /> Back to Learn
+            <ArrowLeft size={16} /> {t('common.backToLearn')}
           </Link>
+          <LanguageSwitcher />
           <div className="rounded-full border border-forest/15 bg-white/75 px-4 py-2 text-xs font-semibold text-forest">
-            PDF Summary v1
+            {t('pdf.badge')}
           </div>
         </div>
 
@@ -187,9 +189,9 @@ export default function PdfSummaryPage() {
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-forest to-indigo text-white shadow-lg shadow-forest/20">
             <FileText size={28} />
           </div>
-          <h1 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">PDF থেকে Bangla Study Summary</h1>
+          <h1 className="font-display text-4xl font-bold tracking-tight text-ink md:text-5xl">{t('pdf.title')}</h1>
           <p className="mt-3 text-sm leading-6 text-ink/60 md:text-base">
-            Text-based PDF upload করুন, VoicePandita short summary, key points, terms, formulas, আর exam notes বানাবে।
+            {t('pdf.subtitle')}
           </p>
         </section>
 
@@ -208,8 +210,8 @@ export default function PdfSummaryPage() {
             className="flex w-full flex-col items-center justify-center rounded-3xl border border-dashed border-forest/25 bg-paper/70 px-6 py-10 text-center transition hover:border-forest/45 hover:bg-white disabled:opacity-60"
           >
             {loading ? <Loader2 size={30} className="mb-3 animate-spin text-forest" /> : <Upload size={30} className="mb-3 text-forest" />}
-            <span className="text-base font-bold text-ink">{loading ? 'Generating summary...' : 'Upload PDF for Summary'}</span>
-            <span className="mt-2 text-xs text-ink/50">PDF only, max 10MB, max 20 pages</span>
+            <span className="text-base font-bold text-ink">{loading ? t('pdf.generating') : t('pdf.uploadTitle')}</span>
+            <span className="mt-2 text-xs text-ink/50">{t('pdf.limits')}</span>
           </button>
 
           {error && (
@@ -223,17 +225,17 @@ export default function PdfSummaryPage() {
           <section className="mt-8 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/70 bg-white/80 px-5 py-4 shadow-lg shadow-forest/5">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-forest">Generated Bangla summary</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-forest">{t('pdf.generated')}</p>
                 <h2 className="mt-1 text-lg font-bold text-ink">{summary.fileName}</h2>
                 <p className="text-sm text-ink/60">{summary.pages} pages · {summary.pdfType}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={copySummary} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-forest to-indigo px-4 py-2 text-sm font-semibold text-white shadow-sm">
                   {copied ? <Check size={15} /> : <Clipboard size={15} />}
-                  {copied ? 'Copied' : 'Copy Summary'}
+                  {copied ? t('common.copied') : t('pdf.copySummary')}
                 </button>
                 <button onClick={clearSummary} className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/70 px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm hover:bg-white">
-                  <X size={15} /> Clear
+                  <X size={15} /> {t('common.clear')}
                 </button>
               </div>
             </div>
@@ -241,8 +243,8 @@ export default function PdfSummaryPage() {
             <div className="grid gap-4 lg:grid-cols-2">
               {fallbackActive && (
                 <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 lg:col-span-2">
-                  <strong className="font-semibold">{fallbackMessage}</strong>
-                  <span className="ml-1">Local fallback summary generated because Gemini quota/rate limit was reached.</span>
+                  <strong className="font-semibold">{t('pdf.fallback')}</strong>
+                  <span className="ml-1">{t('pdf.fallbackDetail')}</span>
                 </div>
               )}
 
@@ -253,27 +255,27 @@ export default function PdfSummaryPage() {
               )}
 
               <article className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-forest/5">
-                <h3 className="mb-3 font-display text-2xl font-bold text-ink">Short Summary</h3>
+                <h3 className="mb-3 font-display text-2xl font-bold text-ink">{t('pdf.shortSummary')}</h3>
                 <Paragraphs text={summary.shortSummary} />
               </article>
 
               <article className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-forest/5 lg:row-span-2">
-                <h3 className="mb-3 font-display text-2xl font-bold text-ink">Detailed Summary</h3>
+                <h3 className="mb-3 font-display text-2xl font-bold text-ink">{t('pdf.detailedSummary')}</h3>
                 <Paragraphs text={summary.detailedSummary} />
               </article>
 
               <article className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-forest/5">
-                <h3 className="mb-3 font-display text-2xl font-bold text-ink">Key Points</h3>
+                <h3 className="mb-3 font-display text-2xl font-bold text-ink">{t('pdf.keyPoints')}</h3>
                 <SummaryList items={summary.keyPoints} />
               </article>
 
               <article className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-forest/5">
-                <h3 className="mb-3 font-display text-2xl font-bold text-ink">Important Terms / Formulas</h3>
+                <h3 className="mb-3 font-display text-2xl font-bold text-ink">{t('pdf.terms')}</h3>
                 <TermChips items={summary.importantTerms} />
               </article>
 
               <article className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg shadow-forest/5">
-                <h3 className="mb-3 font-display text-2xl font-bold text-ink">Exam-style Study Notes</h3>
+                <h3 className="mb-3 font-display text-2xl font-bold text-ink">{t('pdf.studyNotes')}</h3>
                 <NumberedNotes items={summary.studyNotes} />
               </article>
 
@@ -286,7 +288,7 @@ export default function PdfSummaryPage() {
                       className="inline-flex items-center gap-2 text-sm font-bold text-forest"
                     >
                       {showExtractedText ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      {showExtractedText ? 'Hide extracted text' : 'Show extracted text'}
+                      {showExtractedText ? t('pdf.hideExtracted') : t('pdf.showExtracted')}
                     </button>
                     {showExtractedText && (
                       <button
@@ -295,7 +297,7 @@ export default function PdfSummaryPage() {
                         className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-ink/60 shadow-sm hover:bg-white"
                       >
                         {copiedExtracted ? <Check size={14} /> : <Clipboard size={14} />}
-                        {copiedExtracted ? 'Copied' : 'Copy text'}
+                        {copiedExtracted ? t('common.copied') : t('pdf.copyText')}
                       </button>
                     )}
                   </div>
