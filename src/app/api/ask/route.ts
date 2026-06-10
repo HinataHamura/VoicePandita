@@ -25,6 +25,7 @@ import {
 import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/marmaBridge'
 import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
 import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
+import { offlineAiEnabled, runOfflineAsk } from '@/lib/offline/offline-ask'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
@@ -91,8 +92,6 @@ const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
 const groqKey = process.env.GROQ_API_KEY?.trim()
 const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
-const ollamaBaseUrl = process.env.OLLAMA_BASE_URL?.trim()
-const ollamaModel = process.env.OLLAMA_MODEL?.trim() || 'qwen3:4b'
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 15000)
 const CHAKMA_BENGALI_ROWS = chakmaBridgeRows as ChakmaBridgeRow[]
 
@@ -167,6 +166,32 @@ function chatContextText(items?: ChatContextItem[]) {
       : ''
     return `${i + 1}. ${role}${path}: ${String(item.text || '').replace(/\s+/g, ' ').slice(0, 900)}`
   }).join('\n')
+}
+
+function offlineAskResponsePayload(result: Awaited<ReturnType<typeof runOfflineAsk>>, outputMode: OutputMode) {
+  const diagram = outputMode === 'simple' || outputMode === 'exam' || outputMode === 'video' ? null : result.diagram
+  return {
+    answer: result.answer,
+    answerText: result.answer,
+    diagram,
+    animationKey: null,
+    detectedEmotion: 'confident',
+    detectedLanguage: 'bn',
+    selectedTargetLanguage: 'Bangla',
+    outputScript: 'Bengali',
+    graphPath: result.graphPath,
+    pwnMessage: 'Offline lightweight model চলছে, তাই answer সংক্ষিপ্ত।',
+    source: 'ollama-offline-curriculum',
+    mode: 'offline_fallback',
+    grounding: result.grounding,
+    provider: result.provider,
+    offline: result.offline,
+    model: result.model,
+    embeddingModel: result.embeddingModel,
+    usedContext: result.usedContext,
+    sources: result.sources,
+    offlineError: result.error,
+  }
 }
 
 function looksLikeFollowUp(question: string) {
@@ -413,33 +438,8 @@ async function geminiText(prompt: string) {
     }
   }
 
-  const local = await ollamaText(prompt)
-  if (local) return local
-
   if (!lastError) return null
   throw lastError
-}
-
-async function ollamaText(prompt: string) {
-  if (!ollamaBaseUrl) return null
-  try {
-    const response = await fetch(`${ollamaBaseUrl.replace(/\/$/, '')}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: ollamaModel,
-        stream: false,
-        messages: [{ role: 'user', content: prompt }],
-        options: { temperature: 0.2, top_p: 0.85 },
-      }),
-    })
-    if (!response.ok) throw new Error(`Ollama ${response.status}: ${await response.text()}`)
-    const data = await response.json()
-    return String(data?.message?.content || data?.response || '').trim() || null
-  } catch (err) {
-    console.warn('/api/ask Ollama fallback failed:', err instanceof Error ? err.message : err)
-    return null
-  }
 }
 
 function isGeminiQuotaOrRateLimit(err: unknown) {
@@ -1842,6 +1842,17 @@ export async function POST(req: NextRequest) {
     const inputLanguage = languageDetection.language
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
+    if ((body.offlineMode === true || body.offline === true) && offlineAiEnabled()) {
+      const offlineResult = await runOfflineAsk({
+        question: originalQuestion,
+        subject: selectedSubject,
+        classLevel: typeof body.classLevel === 'string' ? body.classLevel : undefined,
+        language: typeof body.language === 'string' ? body.language : 'bn',
+      })
+      return NextResponse.json(offlineAskResponsePayload(offlineResult, outputMode), {
+        status: offlineResult.usedContext ? 200 : offlineResult.error ? 503 : 200,
+      })
+    }
     if (body.offline === true) {
       const [offlineResult] = await searchOffline(originalQuestion, {
         baseUrl: new URL(req.url).origin,
@@ -1897,6 +1908,17 @@ export async function POST(req: NextRequest) {
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
     let mode: 'ocr_context' | 'curriculum_guided' | 'general_fallback' = lessonKey ? 'curriculum_guided' : 'general_fallback'
     const grounding = groundingInfo(curriculumChunks, studentProfile)
+    let offlineProvider: 'ollama' | null = null
+    let offlineModel: string | null = null
+    let offlineEmbeddingModel: string | null = null
+    let offlineUsedContext = false
+    let offlineSources: unknown[] = []
+    let offlineGrounding: {
+      grounded: boolean
+      label: string
+      sourceDataset: string | null
+      similarity: number | null
+    } | null = null
 
     try {
       if (/glucose|গ্লুকোজ/.test(conceptSignal.toLowerCase())) {
@@ -1976,7 +1998,25 @@ Rules:
       }
     } catch (err) {
       console.warn('/api/ask Gemini unavailable', err instanceof Error ? err.message : err)
-      if (requestSource === 'ocr' && extractedText) {
+      if (offlineAiEnabled()) {
+        const offlineResult = await runOfflineAsk({
+          question,
+          subject: selectedSubject,
+          classLevel: typeof body.classLevel === 'string' ? body.classLevel : undefined,
+          language,
+        })
+        answer = offlineResult.answer
+        diagram = offlineResult.diagram
+        graphPath = offlineResult.graphPath
+        source = offlineResult.error ? 'ollama-offline-fallback-with-local-pack' : 'ollama-offline-curriculum'
+        mode = 'curriculum_guided'
+        offlineProvider = offlineResult.provider
+        offlineModel = offlineResult.model
+        offlineEmbeddingModel = offlineResult.embeddingModel
+        offlineUsedContext = offlineResult.usedContext
+        offlineSources = offlineResult.sources
+        offlineGrounding = offlineResult.grounding
+      } else if (requestSource === 'ocr' && extractedText) {
         answer = fallbackOcrContextAnswer(question, extractedText, emotion)
         diagram = specificDiagramForQuestion(`${extractedText}\n${question}`)
         graphPath = ['Uploaded Text', selectedSubject || 'General', question.slice(0, 30) || 'OCR Context']
@@ -2045,6 +2085,17 @@ Rules:
       source: languageSource,
       mode,
       grounding,
+      ...(offlineProvider
+        ? {
+            offline: true,
+            provider: offlineProvider,
+            model: offlineModel,
+            embeddingModel: offlineEmbeddingModel,
+            usedContext: offlineUsedContext,
+            sources: offlineSources,
+            grounding: offlineGrounding || grounding,
+          }
+        : {}),
     })
   } catch (err) {
     console.error('/api/ask error:', err)

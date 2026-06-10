@@ -241,7 +241,6 @@ const BN_TO_EN: Record<string, string> = {
   'প্রক্রিয়া':'Process','প্রক্রিয়ায়':'Process','প্রক্রিয়াটি':'Process',
   'ধারাবাহিক':'Continuous','ক্রমাগত':'Continuous','ক্রমান্বয়ে':'Continuous',
   'শক্তি':'Power','শক্তির':'Power',
-  'বাতাসের':'Air',
   // Animals
   'মাছ':'Fish','পাখি':'Bird','কুকুর':'Dog','বিড়াল':'Cat',
   'গরু':'Cow','ছাগল':'Goat','ঘোড়া':'Horse','হাতি':'Elephant',
@@ -259,7 +258,7 @@ const BN_TO_EN: Record<string, string> = {
   'ভাত':'Rice','রুটি':'Bread','দুধ':'Milk','ডিম':'Egg',
   'মাংস':'Meat','সবজি':'Vegetable','চা':'Tea',
   'চিনি':'Sugar','লবণ':'Salt','তেল':'Oil',
-  'ফলমূল':'Fruit','শাকসবজি':'Vegetable',
+  'শাকসবজি':'Vegetable',
   'খাবার':'Food','খাদ্য':'Food','পানীয়':'Drink',
   // Body Parts
   'হাত':'Hand','পা':'Leg','মাথা':'Head','চোখ':'Eye',
@@ -429,7 +428,7 @@ function stripEnSuffix(n: string): string[] {
       stems.push(stem + 'i')
     }
   }
-  return [...new Set(stems)]
+  return Array.from(new Set(stems))
 }
 
 // ─── Dataset ──────────────────────────────────────────────────────────────────
@@ -600,7 +599,7 @@ function lookupWord(
   // 6. Substring match (last resort for short words)
   // Only for words ≥ 4 chars to avoid false positives
   if (n.length >= 4) {
-    for (const [key, entry] of idx) {
+    for (const [key, entry] of Array.from(idx)) {
       if (key.startsWith(n) && key.length - n.length <= 3) return entry
       if (n.startsWith(key) && n.length - key.length <= 3) return entry
     }

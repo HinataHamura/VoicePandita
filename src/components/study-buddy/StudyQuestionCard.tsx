@@ -5,6 +5,7 @@ import StudyAnswerOptions from './StudyAnswerOptions'
 export default function StudyQuestionCard(props: {
   question: StudyRoomQuestion
   selected?: string
+  revealAnswer?: boolean
   answeredCount: number
   memberCount: number
   showHint: boolean
@@ -19,10 +20,15 @@ export default function StudyQuestionCard(props: {
           <HelpCircle size={14} />
           Concept check {props.question.question_order}/5
         </span>
-        <span>{props.answeredCount}/{props.memberCount} answered</span>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-1 font-semibold ${props.question.difficulty === 'medium' ? 'bg-indigo/10 text-indigo' : 'bg-forest/10 text-forest'}`}>
+            {props.question.difficulty}
+          </span>
+          <span>{props.answeredCount}/{props.memberCount} answered</span>
+        </div>
       </div>
       <h2 className="bangla mb-4 text-lg font-bold leading-7 text-ink">{props.question.prompt_bn}</h2>
-      <StudyAnswerOptions question={props.question} selected={props.selected} disabled={props.submitting || Boolean(props.selected)} onSelect={props.onSelect} />
+      <StudyAnswerOptions question={props.question} selected={props.selected} revealAnswer={props.revealAnswer} disabled={props.submitting || Boolean(props.selected)} onSelect={props.onSelect} />
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={props.onHint} className="inline-flex items-center gap-2 rounded-xl border border-saffron/30 bg-saffron/15 px-3 py-2 text-xs font-semibold text-orange-700">
           <Lightbulb size={14} />

@@ -24,7 +24,7 @@ export default function StudyBuddyInviteCard(props: {
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-bold text-ink">Bondhu Study Room</h3>
           <p className="bangla mt-1 text-sm leading-6 text-ink/65">
-            এই topic নিয়ে একসাথে ১০ মিনিটে practice করবে? AI host concept বুঝিয়ে ছোট group quiz চালাবে।
+            এই topic নিয়ে ১০ মিনিট group practice করবে? AI host ভালো question দেবে, আর student রা moderated chat-এ আলোচনা করতে পারবে।
           </p>
           {error && <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
           <button

@@ -3,6 +3,7 @@ import type { StudyRoomQuestion } from '@/lib/study-buddy/types'
 export default function StudyAnswerOptions(props: {
   question: StudyRoomQuestion
   selected?: string
+  revealAnswer?: boolean
   disabled?: boolean
   onSelect: (id: string) => void
 }) {
@@ -10,6 +11,9 @@ export default function StudyAnswerOptions(props: {
     <div className="grid gap-2 sm:grid-cols-2">
       {props.question.options.map(option => {
         const active = props.selected === option.id
+        const correct = props.question.correct_answer.id === option.id
+        const wrongSelected = props.revealAnswer && active && !correct
+        const correctRevealed = props.revealAnswer && correct
         return (
           <button
             key={option.id}
@@ -17,9 +21,13 @@ export default function StudyAnswerOptions(props: {
             disabled={props.disabled}
             onClick={() => props.onSelect(option.id)}
             className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-              active
+              correctRevealed
                 ? 'border-forest bg-forest text-white shadow-lg shadow-forest/20'
-                : 'border-white/60 bg-white/75 text-ink hover:border-forest/25 hover:bg-white'
+                : wrongSelected
+                  ? 'border-red-300 bg-red-50 text-red-800'
+                  : active
+                    ? 'border-indigo bg-indigo text-white shadow-lg shadow-indigo/20'
+                    : 'border-white/60 bg-white/75 text-ink hover:border-forest/25 hover:bg-white'
             } disabled:cursor-not-allowed disabled:opacity-70`}
           >
             <span className="mr-2 font-bold">{option.id}.</span>

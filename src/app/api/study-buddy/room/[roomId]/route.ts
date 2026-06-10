@@ -11,7 +11,11 @@ function demoRoom(roomId: string, topicTitle: string) {
       id: roomId,
       topic_title: topicTitle,
       topic_key: 'demo-topic',
-      room_status: 'waiting',
+      subject: null,
+      class_level: null,
+      language: 'bn',
+      source_question: null,
+      room_status: 'active',
       min_members: 3,
       max_members: 5,
       expires_at: new Date(Date.now() + 90000).toISOString(),
@@ -20,7 +24,16 @@ function demoRoom(roomId: string, topicTitle: string) {
       created_at: now,
       updated_at: now,
     },
-    members: [{ display_alias: 'Bondhu 1', member_status: 'active' }],
+    members: [{
+      id: 'demo-member',
+      room_id: roomId,
+      display_alias: 'Bondhu 1',
+      avatar_seed: 'demo',
+      member_status: 'active',
+      joined_at: now,
+      last_seen_at: now,
+      left_at: null,
+    }],
     questions: quiz.questions.map((question, index) => ({
       id: crypto.randomUUID(),
       room_id: roomId,
@@ -38,6 +51,7 @@ function demoRoom(roomId: string, topicTitle: string) {
       id: crypto.randomUUID(),
       room_id: roomId,
       sender_type: 'ai_host',
+      sender_session_id: null,
       message_type: 'system',
       content: quiz.warmupBn,
       safe_content: quiz.warmupBn,
@@ -75,7 +89,7 @@ export async function GET(req: Request, { params }: { params: { roomId: string }
     supabase.from('study_room_members').select('display_alias, avatar_seed, member_status, joined_at, last_seen_at').eq('room_id', parsedRoomId.data).order('joined_at'),
     supabase.from('study_room_questions').select('*').eq('room_id', parsedRoomId.data).order('question_order'),
     supabase.from('study_room_messages').select('*').eq('room_id', parsedRoomId.data).order('created_at', { ascending: true }).limit(80),
-    supabase.from('study_room_answers').select('id, room_id, question_id, is_correct, answered_at, response_ms').eq('room_id', parsedRoomId.data),
+    supabase.from('study_room_answers').select('id, room_id, question_id, anonymous_session_id, answer, is_correct, answered_at, response_ms').eq('room_id', parsedRoomId.data),
   ])
 
   if (room.error) return NextResponse.json({ error: 'Room not found' }, { status: 404 })
@@ -85,6 +99,5 @@ export async function GET(req: Request, { params }: { params: { roomId: string }
     questions: questions.data || [],
     messages: messages.data || [],
     answers: answers.data || [],
-    sessionId,
   })
 }

@@ -20,8 +20,7 @@ export default function StudyBuddyPage() {
           </div>
           <h1 className="font-display text-3xl font-bold text-ink">Bondhu Study Room</h1>
           <p className="bangla mt-3 leading-7 text-ink/65">
-            তোমার মতো আরও কয়েকজন একই concept বুঝতে না পারলে AI host temporary 3-5 জনের room বানাবে।
-            এটা exam mode না, শুধু understanding practice।
+            একই concept নিয়ে কয়েকজন student একসাথে practice করতে পারবে। AI host ভালো question, hint, explanation আর moderated discussion চালাবে।
           </p>
           {!enabled ? (
             <div className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">

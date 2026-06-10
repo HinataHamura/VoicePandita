@@ -24,6 +24,10 @@ export const reportSchema = z.object({
   details: z.string().trim().max(400).optional(),
 })
 
+export const messageSchema = z.object({
+  content: z.string().trim().min(1).max(180),
+})
+
 export const reactionSchema = z.object({
   content: z.enum(['আমি বুঝেছি', 'আমি বুঝিনি', 'আরেকটা hint চাই', 'Explanation আবার দাও']),
 })

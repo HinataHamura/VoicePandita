@@ -3,6 +3,23 @@ export type StudyRoomStatus = 'waiting' | 'active' | 'completed' | 'cancelled' |
 export type StudyRoomSender = 'ai_host' | 'student' | 'system'
 export type StudyRoomMessageType = 'text' | 'question' | 'explanation' | 'system' | 'result'
 
+export const CONCEPT_TAGS_ENUM = {
+  'force-mass-acceleration': 'Force, mass, acceleration relationship (Newton\'s Second Law)',
+  'calculation': 'Numerical problem solving',
+  'real-life': 'Applied real-world example',
+  'light-energy': 'Light as energy source in photosynthesis',
+  'raw-materials': 'CO₂ and water inputs',
+  'light-dependence': 'Light-dependent reactions',
+  'chlorophyll': 'Chlorophyll pigment',
+  'product': 'Glucose and oxygen as products',
+  'conceptual': 'Core concept definition',
+  'daily-example': 'Daily life application',
+  'proportionality': 'Proportional relationships',
+  'summary': 'Concept summary',
+} as const
+
+export type ConceptTag = keyof typeof CONCEPT_TAGS_ENUM
+
 export interface StudyRoom {
   id: string
   topic_key: string

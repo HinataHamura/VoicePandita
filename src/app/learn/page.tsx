@@ -219,6 +219,10 @@ interface Message {
   outputMode?: OutputMode
   studyQuestion?: string
   studyConceptHint?: string
+  offline?: boolean
+  provider?: string
+  model?: string
+  embeddingModel?: string
   grounding?: {
     grounded: boolean
     label?: string
@@ -226,6 +230,15 @@ interface Message {
     similarity?: number | null
   }
   loading?: boolean
+}
+
+type OfflineHealth = {
+  ok: boolean
+  enabled: boolean
+  provider: 'ollama'
+  model: string
+  embeddingModel: string
+  error?: string
 }
 
 const QUICK_QUESTIONS = [
@@ -245,6 +258,31 @@ const OFFLINE_ANSWERS: Record<string, string> = {
   math: 'Offline pack: ax²+bx+c=0 হলে x = (-b ± √(b²-4ac)) / 2a সূত্রে মান বসাও।',
   bangla: 'Offline pack: সৃজনশীল উত্তরে মূল ভাব, ব্যাখ্যা, উদাহরণ - এই তিন ধাপ রাখো।',
   english: 'Offline pack: Start with one short correct sentence, then add details.',
+}
+
+const OFFLINE_AI_ENABLED = process.env.NEXT_PUBLIC_ENABLE_OFFLINE_AI === 'true'
+const OFFLINE_EVENT_KEY = 'vp_offline_learning_events'
+
+type OfflineEventName =
+  | 'offline_question_asked'
+  | 'offline_answer_generated'
+  | 'offline_tts_played'
+  | 'offline_bujhi_nai_clicked'
+
+function recordOfflineLearningEvent(event: OfflineEventName, metadata: Record<string, unknown> = {}) {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = JSON.parse(localStorage.getItem(OFFLINE_EVENT_KEY) || '[]') as Array<Record<string, unknown>>
+    existing.push({
+      event,
+      metadata,
+      createdAt: new Date().toISOString(),
+      synced: false,
+    })
+    localStorage.setItem(OFFLINE_EVENT_KEY, JSON.stringify(existing.slice(-100)))
+  } catch {
+    // Local event tracking should never block the tutor flow.
+  }
 }
 
 function bestVoice() {
@@ -368,6 +406,7 @@ export default function LearnPage() {
   const [ocrError, setOcrError] = useState('')
   const [showOcrReview, setShowOcrReview] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
+  const [offlineHealth, setOfflineHealth] = useState<OfflineHealth | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -378,6 +417,24 @@ export default function LearnPage() {
   const mediaRef = useRef<MediaRecorder | null>(null)
   const recognitionRef = useRef<any>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  async function refreshOfflineHealth() {
+    if (!OFFLINE_AI_ENABLED) return
+    try {
+      const res = await fetch('/api/offline-health', { cache: 'no-store' })
+      const data = (await res.json()) as OfflineHealth
+      setOfflineHealth(data)
+    } catch {
+      setOfflineHealth({
+        ok: false,
+        enabled: true,
+        provider: 'ollama',
+        model: 'qwen2.5:0.5b',
+        embeddingModel: 'embeddinggemma:300m-qat-q4_0',
+        error: 'Ollama চালু নেই. Terminal এ `ollama run qwen2.5:0.5b` চালাও।',
+      })
+    }
+  }
 
   useEffect(() => {
     getAuthenticatedStudent().then(student => {
@@ -417,6 +474,7 @@ export default function LearnPage() {
     searchOffline('newton photosynthesis acid trigonometry', { limit: 1 }).catch(() => {
       // Offline cache warm-up is best-effort for live demos.
     })
+    refreshOfflineHealth()
     if (seededSession) {
       setHistoryLoading(true)
       setActiveChatSessionId(seededSession)
@@ -446,6 +504,7 @@ export default function LearnPage() {
       setIsOnline(online)
       syncSupabaseAuthRefreshWithNetwork(online)
       if (online) flushPendingHistorySync()
+      refreshOfflineHealth()
     })
     return () => {
       unsubscribeNetwork()
@@ -471,6 +530,10 @@ export default function LearnPage() {
   }, [messages])
 
   async function startRecording() {
+    if (!isOnline) {
+      setInput('Offline AI Mode এ voice STT cloud feature বন্ধ। Text question লিখে পাঠাও।')
+      return
+    }
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition()
@@ -530,6 +593,11 @@ export default function LearnPage() {
 
   async function handleImage(file?: File) {
     if (!file) return
+    if (!isOnline) {
+      setShowOcrReview(true)
+      setOcrError('Offline AI Mode এ Gemini Vision OCR বন্ধ। Text manually লিখে question করো।')
+      return
+    }
     setIsOcrLoading(true)
     setShowOcrReview(true)
     setOcrError('')
@@ -674,35 +742,91 @@ export default function LearnPage() {
     }
 
     if (!isOnline) {
-      const [offlineResult] = await searchOffline(question, { limit: 1 })
-      const offline = buildOfflineAnswer(offlineResult, question)
-      setMessages(prev => prev.map(msg =>
-        msg.id === loadingMsg.id
-          ? {
-              ...msg,
-              text: offline.answer,
-              diagram: outputMode === 'whiteboard' ? offline.diagram : null,
-              emotion: localEmotion,
-              graphPath: offline.graphPath,
-              outputMode,
-              pwnMessage: 'Offline Mode: using locally cached curriculum.',
-              loading: false,
-            }
-          : msg
-      ))
-      if (voiceOutput) speakText(offline.answer, localEmotion)
-      recordPractice(subject, question)
-      const offlineHistory = {
-        question,
-        answer: offline.answer,
-        subject,
-        outputMode,
-        language,
-        source: 'offline-pack',
-        graphPath: offline.graphPath,
+      recordOfflineLearningEvent('offline_question_asked', { subject, outputMode, language })
+      try {
+        const res = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            subject,
+            outputMode,
+            language,
+            offlineMode: true,
+            classLevel: '9',
+          }),
+        })
+        const data = await res.json()
+        const answerText = data.answer || data.answerText || 'Ollama চালু নেই. Terminal এ `ollama run qwen2.5:0.5b` চালাও।'
+        setMessages(prev => prev.map(msg =>
+          msg.id === loadingMsg.id
+            ? {
+                ...msg,
+                text: answerText,
+                diagram: outputMode === 'whiteboard' ? data.diagram : null,
+                emotion: localEmotion,
+                graphPath: data.graphPath,
+                outputMode,
+                pwnMessage: data.pwnMessage,
+                grounding: data.grounding,
+                offline: true,
+                provider: data.provider || 'ollama',
+                model: data.model || 'qwen2.5:0.5b',
+                embeddingModel: data.embeddingModel || 'embeddinggemma:300m-qat-q4_0',
+                loading: false,
+              }
+            : msg
+        ))
+        recordOfflineLearningEvent('offline_answer_generated', { subject, usedContext: Boolean(data.usedContext), provider: data.provider || 'ollama' })
+        if (voiceOutput) {
+          speakText(answerText, localEmotion)
+          recordOfflineLearningEvent('offline_tts_played', { subject, provider: data.provider || 'ollama' })
+        }
+        recordPractice(subject, question)
+        const offlineHistory = {
+          question,
+          answer: answerText,
+          subject,
+          outputMode,
+          language,
+          source: data.source || 'ollama-offline-curriculum',
+          graphPath: data.graphPath,
+        }
+        recordOfflineChat(offlineHistory)
+        queuePendingHistorySync(offlineHistory)
+      } catch {
+        const [offlineResult] = await searchOffline(question, { limit: 1 })
+        const offline = buildOfflineAnswer(offlineResult, question)
+        setMessages(prev => prev.map(msg =>
+          msg.id === loadingMsg.id
+            ? {
+                ...msg,
+                text: offline.answer,
+                diagram: outputMode === 'whiteboard' ? offline.diagram : null,
+                emotion: localEmotion,
+                graphPath: offline.graphPath,
+                outputMode,
+                pwnMessage: 'Offline Mode: using locally cached curriculum.',
+                offline: true,
+                provider: 'local-pack',
+                loading: false,
+              }
+            : msg
+        ))
+        if (voiceOutput) speakText(offline.answer, localEmotion)
+        recordPractice(subject, question)
+        const offlineHistory = {
+          question,
+          answer: offline.answer,
+          subject,
+          outputMode,
+          language,
+          source: 'offline-pack',
+          graphPath: offline.graphPath,
+        }
+        recordOfflineChat(offlineHistory)
+        queuePendingHistorySync(offlineHistory)
       }
-      recordOfflineChat(offlineHistory)
-      queuePendingHistorySync(offlineHistory)
       setIsLoading(false)
       return
     }
@@ -763,6 +887,10 @@ export default function LearnPage() {
               pwnMessage: data.pwnMessage,
               graphPath: data.graphPath,
               grounding: data.grounding,
+              offline: Boolean(data.offline),
+              provider: data.provider,
+              model: data.model,
+              embeddingModel: data.embeddingModel,
               outputMode,
               studyQuestion: nextEmotion === 'confused' || nextEmotion === 'frustrated' ? question : undefined,
               studyConceptHint: Array.isArray(data.graphPath) ? data.graphPath.slice(-1)[0] : undefined,
@@ -770,7 +898,13 @@ export default function LearnPage() {
             }
           : msg
       ))
-      if (data.answer && voiceOutput) speakText(data.answer, nextEmotion)
+      if (data.offline) {
+        recordOfflineLearningEvent('offline_answer_generated', { subject, usedContext: Boolean(data.usedContext), provider: data.provider || 'ollama' })
+      }
+      if (data.answer && voiceOutput) {
+        speakText(data.answer, nextEmotion)
+        if (data.offline) recordOfflineLearningEvent('offline_tts_played', { subject, provider: data.provider || 'ollama' })
+      }
       const savedToCloud = await appendChatMessages(cloudSessionId, [
         { role: 'user', content: question },
         {
@@ -784,6 +918,9 @@ export default function LearnPage() {
             outputMode,
             language,
             source: data.source,
+            offline: Boolean(data.offline),
+            provider: data.provider,
+            model: data.model,
             mode: data.mode,
             inputSource: context?.source,
             hasExtractedText: Boolean(context?.extractedText),
@@ -864,6 +1001,16 @@ export default function LearnPage() {
               <span>{isOnline ? '● Online' : '● Offline'}</span>
               {!isOnline && <span className="hidden sm:inline">Learning Mode</span>}
             </span>
+            {OFFLINE_AI_ENABLED && (
+              <span className="hidden items-center gap-1.5 rounded-full border border-indigo/15 bg-indigo/8 px-3 py-1.5 text-xs font-semibold text-indigo sm:inline-flex">
+                <WifiOff size={13} /> Offline AI Mode
+              </span>
+            )}
+            {OFFLINE_AI_ENABLED && (
+              <span className="hidden rounded-full border border-forest/15 bg-forest/8 px-3 py-1.5 text-xs font-semibold text-forest md:inline-flex">
+                {offlineHealth?.model || 'qwen2.5:0.5b'}
+              </span>
+            )}
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
             <button
@@ -918,7 +1065,13 @@ export default function LearnPage() {
 
         {!isOnline && (
           <div className="offline-banner flex items-center justify-center gap-2">
-            <WifiOff size={14} /> Offline Mode active - using locally cached curriculum. PWN and Graph Memory sync will resume online.
+            <WifiOff size={14} /> Offline AI Mode active - text question, short explanation, browser TTS, and local progress queue stay available.
+          </div>
+        )}
+
+        {OFFLINE_AI_ENABLED && offlineHealth && !offlineHealth.ok && (
+          <div className="offline-banner flex items-center justify-center gap-2 bg-clay/10 text-clay">
+            <WifiOff size={14} /> {offlineHealth.error || 'Ollama চালু নেই. Terminal এ `ollama run qwen2.5:0.5b` চালাও।'}
           </div>
         )}
 
@@ -1030,6 +1183,15 @@ export default function LearnPage() {
                               {EXPERIMENTAL_VOICE_MESSAGE}
                             </p>
                           )}
+                          {msg.offline && (
+                            <div className="bangla mb-3 space-y-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                              <p>Offline lightweight model চলছে, তাই answer সংক্ষিপ্ত। Internet এলে full AI explanation পাওয়া যাবে।</p>
+                              <div className="flex flex-wrap gap-2">
+                                <span className="rounded-full bg-white/70 px-2 py-0.5 font-semibold">provider {msg.provider || 'ollama'}</span>
+                                {msg.model && <span className="rounded-full bg-white/70 px-2 py-0.5 font-semibold">{msg.model}</span>}
+                              </div>
+                            </div>
+                          )}
                           <FormattedAnswer text={msg.text} />
                         </div>
                         {((msg.outputMode === 'video' && msg.animationKey) || msg.animationKey || msg.diagram) && (
@@ -1057,11 +1219,20 @@ export default function LearnPage() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => setManualStudyInvite({
-                              messageId: msg.id,
-                              questionText: msg.studyQuestion || messages.slice().reverse().find(item => item.role === 'user')?.text || msg.text.slice(0, 160),
-                              conceptHint: msg.studyConceptHint || msg.graphPath?.slice(-1)[0],
-                            })}
+                            onClick={() => {
+                              if (msg.offline) {
+                                recordOfflineLearningEvent('offline_bujhi_nai_clicked', {
+                                  subject,
+                                  model: msg.model,
+                                  conceptHint: msg.studyConceptHint || msg.graphPath?.slice(-1)[0],
+                                })
+                              }
+                              setManualStudyInvite({
+                                messageId: msg.id,
+                                questionText: msg.studyQuestion || messages.slice().reverse().find(item => item.role === 'user')?.text || msg.text.slice(0, 160),
+                                conceptHint: msg.studyConceptHint || msg.graphPath?.slice(-1)[0],
+                              })
+                            }}
                             className="inline-flex items-center gap-2 rounded-xl border border-forest/20 bg-white/75 px-3 py-2 text-xs font-semibold text-forest shadow-sm hover:bg-white"
                           >
                             <ThumbsDown size={13} />
@@ -1172,6 +1343,7 @@ export default function LearnPage() {
                   : 'border border-white/60 bg-white/75 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest'
               }`}
               aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+              title={!isOnline ? 'Offline mode: type your question' : 'Start recording'}
             >
               {isRecording ? <Mic size={20} /> : <MicOff size={20} />}
             </button>
@@ -1179,10 +1351,10 @@ export default function LearnPage() {
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => handleImage(e.target.files?.[0])} />
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={isOcrLoading}
+              disabled={isOcrLoading || !isOnline}
               className="flex h-12 w-12 flex-shrink-0 items-center justify-center gap-2 rounded-full border border-white/60 bg-white/75 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest disabled:opacity-50 sm:w-auto sm:px-4"
               aria-label="Scan or upload question image"
-              title="Scan or upload image"
+              title={!isOnline ? 'Offline mode: OCR needs cloud vision' : 'Scan or upload image'}
             >
               {isOcrLoading ? <Loader2 size={19} className="animate-spin" /> : <Camera size={19} />}
               <span className="hidden text-sm font-semibold sm:inline">Scan / Upload Image</span>
