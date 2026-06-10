@@ -7,6 +7,8 @@ import BdslAvatar from '@/components/BdslAvatar'
 import EmotionBadge from '@/components/EmotionBadge'
 import MermaidDiagram from '@/components/MermaidDiagram'
 import OutputModeSelector from '@/components/OutputModeSelector'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { useLanguage } from '@/components/LanguageProvider'
 import Sidebar from '@/components/Sidebar'
 import SubjectSelector from '@/components/SubjectSelector'
 import StudyBuddyInviteCard from '@/components/study-buddy/StudyBuddyInviteCard'
@@ -247,6 +249,69 @@ const OFFLINE_ANSWERS: Record<string, string> = {
   english: 'Offline pack: Start with one short correct sentence, then add details.',
 }
 
+const DIAGRAM_LANGUAGE_PAIRS: Array<[string, string]> = [
+  ['মূল ধারণা', 'Main concept'],
+  ['প্রকার', 'Type'],
+  ['উদাহরণ', 'Example'],
+  ['সংজ্ঞা', 'Definition'],
+  ['বৈশিষ্ট্য', 'Key features'],
+  ['মূল কারণ', 'Main reason'],
+  ['বাস্তব ব্যবহার', 'Real use'],
+  ['মূল শিক্ষা', 'Core idea'],
+  ['প্রাকৃতিক উৎস', 'Natural source'],
+  ['খনিজ পদার্থ', 'Mineral substance'],
+  ['ধাতব খনিজ', 'Metallic mineral'],
+  ['অধাতব খনিজ', 'Non-metallic mineral'],
+  ['জ্বালানি খনিজ', 'Fuel mineral'],
+  ['লোহা ও তামা', 'Iron and copper'],
+  ['লবণ ও চুনাপাথর', 'Salt and limestone'],
+  ['কয়লা ও গ্যাস', 'Coal and gas'],
+  ['তরল পদার্থ', 'Liquid substance'],
+  ['নির্দিষ্ট আয়তন', 'Fixed volume'],
+  ['নির্দিষ্ট আকার নেই', 'No fixed shape'],
+  ['প্রবাহিত হয়', 'Can flow'],
+  ['চাপ প্রয়োগ করে', 'Applies pressure'],
+  ['পাত্রের আকার নেয়', 'Takes container shape'],
+  ['বল F', 'Force F'],
+  ['ভর m', 'Mass m'],
+  ['ত্বরণ a', 'Acceleration a'],
+  ['গতি পরিবর্তন', 'Motion change'],
+  ['ধাতু পরমাণু', 'Metal atom'],
+  ['মুক্ত ইলেকট্রন', 'Free electrons'],
+  ['ধনাত্মক ধাতব আয়ন', 'Positive metal ion'],
+  ['ইলেকট্রনের সাগর', 'Sea of electrons'],
+  ['আকর্ষণ', 'Attraction'],
+  ['ধাতব বন্ধন', 'Metallic bond'],
+  ['ধাতু', 'Metal'],
+  ['অধাতু', 'Non-metal'],
+  ['ইলেকট্রন ছাড়ে', 'Loses electron'],
+  ['ইলেকট্রন নেয়', 'Gains electron'],
+  ['ধনাত্মক আয়ন', 'Positive ion'],
+  ['ঋণাত্মক আয়ন', 'Negative ion'],
+  ['আয়নিক বন্ধন', 'Ionic bond'],
+  ['আলো', 'Light'],
+  ['সালোকসংশ্লেষণ', 'Photosynthesis'],
+  ['পানি', 'Water'],
+  ['গ্লুকোজ', 'Glucose'],
+  ['অক্সিজেন', 'Oxygen'],
+  ['a,b,c বের করো', 'Find a,b,c'],
+  ['সূত্রে বসাও', 'Use formula'],
+  ['x এর মান', 'Value of x'],
+  ['যাচাই', 'Check answer'],
+  ['প্রশ্ন পড়ো', 'Read question'],
+  ['নির্দেশক শব্দ ধরো', 'Find command word'],
+  ['মূল ভাব', 'Main idea'],
+  ['ব্যাখ্যা', 'Explanation'],
+]
+
+function localizeWhiteboardDiagram(chart: string, uiLanguage: 'bn' | 'en') {
+  return DIAGRAM_LANGUAGE_PAIRS.reduce((nextChart, [bn, en]) => {
+    const from = uiLanguage === 'en' ? bn : en
+    const to = uiLanguage === 'en' ? en : bn
+    return nextChart.split(from).join(to)
+  }, chart)
+}
+
 function bestVoice() {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
   const voices = window.speechSynthesis.getVoices()
@@ -352,6 +417,7 @@ function usesRomanizedLowResourceOutput(message: Message) {
 }
 
 export default function LearnPage() {
+  const { language: uiLanguage, t } = useLanguage()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [subject, setSubject] = useState('physics')
@@ -558,12 +624,12 @@ export default function LearnPage() {
   async function askWithOcrContext() {
     const text = ocrText.trim()
     if (!text) {
-      setOcrError('Extracted text ta review/edit kore then ask korun.')
+      setOcrError(t('learn.ocrNeedText'))
       return
     }
     const question = ocrQuestion.trim()
     if (!question) {
-      setOcrError('Extracted text niye ki jante chao, question field-e likho.')
+      setOcrError(t('learn.ocrNeedQuestion'))
       return
     }
     setShowOcrReview(false)
@@ -730,6 +796,7 @@ export default function LearnPage() {
           outputMode,
           emotion: localEmotion,
           language,
+          uiLanguage,
           selected_target_language: LANGUAGE_LABEL_BY_CODE[language],
           repeatCount,
           studentProfile,
@@ -866,6 +933,7 @@ export default function LearnPage() {
             </span>
             {!isOnline && <WifiOff size={16} className="text-clay" />}
             {emotion && <EmotionBadge emotion={emotion} />}
+            <LanguageSwitcher compact />
             <button
               onClick={() => setVoiceOutput(prev => !prev)}
               className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
@@ -877,7 +945,7 @@ export default function LearnPage() {
               aria-label={voiceOutput ? 'Turn voice output off' : 'Turn voice output on'}
             >
               {voiceOutput ? <Volume2 size={13} /> : <VolumeX size={13} />}
-              Voice {voiceOutput ? 'On' : 'Off'}
+              {voiceOutput ? t('learn.voiceOn') : t('learn.voiceOff')}
             </button>
             <SubjectSelector value={subject} onChange={setSubject} />
           </div>
@@ -935,9 +1003,9 @@ export default function LearnPage() {
               <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-forest via-indigo to-aqua shadow-2xl shadow-forest/25">
                 <Mic size={32} className="text-white" />
               </div>
-              <h1 className="bangla mb-2 font-display text-2xl font-bold">কী জানতে চাও?</h1>
+              <h1 className="bangla mb-2 font-display text-2xl font-bold">{t('learn.title')}</h1>
               <p className="bangla max-w-md text-sm leading-relaxed text-ink/55">
-                Bangla voice, typed question, textbook photo, mother-tongue mode, emotion adaptation, and BdSL avatar - এক জায়গায়।
+                {t('learn.subtitle')}
               </p>
               <div className="mt-5 grid max-w-2xl grid-cols-2 gap-2 text-left text-xs text-ink/60 md:grid-cols-4">
                 {['GraphRAG NCTB', 'ONNX emotion stub', 'MELD bridge', 'PWN hotspot'].map(item => (
@@ -1040,8 +1108,8 @@ export default function LearnPage() {
                                 {msg.outputMode === 'video'
                                   ? 'Manim Video Explainer'
                                   : msg.animationKey
-                                    ? 'Visual Teaching Animation'
-                                    : 'Whiteboard Concept Map'}
+                                    ? t('learn.visualAnimation')
+                                    : t('learn.whiteboardMap')}
                               </span>
                             </div>
                             {msg.outputMode === 'video' && msg.animationKey ? (
@@ -1049,7 +1117,7 @@ export default function LearnPage() {
                             ) : msg.animationKey ? (
                               <TeachingAnimation animationKey={msg.animationKey} question={msg.text} graphPath={msg.graphPath} fallbackDiagram={msg.diagram} />
                             ) : (
-                              msg.diagram && <MermaidDiagram chart={msg.diagram} />
+                              msg.diagram && <MermaidDiagram chart={localizeWhiteboardDiagram(msg.diagram, uiLanguage)} />
                             )}
                           </div>
                         )}
@@ -1094,11 +1162,11 @@ export default function LearnPage() {
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-sm font-semibold text-ink">
                   <FileText size={16} className="text-forest" />
-                  <span>{isOcrLoading ? 'Extracting text...' : 'Review extracted text'}</span>
+                  <span>{isOcrLoading ? t('learn.extracting') : t('learn.reviewExtracted')}</span>
                 </div>
                 {!isOcrLoading && ocrText && (
                   <span className="rounded-full bg-forest/10 px-3 py-1 text-xs font-medium text-forest">
-                    OCR extracted - please review
+                    {t('learn.ocrBadge')}
                   </span>
                 )}
               </div>
@@ -1106,7 +1174,7 @@ export default function LearnPage() {
               {isOcrLoading ? (
                 <div className="flex items-center gap-2 rounded-xl bg-paper/70 px-3 py-3 text-sm text-ink/60">
                   <Loader2 size={16} className="animate-spin text-forest" />
-                  <span>Extracting readable text from image...</span>
+                  <span>{t('learn.ocrLoading')}</span>
                 </div>
               ) : (
                 <>
@@ -1121,13 +1189,13 @@ export default function LearnPage() {
                       setOcrText(e.target.value)
                       if (e.target.value.trim()) setOcrError('')
                     }}
-                    placeholder="Extracted educational text ekhane review/edit korun..."
+                    placeholder={t('learn.ocrTextPlaceholder')}
                     className="bangla min-h-24 w-full resize-y rounded-2xl border border-white/70 bg-white/90 px-3 py-2 text-sm leading-relaxed shadow-sm focus:border-forest/35 focus:outline-none"
                   />
                   <textarea
                     value={ocrQuestion}
                     onChange={e => setOcrQuestion(e.target.value)}
-                    placeholder="Ask a question about the extracted text..."
+                    placeholder={t('learn.ocrQuestionPlaceholder')}
                     className="mt-2 min-h-16 w-full resize-y rounded-2xl border border-white/70 bg-white/90 px-3 py-2 text-sm leading-relaxed shadow-sm focus:border-forest/35 focus:outline-none"
                   />
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -1137,7 +1205,7 @@ export default function LearnPage() {
                       disabled={!ocrQuestion.trim() || isLoading}
                       className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-forest to-indigo px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-40"
                     >
-                      <Send size={14} /> Ask VoicePandita
+                      <Send size={14} /> {t('learn.askVoicePandita')}
                     </button>
                     <button
                       type="button"
@@ -1145,14 +1213,14 @@ export default function LearnPage() {
                       disabled={isOcrLoading}
                       className="inline-flex items-center gap-2 rounded-xl border border-forest/20 bg-white/75 px-4 py-2 text-sm font-semibold text-forest shadow-sm hover:bg-white"
                     >
-                      <RotateCcw size={14} /> Upload again
+                      <RotateCcw size={14} /> {t('learn.uploadAgain')}
                     </button>
                     <button
                       type="button"
                       onClick={clearOcrReview}
                       className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/60 px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm hover:bg-white"
                     >
-                      <Trash2 size={14} /> Clear
+                      <Trash2 size={14} /> {t('common.clear')}
                     </button>
                   </div>
                 </>
@@ -1185,17 +1253,17 @@ export default function LearnPage() {
               title="Scan or upload image"
             >
               {isOcrLoading ? <Loader2 size={19} className="animate-spin" /> : <Camera size={19} />}
-              <span className="hidden text-sm font-semibold sm:inline">Scan / Upload Image</span>
+              <span className="hidden text-sm font-semibold sm:inline">{t('learn.scanImage')}</span>
             </button>
 
             <a
               href="/pdf-summary"
               className="flex h-12 w-12 flex-shrink-0 items-center justify-center gap-2 rounded-full border border-white/60 bg-white/75 text-ink/60 shadow-sm hover:border-forest/35 hover:text-forest sm:w-auto sm:px-4"
               aria-label="Open PDF summary"
-              title="PDF Summary"
+              title={t('learn.pdfSummary')}
             >
               <FileText size={18} />
-              <span className="hidden text-sm font-semibold sm:inline">PDF Summary</span>
+              <span className="hidden text-sm font-semibold sm:inline">{t('learn.pdfSummary')}</span>
             </a>
 
             <div className="relative flex-1">
@@ -1208,7 +1276,7 @@ export default function LearnPage() {
                     sendMessage()
                   }
                 }}
-                placeholder="বাংলায় প্রশ্ন লেখো... Enter চাপলে পাঠাবে"
+                placeholder={t('learn.inputPlaceholder')}
                 className="bangla w-full resize-none rounded-[1.35rem] border border-white/70 bg-white/85 px-4 py-3 pr-12 text-sm leading-relaxed shadow-lg shadow-forest/5 backdrop-blur-xl focus:border-forest/35 focus:outline-none"
                 rows={1}
                 style={{ minHeight: 48, maxHeight: 160 }}
