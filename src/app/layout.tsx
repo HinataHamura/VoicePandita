@@ -1,33 +1,8 @@
 import type { Metadata, Viewport } from 'next'
-import { DM_Sans, JetBrains_Mono, Noto_Sans_Bengali, Playfair_Display } from 'next/font/google'
 import AppChrome from '@/components/AppChrome'
 import { LanguageProvider } from '@/components/LanguageProvider'
+import { bangla, body, display, mono } from '@/lib/fonts'
 import './globals.css'
-
-const display = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-display',
-  display: 'swap',
-})
-
-const body = DM_Sans({
-  subsets: ['latin'],
-  variable: '--font-body',
-  display: 'swap',
-})
-
-const bangla = Noto_Sans_Bengali({
-  subsets: ['bengali'],
-  variable: '--font-bangla',
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-})
-
-const mono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-mono',
-  display: 'swap',
-})
 
 export const metadata: Metadata = {
   title: 'VoicePandita - Learn. Understand. Belong.',

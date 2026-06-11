@@ -52,8 +52,13 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data } = await supabase.auth.getUser()
-  const hasSupabaseSession = Boolean(data.user)
+  let hasSupabaseSession = false
+  try {
+    const { data } = await supabase.auth.getUser()
+    hasSupabaseSession = Boolean(data.user)
+  } catch {
+    // Unreachable Supabase on slow/offline networks — continue as logged out.
+  }
 
   if (isProtectedRoute && !hasSupabaseSession && !hasLocalSession) {
     const redirectUrl = request.nextUrl.clone()
