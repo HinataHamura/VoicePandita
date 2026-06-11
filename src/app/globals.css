@@ -606,3 +606,85 @@ html.vp-dark .skeleton {
     background-position: -200% 0;
   }
 }
+
+/* ---- Accessibility, motion, and low-bandwidth helpers ---- */
+
+:root {
+  --vp-touch-size: 44px;
+}
+
+/* Ensure minimum touch targets for common interactive controls without changing existing classes */
+button, .vp-button, .soft-button, a[role="button"] {
+  min-height: var(--vp-touch-size);
+  min-width: var(--vp-touch-size);
+  padding: 10px 14px;
+  border-radius: 10px;
+}
+
+/* Visible, high-contrast focus for keyboard users */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 3px solid rgba(99,102,241,0.95);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.08);
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Low-bandwidth mode: disable heavy visuals and animations when toggled */
+html.vp-low-bandwidth body,
+body.vp-low-bandwidth {
+  background: var(--cream) !important;
+  background-image: none !important;
+}
+
+body.vp-low-bandwidth::before,
+html.vp-low-bandwidth body::before {
+  display: none !important;
+}
+
+body.vp-low-bandwidth .card,
+html.vp-low-bandwidth .card {
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+/* Utility to quickly hide heavy visuals on a per-component basis */
+.vp-hide-heavy {
+  background-image: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Slightly larger base font and relaxed line-height for denser scripts */
+html { font-size: 16px; }
+body { line-height: 1.6; }
+
+/* Runtime toggles: add class to body/html to reduce motion without user media query */
+.vp-reduce-motion * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.tooltip, .hint {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+/* Slightly stronger, consistent primary CTA utility */
+.vp-primary {
+  background: linear-gradient(90deg,var(--forest),var(--indigo));
+  color: white;
+  box-shadow: 0 10px 30px rgba(16,24,40,0.12);
+  border: none;
+}
+
+/* Non-invasive: these are helper utilities only and do not alter existing component styles unless explicitly used */
+

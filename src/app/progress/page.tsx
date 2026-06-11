@@ -30,6 +30,7 @@ import {
   type StudentProgress,
   type TopicProgress,
 } from '@/lib/studentStore'
+import PageHeader from '@/components/PageHeader'
 
 type ConceptStatus = 'New' | 'Exploring' | 'Confused' | 'Improving' | 'Clear'
 type Mood = 'Smooth' | 'Confused' | 'Stuck' | 'Improving'
@@ -288,17 +289,12 @@ export default function ProgressPage() {
 
   return (
     <div className="ai-shell min-h-dvh">
-      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
-        <div className="mx-auto flex max-w-5xl items-center gap-3">
-          <Link href="/learn" className="rounded-lg border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:bg-white" aria-label="Back to learn">
-            <ArrowLeft size={18} />
-          </Link>
-          <div>
-            <h1 className="font-display text-lg font-bold">Student Analytics Dashboard</h1>
-            <p className="text-xs text-ink/45">Understanding, behavior, and clarity signals for {student?.isDemo ? 'judge demo' : student?.name || 'this student'}</p>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title="Student Analytics Dashboard"
+        subtitle={`Understanding, behavior, and clarity signals for ${student?.isDemo ? 'judge demo' : student?.name || 'this student'}`}
+        backHref="/learn"
+        backLabel="Back to learn"
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
         <section>

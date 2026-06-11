@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, BarChart3, BookOpen, Flame, MessageCircleQuestion, Network, Users } from 'lucide-react'
+import { BarChart3, BookOpen, Flame, MessageCircleQuestion, Network, Users } from 'lucide-react'
+import PageHeader from '@/components/PageHeader'
 import { usePWNInsights } from '@/hooks/usePWNInsights'
 
 const subjectColor: Record<string, string> = {
@@ -21,19 +22,7 @@ export default function PwnPage() {
 
   return (
     <div className="ai-shell min-h-dvh">
-      <header className="sticky top-0 z-40 border-b border-white/70 bg-cream/95 px-4 py-4 shadow-sm shadow-forest/5 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Back to learn">
-            <ArrowLeft size={18} />
-          </Link>
-          <div>
-            <h1 className="font-display text-lg font-bold flex items-center gap-2">
-              <Users size={18} className="text-forest" /> Peer Wisdom Network
-            </h1>
-            <p className="text-xs text-ink/45">Anonymized community learning intelligence from real questions</p>
-          </div>
-        </div>
-      </header>
+      <PageHeader title="Peer Wisdom Network" subtitle="Anonymized community learning intelligence from real questions" backHref="/learn" backLabel="Back to learn" />
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         <section className="grid gap-3 md:grid-cols-3">

@@ -67,6 +67,47 @@ export async function getAuthenticatedStudent(): Promise<StudentIdentity | null>
   }
 }
 
+export async function getVisibleStudent(): Promise<StudentIdentity | null> {
+  try {
+    if (typeof window === 'undefined') return null
+
+    const saved = localStorage.getItem('vp_current_student')
+    if (saved) {
+      try {
+        return JSON.parse(saved) as StudentIdentity
+      } catch {
+        localStorage.removeItem('vp_current_student')
+      }
+    }
+
+    if (hasDemoAuthCookie()) {
+      setCurrentStudent(DEMO_STUDENT)
+      return DEMO_STUDENT
+    }
+
+    if (hasGuestAuthCookie()) {
+      const sessionId = localStorage.getItem('vp_session_id') || crypto.randomUUID()
+      const guest = { id: `guest-${sessionId}`, email: 'guest@voicepandita.local', name: 'Guest Student', isGuest: true }
+      setCurrentStudent(guest)
+      return guest
+    }
+
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data.user) return null
+
+    const student = {
+      id: data.user.id,
+      email: data.user.email || 'student@voicepandita.local',
+      name: data.user.email?.split('@')[0] || 'Student',
+    }
+    setCurrentStudent(student)
+    return student
+  } catch {
+    return null
+  }
+}
+
 export function nextRouteForStudent(studentId?: string, fallback = '/onboarding') {
   const profile = getStudentProfile(studentId)
   return isStudentProfileComplete(profile) ? '/learn' : fallback

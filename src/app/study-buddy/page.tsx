@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Loader2, Sparkles, Users } from 'lucide-react'
+import { Loader2, Sparkles, Users } from 'lucide-react'
+import PageHeader from '@/components/PageHeader'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { useStudyBuddyJoin } from '@/hooks/useStudyBuddyJoin'
 
@@ -39,10 +39,7 @@ export default function StudyBuddyPage() {
   return (
     <div className="ai-shell min-h-dvh px-4 py-6">
       <div className="mx-auto max-w-5xl">
-        <Link href="/learn" className="soft-button mb-6 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold">
-          <ArrowLeft size={16} />
-          Back to Learn
-        </Link>
+        <PageHeader title="Bondhu Study Room" subtitle="Collaborative AI practice room for small groups" backHref="/learn" backLabel="Back to learn" />
 
         <main className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
           <section className="rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-2xl shadow-forest/10 backdrop-blur-xl">

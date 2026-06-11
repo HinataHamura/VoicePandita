@@ -1,11 +1,12 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Brain, ClipboardCheck, Globe, History, Home, LogOut, Mic, Settings, Sparkles, TrendingUp, User, UserRoundPlus, Users, X } from 'lucide-react'
-import { clearDemoAuthCookie, clearGuestAuthCookie } from '@/lib/authFlow'
+import { clearDemoAuthCookie, clearGuestAuthCookie, getVisibleStudent } from '@/lib/authFlow'
 import { createClient } from '@/lib/supabase/client'
 
 const nav = [
@@ -28,6 +29,23 @@ interface Props { open: boolean; onClose: () => void }
 export default function Sidebar({ open, onClose }: Props) {
   const router = useRouter()
   const pathname = usePathname()
+  const [hasActiveSession, setHasActiveSession] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+
+    getVisibleStudent()
+      .then(student => {
+        if (isMounted) setHasActiveSession(Boolean(student))
+      })
+      .catch(() => {
+        if (isMounted) setHasActiveSession(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [open])
 
   async function handleLogout() {
     clearDemoAuthCookie()
@@ -36,8 +54,9 @@ export default function Sidebar({ open, onClose }: Props) {
     localStorage.removeItem('vp_session_id')
     localStorage.removeItem('vp_current_student')
     await createClient().auth.signOut()
+    window.dispatchEvent(new Event('vp-auth-change'))
     onClose()
-    router.push('/login')
+    router.push('/')
   }
 
   return (
@@ -104,13 +123,15 @@ export default function Sidebar({ open, onClose }: Props) {
               })}
             </nav>
             <div className="space-y-3 border-t border-white/70 p-4">
-              <button
-                onClick={handleLogout}
-                className="vp-logout-button flex w-full items-center gap-3 rounded-md p-3 text-sm font-bold"
-              >
-                <LogOut size={18} />
-                <span>Log out</span>
-              </button>
+              {hasActiveSession && (
+                <button
+                  onClick={handleLogout}
+                  className="vp-logout-button flex w-full items-center gap-3 rounded-md p-3 text-sm font-bold"
+                >
+                  <LogOut size={18} />
+                  <span>Log out</span>
+                </button>
+              )}
               <div className="text-center text-xs font-semibold text-ink/40">Calm AI learning space</div>
             </div>
           </motion.aside>

@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Clock, Edit3, MessageSquare, Trash2 } from 'lucide-react'
+import { Clock, Edit3, MessageSquare, Trash2 } from 'lucide-react'
 import { useChatHistory } from '@/hooks/useChatHistory'
+import PageHeader from '@/components/PageHeader'
 import type { ChatSessionSummary } from '@/lib/services/chatHistory'
 
 function formatTime(value: string) {
@@ -51,21 +52,12 @@ export default function HistoryPage() {
 
   return (
     <div className="ai-shell min-h-dvh">
-      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link href="/learn" className="rounded-2xl border border-white/60 bg-white/72 p-2 shadow-sm shadow-forest/5 hover:scale-105 hover:bg-white" aria-label="Back to learn">
-              <ArrowLeft size={18} />
-            </Link>
-            <div>
-              <h1 className="font-display text-lg font-bold">Learning Memory</h1>
-              <p className="text-xs text-ink/45">
-                {source === 'supabase' ? 'Synced across your signed-in devices.' : 'Sign in to sync history across devices.'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title="Learning Memory"
+        subtitle={source === 'supabase' ? 'Synced across your signed-in devices.' : 'Sign in to sync history across devices.'}
+        backHref="/learn"
+        backLabel="Back to learn"
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-6">
         {loading ? (

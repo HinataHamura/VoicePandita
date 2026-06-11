@@ -588,6 +588,20 @@ export default function LearnPage() {
     }
   }, [])
 
+  function startNewChat() {
+    setMessages([])
+    setActiveChatSessionId(null)
+    setQuestionHistory([])
+    setEmotion(null)
+    setInput('')
+    try {
+      const url = new URL(window.location.href)
+      history.replaceState(null, '', url.toString())
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     try {
       localStorage.setItem('vp_voice_output', voiceOutput ? '1' : '0')
@@ -1082,7 +1096,9 @@ export default function LearnPage() {
               <span className="block h-0.5 w-3 rounded bg-indigo/70" />
             </button>
             <div className="min-w-0">
-              <div className="font-display text-lg font-bold leading-tight">Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span></div>
+              <Link href="/" aria-label="Go to home" title="Home" className="inline-flex items-center rounded-full border border-white/70 bg-white/65 px-3 py-1.5 font-display text-lg font-bold leading-tight shadow-sm transition-colors hover:bg-white">
+                Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span>
+              </Link>
               <div className="truncate text-[11px] text-ink/45">AI tutor studio for calm learning</div>
             </div>
           </div>
@@ -1134,6 +1150,14 @@ export default function LearnPage() {
               {plan === 'free' && <span className="hidden sm:inline">· {FREE_DAILY_QUESTION_LIMIT}/day</span>}
             </Link>
             <SubjectSelector value={subject} onChange={setSubject} />
+            <button
+              onClick={startNewChat}
+              className="ml-2 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs bg-white/70 hover:bg-white"
+              aria-label="Start a new chat"
+              title="New Chat"
+            >
+              <RotateCcw size={14} /> New Chat
+            </button>
           </div>
         </header>
 

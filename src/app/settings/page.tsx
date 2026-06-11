@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Globe, Moon, Sun, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
+import { Globe, Moon, Sun, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
+import PageHeader from '@/components/PageHeader'
 
 interface Settings {
   lang: string
@@ -32,14 +33,22 @@ function loadSettings(): Settings {
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <button
+      type="button"
       onClick={event => {
         event.stopPropagation()
         onToggle()
       }}
-      className={`relative w-11 h-6 rounded-full transition-colors ${on ? 'bg-saffron' : 'bg-black/15'}`}
+      className={`group relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full p-1 shadow-inner transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-saffron/40 focus:ring-offset-2 focus:ring-offset-cream ${
+        on ? 'bg-emerald-600 shadow-emerald-600/20' : 'bg-slate-700 shadow-slate-900/15'
+      }`}
       aria-pressed={on}
+      aria-label={on ? 'Turn off setting' : 'Turn on setting'}
     >
-      <motion.span animate={{ x: on ? 20 : 2 }} className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow" />
+      <motion.span
+        animate={{ x: on ? 24 : 0, rotate: on ? 180 : 0 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+        className="relative block h-5 w-5 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.25)] ring-1 ring-black/5"
+      />
     </button>
   )
 }
@@ -88,17 +97,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 bg-cream/85 backdrop-blur-sm border-b border-black/5 px-4 py-4">
-        <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <Link href="/learn" className="p-2 hover:bg-black/5 rounded-lg" aria-label="Back to learn">
-            <ArrowLeft size={18} />
-          </Link>
-          <div>
-            <h1 className="font-display font-bold text-lg">Settings</h1>
-            <p className="text-xs text-ink/45">Local app preferences</p>
-          </div>
-        </div>
-      </header>
+      <PageHeader title="Settings" subtitle="Local app preferences" backHref="/learn" backLabel="Back to learn" />
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-5">

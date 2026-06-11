@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { Award, BookOpen, ChevronRight, Flame, Mic, TrendingUp, User } from 'lucide-react'
 import type { StudentProfile } from '@/types'
 import { getCurrentStudent, getStudentProfile, getStudentProgress, type StudentIdentity, type StudentProgress } from '@/lib/studentStore'
+import PageHeader from '@/components/PageHeader'
 
 const labels: Record<string, string> = {
   ssc: 'SSC',
@@ -41,17 +42,7 @@ export default function ProfilePage() {
 
   return (
     <div className="ai-shell min-h-dvh">
-      <header className="glass-panel sticky top-0 z-10 border-x-0 border-t-0 px-4 py-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <Link href="/learn" className="font-display text-lg font-bold">
-            Voice<span className="bg-gradient-to-r from-forest to-indigo bg-clip-text text-transparent">Pandita</span>
-          </Link>
-          <Link href="/learn" className="soft-button flex items-center gap-1.5 px-4 py-2 text-sm font-medium">
-            <Mic size={14} />
-            Ask
-          </Link>
-        </div>
-      </header>
+      <PageHeader title={student?.name || 'Your profile'} subtitle={student?.email || track} backHref="/learn" backLabel="Back to learn" />
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         <motion.section

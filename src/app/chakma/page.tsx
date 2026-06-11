@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Database, Globe, Wifi, WifiOff } from 'lucide-react'
+import { Database, Globe, Wifi, WifiOff } from 'lucide-react'
+import PageHeader from '@/components/PageHeader'
 
 const EXAMPLES = [
   { label: 'Chakma script', text: '𑄥𑄨𑄠𑄚𑄴 𑄈𑄬𑄚𑄨𑄇𑄴𑄇𑄬 𑄉𑄧𑄢𑄨 ?' },
@@ -44,30 +44,7 @@ export default function ChakmaPage() {
 
   return (
     <div className="min-h-dvh bg-cream">
-      <header className="sticky top-0 z-10 border-b border-forest/10 bg-cream/82 px-4 py-4 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/learn" className="rounded-lg border border-forest/10 bg-white/72 p-2 shadow-sm hover:bg-paper/80">
-              <ArrowLeft size={18} />
-            </Link>
-            <div>
-              <h1 className="font-display text-lg font-bold flex items-center gap-2">
-                <Globe size={18} className="text-forest" /> MELD Language Bridge
-              </h1>
-              <p className="text-xs text-ink/45">Chakma dataset-backed mother-tongue support</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setOffline(v => !v)}
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-              offline ? 'border-clay/30 bg-clay/10 text-clay' : 'border-forest/10 bg-white/70 text-ink/55'
-            }`}
-          >
-            {offline ? <WifiOff size={12} /> : <Wifi size={12} />}
-            {offline ? 'Offline pack' : 'Online'}
-          </button>
-        </div>
-      </header>
+      <PageHeader title="MELD Language Bridge" subtitle="Chakma dataset-backed mother-tongue support" backHref="/learn" backLabel="Back to learn" />
 
       <main className="mx-auto max-w-2xl space-y-6 px-4 py-8">
         {offline && (
