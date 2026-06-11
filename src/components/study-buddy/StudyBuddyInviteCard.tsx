@@ -11,7 +11,7 @@ export default function StudyBuddyInviteCard(props: {
   conceptHint?: string
   anonymousSessionId?: string
 }) {
-  const enabled = process.env.NEXT_PUBLIC_ENABLE_STUDY_BUDDY === 'true'
+  const enabled = process.env.NEXT_PUBLIC_ENABLE_STUDY_BUDDY !== 'false'
   const { join, loading, error } = useStudyBuddyJoin()
   if (!enabled) return null
 

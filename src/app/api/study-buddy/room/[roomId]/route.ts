@@ -3,6 +3,48 @@ import { generateStudyBuddyQuiz } from '@/lib/study-buddy/quiz-generator'
 import { getOrCreateAnonymousSessionId, getSupabaseAdmin, isStudyBuddyEnabled } from '@/lib/study-buddy/server'
 import { roomIdSchema } from '@/lib/study-buddy/validators'
 
+async function ensureRoomQuiz(
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  roomId: string,
+  topicTitle: string,
+  subject?: string | null,
+) {
+  const existing = await supabase.from('study_room_questions').select('id').eq('room_id', roomId).limit(1)
+  if (existing.data?.length) return
+
+  const quiz = await generateStudyBuddyQuiz(topicTitle, subject)
+  const existingHostMessage = await supabase
+    .from('study_room_messages')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('sender_type', 'ai_host')
+    .limit(1)
+
+  if (!existingHostMessage.data?.length) {
+    await supabase.from('study_room_messages').insert({
+      room_id: roomId,
+      sender_type: 'ai_host',
+      message_type: 'system',
+      content: quiz.warmupBn,
+      safe_content: quiz.warmupBn,
+      metadata: { learningGoalBn: quiz.learningGoalBn, closingSummaryBn: quiz.closingSummaryBn },
+    })
+  }
+
+  await supabase.from('study_room_questions').insert(quiz.questions.map(question => ({
+    room_id: roomId,
+    question_order: question.questionOrder,
+    question_type: question.questionType,
+    prompt_bn: question.promptBn,
+    options: question.options,
+    correct_answer: question.correctAnswer,
+    hint_bn: question.hintBn,
+    explanation_bn: question.explanationBn,
+    difficulty: question.difficulty,
+    concept_tag: question.conceptTag,
+  })))
+}
+
 function demoRoom(roomId: string, topicTitle: string) {
   const now = new Date().toISOString()
   const quizPromise = generateStudyBuddyQuiz(topicTitle)
@@ -11,7 +53,7 @@ function demoRoom(roomId: string, topicTitle: string) {
       id: roomId,
       topic_title: topicTitle,
       topic_key: 'demo-topic',
-      room_status: 'waiting',
+      room_status: 'active',
       min_members: 3,
       max_members: 5,
       expires_at: new Date(Date.now() + 90000).toISOString(),
@@ -22,7 +64,7 @@ function demoRoom(roomId: string, topicTitle: string) {
     },
     members: [{ display_alias: 'Bondhu 1', member_status: 'active' }],
     questions: quiz.questions.map((question, index) => ({
-      id: crypto.randomUUID(),
+      id: `${roomId}-q${index + 1}`,
       room_id: roomId,
       question_order: index + 1,
       question_type: 'mcq',
@@ -70,7 +112,7 @@ export async function GET(req: Request, { params }: { params: { roomId: string }
     .maybeSingle()
   if (member.error || !member.data) return NextResponse.json({ error: 'Room not found' }, { status: 404 })
 
-  const [room, members, questions, messages, answers] = await Promise.all([
+  const [room, members, initialQuestions, initialMessages, answers] = await Promise.all([
     supabase.from('study_rooms').select('*').eq('id', parsedRoomId.data).single(),
     supabase.from('study_room_members').select('display_alias, avatar_seed, member_status, joined_at, last_seen_at').eq('room_id', parsedRoomId.data).order('joined_at'),
     supabase.from('study_room_questions').select('*').eq('room_id', parsedRoomId.data).order('question_order'),
@@ -79,11 +121,24 @@ export async function GET(req: Request, { params }: { params: { roomId: string }
   ])
 
   if (room.error) return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+
+  let questions = initialQuestions.data || []
+  let messages = initialMessages.data || []
+  if (!questions.length && ['active', 'waiting'].includes(room.data.room_status)) {
+    await ensureRoomQuiz(supabase, parsedRoomId.data, room.data.topic_title || 'Bondhu Study Room', room.data.subject)
+    const refreshed = await Promise.all([
+      supabase.from('study_room_questions').select('*').eq('room_id', parsedRoomId.data).order('question_order'),
+      supabase.from('study_room_messages').select('*').eq('room_id', parsedRoomId.data).order('created_at', { ascending: true }).limit(80),
+    ])
+    questions = refreshed[0].data || []
+    messages = refreshed[1].data || []
+  }
+
   return NextResponse.json({
     room: room.data,
     members: members.data || [],
-    questions: questions.data || [],
-    messages: messages.data || [],
+    questions,
+    messages,
     answers: answers.data || [],
     sessionId,
   })

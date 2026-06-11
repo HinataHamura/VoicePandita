@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import { Loader2, WifiOff } from 'lucide-react'
+import { Loader2, Sparkles, WifiOff } from 'lucide-react'
 import AIHostMessage from '@/components/study-buddy/AIHostMessage'
 import QuickReactionBar from '@/components/study-buddy/QuickReactionBar'
 import ReportUserDialog from '@/components/study-buddy/ReportUserDialog'
@@ -24,6 +24,7 @@ export default function StudyBuddyRoomPage() {
   const [submitting, setSubmitting] = useState(false)
   const [solo, setSolo] = useState(false)
   const [waitExpired, setWaitExpired] = useState(false)
+  const [localStep, setLocalStep] = useState(0)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setWaitExpired(true), 90000)
@@ -47,7 +48,10 @@ export default function StudyBuddyRoomPage() {
   }
 
   async function nextStep() {
-    if (demoQuery) return
+    if (demoQuery) {
+      setLocalStep(step => Math.min(step + 1, data?.questions.length || 5))
+      return
+    }
     await fetch(`/api/study-buddy/room/${params.roomId}/next`, { method: 'POST' })
     await refresh()
   }
@@ -83,9 +87,20 @@ export default function StudyBuddyRoomPage() {
 
   const activeMembers = data.members.filter(member => member.member_status === 'active')
   const roomStatus = solo ? 'active' : data.room.room_status
-  const currentIndex = Math.min(Object.keys(selected).length || data.answers.length, Math.max(0, data.questions.length - 1))
+  const totalQuestions = data.questions.length || 5
+  const localScore = data.questions.filter(question => selected[question.id] === question.correct_answer.id).length
+  const weakConcepts = data.questions
+    .filter(question => selected[question.id] && selected[question.id] !== question.correct_answer.id)
+    .map(question => question.concept_tag || question.prompt_bn.slice(0, 48))
+  const explainedCount = data.messages.filter(message => message.message_type === 'explanation').length
+  const currentIndex = demoQuery
+    ? Math.min(localStep, Math.max(0, totalQuestions - 1))
+    : Math.min(explainedCount, Math.max(0, totalQuestions - 1))
   const currentQuestion = data.questions[currentIndex]
-  const completed = roomStatus === 'completed' || Object.keys(selected).length >= 5
+  const currentAnsweredCount = currentQuestion
+    ? data.answers.filter(answer => answer.question_id === currentQuestion.id).length + (demoQuery && selected[currentQuestion.id] ? 1 : 0)
+    : 0
+  const completed = roomStatus === 'completed' || (demoQuery ? localStep >= totalQuestions : explainedCount >= totalQuestions)
   const latestAiMessage = [...data.messages].reverse().find(message => message.sender_type === 'ai_host')
 
   return (
@@ -102,18 +117,23 @@ export default function StudyBuddyRoomPage() {
               onSolo={() => setSolo(true)}
             />
           ) : completed ? (
-            <StudyRoomSummary topicTitle={data.room.topic_title} />
+            <StudyRoomSummary
+              topicTitle={data.room.topic_title}
+              score={demoQuery ? localScore : undefined}
+              total={demoQuery ? totalQuestions : undefined}
+              weakConcepts={weakConcepts}
+            />
           ) : (
             <>
               <AIHostMessage>
-                {latestAiMessage?.safe_content || latestAiMessage?.content || 'Personal info share করো না। চলো concept বুঝে practice করি।'}
+                {latestAiMessage?.safe_content || latestAiMessage?.content || 'ব্যক্তিগত তথ্য শেয়ার করো না। চলো concept বুঝে practice করি।'}
               </AIHostMessage>
-              <StudyRoomProgress current={currentIndex + 1} total={5} />
+              <StudyRoomProgress current={currentIndex + 1} total={totalQuestions} />
               {currentQuestion && (
                 <StudyQuestionCard
                   question={currentQuestion}
                   selected={selected[currentQuestion.id]}
-                  answeredCount={data.answers.filter(answer => answer.question_id === currentQuestion.id).length}
+                  answeredCount={currentAnsweredCount}
                   memberCount={Math.max(1, activeMembers.length)}
                   showHint={hintFor === currentQuestion.id}
                   submitting={submitting}
@@ -121,9 +141,28 @@ export default function StudyBuddyRoomPage() {
                   onSelect={optionId => submitAnswer(currentQuestion.id, optionId)}
                 />
               )}
+              {!currentQuestion && (
+                <div className="rounded-3xl border border-white/60 bg-white/82 p-5 shadow-xl shadow-forest/10 backdrop-blur-xl">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-forest">
+                    <Sparkles size={16} />
+                    Preparing concept checks
+                  </div>
+                  <p className="bangla text-sm leading-6 text-ink/60">
+                    AI host এই room-এর প্রশ্ন বানাচ্ছে। কয়েক সেকেন্ড পরও না এলে refresh চাপো।
+                  </p>
+                  <button
+                    type="button"
+                    onClick={refresh}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl border border-forest/20 bg-white/75 px-4 py-2 text-sm font-semibold text-forest shadow-sm hover:bg-white"
+                  >
+                    <Loader2 size={14} />
+                    Refresh room
+                  </button>
+                </div>
+              )}
               {currentQuestion && selected[currentQuestion.id] && (
                 <button type="button" onClick={nextStep} className="rounded-xl bg-gradient-to-r from-forest to-indigo px-4 py-2 text-sm font-semibold text-white">
-                  Explanation / next
+                  {currentIndex + 1 >= totalQuestions ? 'Finish room' : 'Next concept check'}
                 </button>
               )}
               <QuickReactionBar onReact={() => undefined} />
@@ -133,7 +172,7 @@ export default function StudyBuddyRoomPage() {
         <aside className="space-y-4">
           <StudyRoomLeaderboard members={activeMembers} answers={data.answers} />
           <div className="rounded-3xl border border-white/60 bg-white/75 p-4 text-sm text-ink/60">
-            <p className="bangla leading-6">Child-safe v1: free chat বন্ধ। Quick reactions আর answers allowed.</p>
+            <p className="bangla leading-6">Child-safe v1: free chat বন্ধ। Quick reactions আর guided answers allowed.</p>
             <div className="mt-3">
               <ReportUserDialog onReport={reportRoom} />
             </div>

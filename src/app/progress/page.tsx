@@ -18,6 +18,7 @@ import {
   Volume2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { getAuthenticatedStudent } from '@/lib/authFlow'
 import {
   getChatHistory,
   getConceptMemory,
@@ -52,6 +53,24 @@ interface MetricCard {
   label: string
   value: string | number
   Icon: LucideIcon
+}
+
+type PracticeTurn = {
+  topic: string
+  subject: string
+  grade?: {
+    score: number
+    missingPoints: string[]
+    nextStep: string
+  }
+}
+
+type SavedCheck = {
+  question: string
+  subject: string
+  percentage: number
+  missingPoints: string[]
+  improvementPlan: string[]
 }
 
 const EMPTY_PROGRESS: StudentProgress = {
@@ -169,18 +188,76 @@ function independenceLevel(score: number) {
   return 'Guided Learner'
 }
 
+function readStudentJsonArray<T>(baseKey: string, studentId?: string): T[] {
+  if (typeof window === 'undefined' || !studentId) return []
+  try {
+    const saved = localStorage.getItem(`${baseKey}:${studentId}`) || localStorage.getItem(baseKey)
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+function averageScore(values: number[]) {
+  if (!values.length) return 0
+  return clamp(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function topRepeated(items: string[], limit = 4) {
+  const counts = new Map<string, number>()
+  items.filter(Boolean).forEach(item => counts.set(item, (counts.get(item) || 0) + 1))
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([label, count]) => ({ label, count }))
+}
+
+function buildImprovementOverview(practiceTurns: PracticeTurn[], handwrittenChecks: SavedCheck[]) {
+  const gradedVoice = practiceTurns.filter(item => item.grade)
+  const lowVoice = gradedVoice.filter(item => (item.grade?.score || 0) < 70)
+  const lowWriting = handwrittenChecks.filter(item => item.percentage < 70)
+  const missing = topRepeated([
+    ...gradedVoice.flatMap(item => item.grade?.missingPoints || []),
+    ...handwrittenChecks.flatMap(item => item.missingPoints || []),
+  ])
+  const nextSteps = [
+    ...lowVoice.slice(0, 2).map(item => `Practice ${item.topic || item.subject} aloud and include: ${(item.grade?.missingPoints || []).slice(0, 2).join(', ') || 'clear definition and example'}.`),
+    ...lowWriting.slice(0, 2).map(item => `Rewrite ${item.question || item.subject} with the missing points before checking again.`),
+    ...handwrittenChecks.flatMap(item => item.improvementPlan || []).slice(0, 2),
+  ].filter(Boolean)
+
+  return {
+    voiceAttempts: gradedVoice.length,
+    voiceAverage: averageScore(gradedVoice.map(item => Number(item.grade?.score || 0))),
+    writtenChecks: handwrittenChecks.length,
+    writtenAverage: averageScore(handwrittenChecks.map(item => Number(item.percentage || 0))),
+    missing,
+    nextSteps: Array.from(new Set(nextSteps)).slice(0, 4),
+  }
+}
+
 export default function ProgressPage() {
   const [student, setStudent] = useState<StudentIdentity | null>(null)
   const [progress, setProgress] = useState<StudentProgress | null>(null)
   const [history, setHistory] = useState<ChatHistoryItem[]>([])
   const [memory, setMemory] = useState<ConceptMemory[]>([])
+  const [practiceTurns, setPracticeTurns] = useState<PracticeTurn[]>([])
+  const [handwrittenChecks, setHandwrittenChecks] = useState<SavedCheck[]>([])
 
   useEffect(() => {
-    const current = getCurrentStudent()
-    setStudent(current)
-    setProgress(getStudentProgress(current.id))
-    setHistory(getChatHistory(current.id))
-    setMemory(getConceptMemory(current.id))
+    getAuthenticatedStudent().then(authStudent => {
+      if (!authStudent) {
+        window.location.replace('/login?next=/progress')
+        return
+      }
+      const current = authStudent || getCurrentStudent()
+      setStudent(current)
+      setProgress(getStudentProgress(current.id))
+      setHistory(getChatHistory(current.id))
+      setMemory(getConceptMemory(current.id))
+      setPracticeTurns(readStudentJsonArray<PracticeTurn>('vp_voice_practice_turns', current.id))
+      setHandwrittenChecks(readStudentJsonArray<SavedCheck>('vp_handwritten_checks', current.id))
+    })
   }, [])
 
   const data = progress || EMPTY_PROGRESS
@@ -194,6 +271,7 @@ export default function ProgressPage() {
   const independence = clamp(insights.reduce((sum, item) => sum + item.independenceScore, 0) / Math.max(1, insights.length))
   const nextFocus = [...insights].sort((a, b) => a.score - b.score)[0]
   const bestTeachBack = [...insights].sort((a, b) => b.teachBackScore - a.teachBackScore)[0]
+  const improvementOverview = useMemo(() => buildImprovementOverview(practiceTurns, handwrittenChecks), [practiceTurns, handwrittenChecks])
   const pulseCards: MetricCard[] = [
     { label: 'Concepts touched', value: insights.length, Icon: Brain },
     { label: 'Clear', value: clearCount, Icon: BookOpenCheck },
@@ -236,6 +314,66 @@ export default function ProgressPage() {
                 <div className="text-xs text-ink/50">{label}</div>
               </motion.div>
             ))}
+          </div>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="card p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Lightbulb size={17} className="text-saffron" />
+              <h2 className="text-sm font-semibold text-ink/75">Where to Improve</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-forest/8 p-4">
+                <div className="font-display text-2xl font-bold text-forest">{improvementOverview.voiceAverage}%</div>
+                <div className="text-xs text-ink/50">{improvementOverview.voiceAttempts} voice attempts</div>
+              </div>
+              <div className="rounded-2xl bg-indigo/8 p-4">
+                <div className="font-display text-2xl font-bold text-indigo">{improvementOverview.writtenAverage}%</div>
+                <div className="text-xs text-ink/50">{improvementOverview.writtenChecks} written checks</div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink/45">Repeated missing points</div>
+              <div className="flex flex-wrap gap-2">
+                {improvementOverview.missing.map(item => (
+                  <span key={item.label} className="rounded-full bg-clay/10 px-3 py-1 text-xs font-medium text-clay">
+                    {item.label} × {item.count}
+                  </span>
+                ))}
+                {!improvementOverview.missing.length && (
+                  <span className="text-sm text-ink/50">Practice or check an answer to unlock improvement signals.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Route size={17} className="text-indigo" />
+              <h2 className="text-sm font-semibold text-ink/75">Brief Improvement Plan</h2>
+            </div>
+            <div className="space-y-3">
+              {(improvementOverview.nextSteps.length ? improvementOverview.nextSteps : [
+                'Try one voice practice answer so VoicePandita can measure recall.',
+                'Upload one handwritten answer to check structure, missing points, and writing clarity.',
+                `${nextFocus?.topic || 'Your weakest topic'} revise kore nijer vashay explain korar try koro.`,
+              ]).map((step, index) => (
+                <div key={`${step}-${index}`} className="flex gap-3 rounded-2xl border border-white/70 bg-white/65 p-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-forest/10 text-xs font-bold text-forest">{index + 1}</div>
+                  <p className="text-sm leading-relaxed text-ink/70">{step}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/voice-practice" className="inline-flex items-center gap-1.5 rounded-xl border border-forest/20 bg-white/75 px-3 py-2 text-xs font-semibold text-forest hover:bg-white">
+                <Volume2 size={13} /> Voice practice
+              </Link>
+              <Link href="/answer-checker" className="inline-flex items-center gap-1.5 rounded-xl border border-indigo/20 bg-white/75 px-3 py-2 text-xs font-semibold text-indigo hover:bg-white">
+                <BookOpenCheck size={13} /> Check written answer
+              </Link>
+            </div>
           </div>
         </section>
 

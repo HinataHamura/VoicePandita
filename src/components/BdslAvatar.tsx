@@ -26,6 +26,7 @@ type SignToken = {
   sigmlPath: string
   datasetRoot?: string
   known: boolean
+  resolvedByAi?: boolean
 }
 
 type LlmTranslations = Record<string, string[]>
@@ -609,6 +610,12 @@ function lookupWord(
   return null
 }
 
+function hasLlmCandidateFor(word: string, llmTranslations: LlmTranslations) {
+  const n = norm(word)
+  const stripped = stripBnSuffix(word.trim())
+  return !!(llmTranslations[n]?.length || llmTranslations[norm(stripped)]?.length)
+}
+
 // ─── Tokeniser ────────────────────────────────────────────────────────────────
 function tokeniseText(
   rawText: string,
@@ -632,7 +639,7 @@ function tokeniseText(
       const phrase3 = `${w1} ${w2} ${w3}`
       const e3 = lookupWord(idx, phrase3, llmTranslations)
       if (e3) {
-        tokens.push({ word: phrase3, gloss: e3.gloss, english: e3.english, category: e3.category, sigmlPath: e3.sigmlPath, datasetRoot: e3.datasetRoot, known: true })
+        tokens.push({ word: phrase3, gloss: e3.gloss, english: e3.english, category: e3.category, sigmlPath: e3.sigmlPath, datasetRoot: e3.datasetRoot, known: true, resolvedByAi: hasLlmCandidateFor(phrase3, llmTranslations) })
         i += 3
         continue
       }
@@ -643,7 +650,7 @@ function tokeniseText(
       const phrase2 = `${w1} ${w2}`
       const e2 = lookupWord(idx, phrase2, llmTranslations)
       if (e2) {
-        tokens.push({ word: phrase2, gloss: e2.gloss, english: e2.english, category: e2.category, sigmlPath: e2.sigmlPath, datasetRoot: e2.datasetRoot, known: true })
+        tokens.push({ word: phrase2, gloss: e2.gloss, english: e2.english, category: e2.category, sigmlPath: e2.sigmlPath, datasetRoot: e2.datasetRoot, known: true, resolvedByAi: hasLlmCandidateFor(phrase2, llmTranslations) })
         i += 2
         continue
       }
@@ -658,7 +665,7 @@ function tokeniseText(
     if (w1.length < 2) { i++; continue }
 
     if (entry) {
-      tokens.push({ word: w1, gloss: entry.gloss, english: entry.english, category: entry.category, sigmlPath: entry.sigmlPath, datasetRoot: entry.datasetRoot, known: true })
+      tokens.push({ word: w1, gloss: entry.gloss, english: entry.english, category: entry.category, sigmlPath: entry.sigmlPath, datasetRoot: entry.datasetRoot, known: true, resolvedByAi: hasLlmCandidateFor(w1, llmTranslations) })
     } else {
       // Include unknown content words as fingerspell
       tokens.push({ word: w1, gloss: w1, english: w1, category: 'Unknown', sigmlPath: '', known: false })
@@ -1116,6 +1123,7 @@ function MatchStatsBanner({ tokens }: { tokens: SignToken[] }) {
   if (tokens.length === 0) return null
   const known = tokens.filter(t => t.known)
   const withSigml = known.filter(t => t.sigmlPath)
+  const aiResolved = known.filter(t => t.resolvedByAi)
   const pct = Math.round((known.length / tokens.length) * 100)
   const col = pct >= 75 ? '#1D9E75' : pct >= 40 ? '#BA7517' : '#A32D2D'
   return (
@@ -1124,6 +1132,7 @@ function MatchStatsBanner({ tokens }: { tokens: SignToken[] }) {
         { label: 'Total tokens', value: tokens.length, bg: '#E6F1FB', text: '#185FA5' },
         { label: 'Matched', value: `${known.length} (${pct}%)`, bg: '#E1F5EE', text: '#0F6E56' },
         { label: 'With SiGML', value: withSigml.length, bg: '#EEEDFE', text: '#3C3489' },
+        { label: 'AI resolved', value: aiResolved.length, bg: '#E8F6F8', text: '#0D6F7B' },
         { label: 'Fingerspell', value: tokens.length - known.length, bg: '#F1EFE8', text: '#5F5E5A' },
       ].map(s => (
         <div key={s.label} style={{ background: s.bg, color: s.text, borderRadius: '8px', padding: '4px 10px', fontSize: '11px', fontWeight: 500 }}>
@@ -1142,6 +1151,8 @@ export default function BdslAvatar({ active, text }: Props) {
   const [playing, setPlaying]     = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [llmTranslations, setLlmTranslations] = useState<LlmTranslations>({})
+  const [signText, setSignText] = useState('')
+  const [simplifyingSigns, setSimplifyingSigns] = useState(false)
   const [resolvingSigns, setResolvingSigns] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval>|null>(null)
 
@@ -1169,11 +1180,12 @@ export default function BdslAvatar({ active, text }: Props) {
   }, [active, loadState])
 
   const idx = useMemo(() => buildIndex(entries), [entries])
+  const avatarText = signText || text
 
   const rawTokens = useMemo(() => {
-    if (!text?.trim() || entries.length === 0) return []
-    return tokeniseText(text, idx, llmTranslations)
-  }, [text, idx, llmTranslations, entries.length])
+    if (!avatarText?.trim() || entries.length === 0) return []
+    return tokeniseText(avatarText, idx, llmTranslations)
+  }, [avatarText, idx, llmTranslations, entries.length])
 
   // Prefer tokens that have a SiGML file, but don't hide the others
   const tokens = useMemo(() => {
@@ -1181,23 +1193,58 @@ export default function BdslAvatar({ active, text }: Props) {
     return compactSignTokens(rawTokens)
   }, [rawTokens])
 
-  const preparing = resolvingSigns || loadState === 'loading' || loadState === 'idle'
+  const preparing = simplifyingSigns || resolvingSigns || loadState === 'loading' || loadState === 'idle'
 
   // Reset when text changes
   useEffect(() => {
     setActiveIndex(0)
     setPlaying(false)
     setLlmTranslations({})
+    setSignText('')
+    setSimplifyingSigns(!!text?.trim())
     setResolvingSigns(!!text?.trim())
   }, [text])
 
+  // Build a short, sign-friendly answer only for the avatar.
+  // The LMS/chat answer remains unchanged in LearnPage.
+  useEffect(() => {
+    if (!active || !text?.trim()) {
+      setSignText('')
+      setSimplifyingSigns(false)
+      return
+    }
+
+    let cancelled = false
+    setSimplifyingSigns(true)
+    fetch('/api/bdsl-sign-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer: text }),
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(payload => {
+        if (cancelled) return
+        const next = typeof payload?.signText === 'string' ? payload.signText.trim() : ''
+        setSignText(next || text)
+      })
+      .catch(() => {
+        if (!cancelled) setSignText(text)
+      })
+      .finally(() => {
+        if (!cancelled) setSimplifyingSigns(false)
+      })
+
+    return () => { cancelled = true }
+  }, [active, text])
+
   // Resolve unknown words via LLM translation API then start playback
   useEffect(() => {
-    if (!active || !text?.trim()) { setResolvingSigns(false); return }
+    if (!active || !avatarText?.trim()) { setResolvingSigns(false); return }
+    if (simplifyingSigns) { setResolvingSigns(true); return }
     if (loadState === 'loading' || loadState === 'idle') { setResolvingSigns(true); return }
     if (loadState === 'error') { setResolvingSigns(false); setPlaying(true); return }
 
-    const localTokens = tokeniseText(text, idx)
+    const localTokens = tokeniseText(avatarText, idx)
     const unknownWords = localTokens
       .filter(t => !t.known)
       .map(t => t.word)
@@ -1211,7 +1258,7 @@ export default function BdslAvatar({ active, text }: Props) {
     fetch('/api/bdsl-translate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ words: unknownWords, context: text }),
+      body: JSON.stringify({ words: unknownWords, context: avatarText }),
     })
       .then(res => (res.ok ? res.json() : null))
       .then(payload => {
@@ -1231,7 +1278,7 @@ export default function BdslAvatar({ active, text }: Props) {
       .finally(() => { if (!cancelled) { setResolvingSigns(false); setPlaying(true) } })
 
     return () => { cancelled = true }
-  }, [active, idx, loadState, text])
+  }, [active, avatarText, idx, loadState, simplifyingSigns])
 
   // Auto-advance
   useEffect(() => {
@@ -1284,6 +1331,11 @@ export default function BdslAvatar({ active, text }: Props) {
               {preparing ? 'Preparing…' : `${knownCount}/${tokens.length} matched`}
             </span>
           )}
+          {signText && signText !== text && (
+            <span style={{ fontSize: '11px', color: '#0D6F7B', background: '#E8F6F8', padding: '2px 8px', borderRadius: '10px' }}>
+              simple sign answer
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <button onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} disabled={preparing || tokens.length === 0}
@@ -1306,6 +1358,11 @@ export default function BdslAvatar({ active, text }: Props) {
 
       {/* Match stats */}
       {!preparing && tokens.length > 0 && <MatchStatsBanner tokens={tokens} />}
+      {!preparing && signText && signText !== text && (
+        <div style={{ marginBottom: '8px', borderRadius: '10px', background: '#E8F6F8', color: '#0D4F58', padding: '8px 10px', fontSize: '12px', lineHeight: 1.45 }}>
+          Signing simplified answer: {signText}
+        </div>
+      )}
 
       {/* Main body */}
       {!preparing && tokens.length > 0 && current ? (
@@ -1341,7 +1398,7 @@ export default function BdslAvatar({ active, text }: Props) {
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', fontWeight: 500, background: current.known ? currentColor.bg : 'var(--color-background-warning)', color: current.known ? currentColor.text : 'var(--color-text-warning)' }}>
-                      {current.known ? 'lexical sign' : 'fingerspell'}
+                      {current.known ? (current.resolvedByAi ? 'AI resolved sign' : 'lexical sign') : 'fingerspell'}
                     </span>
                     {current.sigmlPath && (
                       <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: 'var(--color-background-primary)', color: 'var(--color-text-tertiary)', border: '0.5px solid var(--color-border-tertiary)' }}>

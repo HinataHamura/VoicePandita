@@ -18,6 +18,8 @@ import {
   Target,
   Volume2,
 } from 'lucide-react'
+import { getAuthenticatedStudent } from '@/lib/authFlow'
+import type { StudentIdentity } from '@/lib/studentStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PracticeQuestion = {
@@ -48,6 +50,11 @@ type PracticeTurn = PracticeQuestion & {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SUBJECTS = ['physics', 'chemistry', 'biology', 'math', 'bangla', 'english', 'general']
 const STORAGE_KEY = 'vp_voice_practice_turns'
+const legacyStorageKey = STORAGE_KEY
+
+function storageKey(studentId?: string) {
+  return studentId ? `${STORAGE_KEY}:${studentId}` : STORAGE_KEY
+}
 
 // Question type labels shown in the UI badge
 const QUESTION_TYPE_LABELS: Record<string, string> = {
@@ -95,21 +102,23 @@ function speak(text: string) {
 }
 
 // ─── Local storage helpers ────────────────────────────────────────────────────
-function readTurns(): PracticeTurn[] {
+function readTurns(studentId?: string): PracticeTurn[] {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(storageKey(studentId)) || (!studentId ? null : localStorage.getItem(legacyStorageKey))
     return saved ? JSON.parse(saved) : []
   } catch {
     return []
   }
 }
 
-function writeTurns(turns: PracticeTurn[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(turns.slice(0, 80)))
+function writeTurns(turns: PracticeTurn[], studentId?: string) {
+  localStorage.setItem(storageKey(studentId), JSON.stringify(turns.slice(0, 80)))
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function VoicePracticePage() {
+  const [student, setStudent]                 = useState<StudentIdentity | null>(null)
+  const [authLoading, setAuthLoading]         = useState(true)
   const [subject, setSubject]               = useState('physics')
   const [topic, setTopic]                   = useState('Newton second law')
   const [current, setCurrent]               = useState<PracticeQuestion | null>(null)
@@ -127,7 +136,15 @@ export default function VoicePracticePage() {
 
   // Load saved turns on mount
   useEffect(() => {
-    setTurns(readTurns())
+    getAuthenticatedStudent().then(currentStudent => {
+      if (!currentStudent) {
+        window.location.replace('/login?next=/voice-practice')
+        return
+      }
+      setStudent(currentStudent)
+      setTurns(readTurns(currentStudent.id))
+      setAuthLoading(false)
+    })
     if ('speechSynthesis' in window) {
       window.speechSynthesis.getVoices()
       window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices()
@@ -160,7 +177,7 @@ export default function VoicePracticePage() {
 
     // ⬇ Capture turns synchronously — avoids stale-closure bug when called
     //   right after checkAnswer() updates the turns state.
-    const freshTurns = readTurns().filter(
+    const freshTurns = readTurns(student?.id).filter(
       t => t.topic.toLowerCase() === topic.trim().toLowerCase(),
     )
 
@@ -315,7 +332,7 @@ export default function VoicePracticePage() {
       }
       const nextTurns = [turn, ...turns]
       setTurns(nextTurns)
-      writeTurns(nextTurns)
+      writeTurns(nextTurns, student?.id)
 
       speak(result.feedback)
     } catch (err) {
@@ -349,6 +366,13 @@ export default function VoicePracticePage() {
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[1.08fr_0.92fr]">
+        {authLoading ? (
+          <div className="card p-5 text-sm text-ink/55 lg:col-span-2">
+            <Loader2 size={16} className="mr-2 inline animate-spin text-forest" />
+            Loading your practice space...
+          </div>
+        ) : (
+          <>
 
         {/* ── Left column ── */}
         <section className="space-y-5">
@@ -654,6 +678,8 @@ export default function VoicePracticePage() {
             </div>
           </div>
         </aside>
+          </>
+        )}
       </main>
     </div>
   )

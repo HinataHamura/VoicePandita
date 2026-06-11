@@ -31,6 +31,7 @@ export function useStudyRoom(roomId: string, demoQuery = '') {
 
   useEffect(() => {
     refresh()
+    if (demoQuery) return
     const timer = window.setInterval(refresh, 5000)
     return () => window.clearInterval(timer)
   }, [refresh])

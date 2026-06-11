@@ -15,6 +15,8 @@ import {
   Sparkles,
   Target,
 } from 'lucide-react'
+import { getAuthenticatedStudent } from '@/lib/authFlow'
+import type { StudentIdentity } from '@/lib/studentStore'
 
 type CheckResult = {
   extractedAnswer: string
@@ -40,21 +42,28 @@ type SavedCheck = CheckResult & {
 
 const SUBJECTS = ['physics', 'chemistry', 'biology', 'math', 'bangla', 'english', 'general']
 const STORAGE_KEY = 'vp_handwritten_checks'
+const legacyStorageKey = STORAGE_KEY
 
-function readChecks(): SavedCheck[] {
+function storageKey(studentId?: string) {
+  return studentId ? `${STORAGE_KEY}:${studentId}` : STORAGE_KEY
+}
+
+function readChecks(studentId?: string): SavedCheck[] {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(storageKey(studentId)) || (!studentId ? null : localStorage.getItem(legacyStorageKey))
     return saved ? JSON.parse(saved) : []
   } catch {
     return []
   }
 }
 
-function writeChecks(checks: SavedCheck[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(checks.slice(0, 60)))
+function writeChecks(checks: SavedCheck[], studentId?: string) {
+  localStorage.setItem(storageKey(studentId), JSON.stringify(checks.slice(0, 60)))
 }
 
 export default function AnswerCheckerPage() {
+  const [student, setStudent] = useState<StudentIdentity | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [subject, setSubject] = useState('physics')
   const [question, setQuestion] = useState('')
   const [expectedAnswer, setExpectedAnswer] = useState('')
@@ -68,7 +77,15 @@ export default function AnswerCheckerPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    setHistory(readChecks())
+    getAuthenticatedStudent().then(currentStudent => {
+      if (!currentStudent) {
+        window.location.replace('/login?next=/answer-checker')
+        return
+      }
+      setStudent(currentStudent)
+      setHistory(readChecks(currentStudent.id))
+      setAuthLoading(false)
+    })
   }, [])
 
   const average = useMemo(() => {
@@ -138,7 +155,7 @@ export default function AnswerCheckerPage() {
       }
       const nextHistory = [saved, ...history]
       setHistory(nextHistory)
-      writeChecks(nextHistory)
+      writeChecks(nextHistory, student?.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check answer.')
     } finally {
@@ -161,6 +178,13 @@ export default function AnswerCheckerPage() {
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[1.02fr_0.98fr]">
+        {authLoading ? (
+          <div className="card p-5 text-sm text-ink/55 lg:col-span-2">
+            <Loader2 size={16} className="mr-2 inline animate-spin text-forest" />
+            Loading your answer checker...
+          </div>
+        ) : (
+          <>
         <section className="space-y-5">
           <div className="card p-5">
             <div className="mb-4 flex items-center gap-2">
@@ -377,6 +401,8 @@ export default function AnswerCheckerPage() {
             </div>
           </div>
         </aside>
+          </>
+        )}
       </main>
     </div>
   )

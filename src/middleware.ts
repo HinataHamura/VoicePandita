@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { getRequiredEnv, hasSupabaseConfig } from '@/lib/supabase/env'
 
-const protectedRoutes = ['/onboarding', '/student-path', '/learn', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn', '/study-buddy', '/docs/admin']
+const protectedRoutes = ['/onboarding', '/student-path', '/learn', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn', '/study-buddy', '/voice-practice', '/answer-checker', '/docs/admin']
 const demoAdminRoutes = ['/docs/admin']
 
 export async function middleware(request: NextRequest) {

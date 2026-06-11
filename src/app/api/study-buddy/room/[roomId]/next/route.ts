@@ -17,13 +17,14 @@ export async function POST(_: Request, { params }: { params: { roomId: string } 
   const explained = new Set((messages.data || []).map((message: any) => message.metadata?.questionId).filter(Boolean))
   const next = (questions.data || []).find(question => !explained.has(question.id))
   if (!next) {
+    const content = 'আজকে তোমরা concept-টা উদাহরণ, ভুল ধারণা, আর নিজের ভাষায় ব্যাখ্যা দিয়ে বুঝতে চেষ্টা করেছো। ব্যক্তিগত তথ্য শেয়ার না করার জন্য ধন্যবাদ।'
     await supabase.from('study_rooms').update({ room_status: 'completed', ended_at: new Date().toISOString() }).eq('id', parsedRoomId.data)
     await supabase.from('study_room_messages').insert({
       room_id: parsedRoomId.data,
       sender_type: 'ai_host',
       message_type: 'system',
-      content: 'আজকে তোমরা যা শিখলে: concept টা examples দিয়ে বুঝতে চেষ্টা করেছো। Personal info share না করার জন্য ধন্যবাদ।',
-      safe_content: 'আজকে তোমরা যা শিখলে: concept টা examples দিয়ে বুঝতে চেষ্টা করেছো। Personal info share না করার জন্য ধন্যবাদ।',
+      content,
+      safe_content: content,
       metadata: { completed: true },
     })
     await logStudyBuddyEvent('room_completed', { roomId: parsedRoomId.data })

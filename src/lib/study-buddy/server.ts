@@ -2,7 +2,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 
 export function isStudyBuddyEnabled() {
-  return process.env.NEXT_PUBLIC_ENABLE_STUDY_BUDDY === 'true'
+  return process.env.NEXT_PUBLIC_ENABLE_STUDY_BUDDY !== 'false'
 }
 
 export function getStudyBuddyConfig() {
