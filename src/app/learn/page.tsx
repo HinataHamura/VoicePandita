@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Accessibility, Camera, FileText, Globe, Loader2, Mic, MicOff, RotateCcw, Send, Sparkles, ThumbsDown, Trash2, Volume2, VolumeX, WifiOff, Zap } from 'lucide-react'
 import BdslAvatar from '@/components/BdslAvatar'
@@ -22,6 +23,9 @@ import { createClient, syncSupabaseAuthRefreshWithNetwork } from '@/lib/supabase
 import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
 import { isOnline as getNetworkOnline, subscribeNetworkChanges } from '@/lib/network'
 import { appendChatMessages, createChatSession, fetchChatMessages, flushPendingHistorySync, migrateLocalHistoryToSupabase, queuePendingHistorySync, recordOfflineChat } from '@/lib/services/chatHistory'
+import { setGuestAuthCookie } from '@/lib/authFlow'
+import { startGuestStudent } from '@/lib/studentStore'
+import { FREE_DAILY_QUESTION_LIMIT, SUBSCRIPTION_CHANGE_EVENT, getPlanBadgeLabel, getUserPlan, type SubscriptionPlan } from '@/lib/subscription'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -401,7 +405,7 @@ function localEmotionHint(question: string, repeatCount: number): Exclude<Emotio
 function recentChatContext(messages: Message[]) {
   return messages
     .filter(msg => !msg.loading && msg.text.trim())
-    .slice(-6)
+    .slice(-2)
     .map(msg => ({
       role: msg.role,
       text: msg.text.slice(0, 900),
@@ -474,6 +478,7 @@ export default function LearnPage() {
   const [isOnline, setIsOnline] = useState(true)
   const [offlineHealth, setOfflineHealth] = useState<OfflineHealth | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [plan, setPlan] = useState<SubscriptionPlan>('free')
   const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [questionHistory, setQuestionHistory] = useState<string[]>([])
@@ -503,9 +508,13 @@ export default function LearnPage() {
   }
 
   useEffect(() => {
+    const syncPlan = () => setPlan(getUserPlan())
+    syncPlan()
+    window.addEventListener(SUBSCRIPTION_CHANGE_EVENT, syncPlan)
     getAuthenticatedStudent().then(student => {
       if (!student) {
-        window.location.replace('/login?next=/learn')
+        startGuestStudent()
+        setGuestAuthCookie()
       }
     })
     setIsOnline(getNetworkOnline())
@@ -546,7 +555,8 @@ export default function LearnPage() {
       setActiveChatSessionId(seededSession)
       fetchChatMessages(seededSession)
         .then(rows => {
-          const restored: Message[] = rows
+          const visibleRows = plan === 'pro' ? rows : rows.slice(-12)
+          const restored: Message[] = visibleRows
             .filter(row => row.role === 'user' || row.role === 'assistant')
             .map(row => ({
               id: row.id,
@@ -574,6 +584,7 @@ export default function LearnPage() {
     })
     return () => {
       unsubscribeNetwork()
+      window.removeEventListener(SUBSCRIPTION_CHANGE_EVENT, syncPlan)
     }
   }, [])
 
@@ -923,6 +934,7 @@ export default function LearnPage() {
           uiLanguage,
           selected_target_language: LANGUAGE_LABEL_BY_CODE[language],
           repeatCount,
+          plan,
           studentProfile,
           chatContext,
           conceptMemory: getConceptMemory().slice(0, 6),
@@ -932,6 +944,22 @@ export default function LearnPage() {
         }),
       })
       const data = await res.json()
+      if (!res.ok && res.status === 429) {
+        const limitAnswer = data.answer || 'Daily free limit reached. Please upgrade to Pro for unlimited questions.'
+        setMessages(prev => prev.map(msg =>
+          msg.id === loadingMsg.id
+            ? {
+                ...msg,
+                text: limitAnswer,
+                emotion: localEmotion,
+                outputMode,
+                loading: false,
+              }
+            : msg
+        ))
+        setIsLoading(false)
+        return
+      }
       const nextEmotion = (data.detectedEmotion ?? localEmotion) as EmotionState
       const answerText = data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।'
       const answerAnimationKey = isVisualMode(outputMode) ? data.animationKey : null
@@ -1094,6 +1122,17 @@ export default function LearnPage() {
               {voiceOutput ? <Volume2 size={13} /> : <VolumeX size={13} />}
               {voiceOutput ? t('learn.voiceOn') : t('learn.voiceOff')}
             </button>
+            <Link
+              href="/pricing"
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                plan === 'pro'
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-indigo/15 bg-indigo/8 text-indigo'
+              }`}
+            >
+              <span>{getPlanBadgeLabel(plan)}</span>
+              {plan === 'free' && <span className="hidden sm:inline">· {FREE_DAILY_QUESTION_LIMIT}/day</span>}
+            </Link>
             <SubjectSelector value={subject} onChange={setSubject} />
           </div>
         </header>

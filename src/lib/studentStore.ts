@@ -156,6 +156,7 @@ export function getCurrentStudent(): StudentIdentity {
 export function setCurrentStudent(student: StudentIdentity) {
   writeJson('vp_current_student', student)
   localStorage.setItem('vp_session_id', student.id)
+  document.cookie = `vp_student_id=${encodeURIComponent(student.id)}; path=/; max-age=2592000; samesite=lax`
 }
 
 export function startDemoStudent() {

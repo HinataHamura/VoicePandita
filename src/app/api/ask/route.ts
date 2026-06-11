@@ -26,6 +26,8 @@ import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/mar
 import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
 import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
 import { offlineAiEnabled, runOfflineAsk } from '@/lib/offline/offline-ask'
+import { FREE_DAILY_QUESTION_LIMIT, getAIProvider, getUsageDateKey } from '@/lib/subscription'
+import { getDailyUsageCount, getSubscriptionContext, incrementDailyUsage } from '@/lib/subscription.server'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type AnimationKey = 'newton_second_law' | 'photosynthesis' | 'minerals' | 'quadratic_formula' | 'generic_concept'
@@ -173,7 +175,7 @@ function groundingInfo(chunks?: RetrievedCurriculumChunk[], profile?: StudentPro
 
 function chatContextText(items?: ChatContextItem[]) {
   if (!Array.isArray(items) || items.length === 0) return 'None'
-  return items.slice(-6).map((item, i) => {
+  return items.slice(-2).map((item, i) => {
     const role = item.role === 'user' ? 'Student' : 'Tutor'
     const path = Array.isArray(item.graphPath) && item.graphPath.length
       ? ` [topic: ${item.graphPath.join(' -> ')}]`
@@ -211,6 +213,11 @@ function offlineAskResponsePayload(result: Awaited<ReturnType<typeof runOfflineA
 function looksLikeFollowUp(question: string) {
   return /\b(ei|eta|etar|related|previous|prev|same topic|follow up|follow-up)\b/i.test(question) ||
     /(à¦à¦‡|à¦à¦Ÿà¦¾|à¦à¦Ÿà¦¾à¦°|à¦†à¦—à§‡à¦°|à¦ªà§‚à¦°à§à¦¬à§‡à¦°|à¦“à¦‡|à¦|à¦¸à¦®à§à¦ªà¦°à§à¦•à¦¿à¦¤|à¦°à¦¿à¦²à§‡à¦Ÿà§‡à¦¡|à¦à¦•à¦‡)/.test(question)
+}
+
+function looksLikePracticeRequest(question: string) {
+  return /(\bquiz\b|\bmcq\b|\bpractice\b|\bquestions?\b|related questions|teach me|generated questions)/i.test(question) ||
+    /(কয়েকটা|কয়েকটা|ক'টা|কয়েকটি|কয়েকটি|প্রশ্ন|সৃজনশীল|প্র্যাকটিস|অনুশীলন|question\s+দিয়ে|প্রশ্ন\s+দিয়ে|প্রশ্ন\s+দাও|প্রশ্ন\s+বনাও|বুঝাও\s+প্রশ্নে)/.test(question)
 }
 
 const LESSONS = {
@@ -1619,6 +1626,48 @@ Rules:
   }
 }
 
+async function practiceQuestionAnswer(params: {
+  question: string
+  selectedSubject: string
+  emotion: EmotionState
+  language: string
+  studentProfile?: StudentProfileContext
+  chatContext?: ChatContextItem[]
+  curriculumChunks?: RetrievedCurriculumChunk[]
+}) {
+  const answerLanguage = responseLanguageName(params.language)
+  const lastTopic = [...(params.chatContext || [])].reverse().find(item => Array.isArray(item.graphPath) && item.graphPath.length)?.graphPath?.join(' -> ')
+  const curriculumContext = curriculumContextText(params.curriculumChunks)
+  const prompt = `You are VoicePandita. The student is asking for practice questions, not a lesson explanation.
+
+Student request: ${params.question}
+Selected subject from UI: ${params.selectedSubject}
+Emotion: ${params.emotion}
+Language: ${params.language}
+Most recent topic from chat, if relevant: ${lastTopic || 'None'}
+Retrieved curriculum context:
+${curriculumContext}
+
+Return ONLY plain text in ${answerLanguage}.
+Rules:
+- Give 3 short, creative practice questions for the most relevant single topic.
+- If the recent topic is clearly relevant, use that topic.
+- If the request asks for "related questions", make the questions exam-like and concept-linked.
+- Do not explain the full answer.
+- Do not switch to a different unrelated topic.
+- If the topic is still unclear, ask one short clarifying question instead of guessing.
+- Keep each question on its own line and number them 1, 2, 3.
+- End with one short line offering to give answers after the student tries.`
+
+  const raw = await geminiText(prompt)
+  if (!raw) throw new Error('Gemini unavailable')
+  const clean = raw.replace(/```[\s\S]*?```/g, '').trim()
+  return {
+    answer: clean || '1. ...\n2. ...\n3. ...',
+    graphPath: lastTopic ? lastTopic.split(' -> ').slice(0, 6) : [String(params.selectedSubject || 'Curriculum'), 'Practice Questions'],
+  }
+}
+
 async function ocrContextGeminiAnswer(params: {
   question: string
   extractedText: string
@@ -2001,6 +2050,24 @@ export async function POST(req: NextRequest) {
         grounding: { grounded: true, label: 'Offline curriculum cache', sourceDataset: 'public/offline-data', similarity: offlineResult?.score || null },
       })
     }
+    const subscription = await getSubscriptionContext(req)
+    const dailyUsageKey = getUsageDateKey()
+    const providerConfig = getAIProvider(subscription.plan)
+    const dailyUsageCount = await getDailyUsageCount(req, dailyUsageKey)
+    if (!subscription.isPro && dailyUsageCount >= FREE_DAILY_QUESTION_LIMIT) {
+      return NextResponse.json(
+        {
+          answer: `You've reached the Free Plan daily limit of ${FREE_DAILY_QUESTION_LIMIT} questions. Upgrade to Pro for unlimited questions.`,
+          error: 'daily_limit_reached',
+          plan: subscription.plan,
+          limit: FREE_DAILY_QUESTION_LIMIT,
+          used: dailyUsageCount,
+          provider: providerConfig.provider,
+          model: providerConfig.model,
+        },
+        { status: 429 }
+      )
+    }
     const studentProfile = body.studentProfile && typeof body.studentProfile === 'object'
       ? {
           level: typeof body.studentProfile.level === 'string' ? body.studentProfile.level : undefined,
@@ -2025,7 +2092,7 @@ export async function POST(req: NextRequest) {
     const detectedEmotion = detectEmotion(question, repeatCount)
     const emotion = (body.emotion || detectedEmotion) as EmotionState
     const conceptMemory = body.conceptMemory
-    const animationKey = selectedAnimationKey(conceptSignal, outputMode, lessonKey)
+    let animationKey = selectedAnimationKey(conceptSignal, outputMode, lessonKey)
 
     let lesson = lessonKey ? LESSONS[lessonKey] : null
     let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
@@ -2052,6 +2119,22 @@ export async function POST(req: NextRequest) {
         diagram = fallbackDiagramForQuestion(question, 'Glucose', language)
         graphPath = ['Biology', 'Carbohydrate', 'Glucose']
         source = 'local-known-concept'
+        mode = 'curriculum_guided'
+      } else if (looksLikePracticeRequest(question)) {
+        const practice = await practiceQuestionAnswer({
+          question,
+          selectedSubject,
+          emotion,
+          language,
+          studentProfile,
+          chatContext,
+          curriculumChunks,
+        })
+        answer = practice.answer
+        diagram = null
+        graphPath = practice.graphPath
+        animationKey = null
+        source = 'gemini-practice-questions'
         mode = 'curriculum_guided'
       } else if (requestSource === 'ocr' && extractedText) {
         const ocrAnswer = await ocrContextGeminiAnswer({
@@ -2176,7 +2259,7 @@ Rules:
     const sourceScript = learnerScriptToDetectedScript(localized.metadata.sourceScript)
     const languageSource = `${source}+phase2-${localized.metadata.outputLanguage}-${localized.metadata.outputScript}${localized.metadata.fallbackUsed ? '-fallback' : '-generated'}`
 
-    return NextResponse.json({
+    const responseBody = {
       answerText: localized.answerText,
       answer: localized.answerText,
       metadata: localized.metadata,
@@ -2213,6 +2296,11 @@ Rules:
       source: languageSource,
       mode,
       grounding,
+      plan: subscription.plan,
+      provider: providerConfig.provider,
+      providerLabel: providerConfig.label,
+      providerPriority: providerConfig.priority,
+      model: providerConfig.model,
       ...(offlineProvider
         ? {
             offline: true,
@@ -2224,7 +2312,13 @@ Rules:
             grounding: offlineGrounding || grounding,
           }
         : {}),
-    })
+    }
+
+    if (subscription.plan === 'free') {
+      await incrementDailyUsage(req, dailyUsageKey)
+    }
+
+    return NextResponse.json(responseBody)
   } catch (err) {
     console.error('/api/ask error:', err)
     const message = err instanceof Error ? err.message : 'Unknown error'

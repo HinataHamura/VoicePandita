@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef } from 'react'
+import mermaid from 'mermaid'
 
 interface Props { chart: string }
 
@@ -101,7 +102,6 @@ export default function MermaidDiagram({ chart }: Props) {
     let cancelled = false
 
     async function render() {
-      const mermaid = (await import('mermaid')).default
       mermaid.initialize({
         startOnLoad: false,
         theme:       'base',

@@ -6,6 +6,13 @@ function cleanText(value: unknown, max = 4000) {
   return String(value || '').trim().slice(0, max)
 }
 
+function memorySourceId(subject: string) {
+  const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `student-question:${subject}:${id}`
+}
+
 async function generateEmbedding(text: string) {
   const embedUrl = process.env.NEXT_PUBLIC_TTS_URL || 'http://localhost:8001'
   try {
@@ -48,7 +55,11 @@ export async function POST(req: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json({ error: 'Supabase service role env missing' }, { status: 500 })
+      return NextResponse.json({
+        stored: false,
+        skipped: true,
+        error: 'Supabase service role env missing',
+      })
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -60,13 +71,19 @@ export async function POST(req: NextRequest) {
       subject,
       chapter: graphPath[1] || graphPath[0] || 'Student Questions',
       topic: graphPath[graphPath.length - 1] || question.slice(0, 80),
-      source_doc_id: `student-question:${subject}`,
+      source_doc_id: memorySourceId(subject),
       chunk_index: 0,
       chunk_type: 'student-memory',
       token_count: content.split(/\s+/).filter(Boolean).length,
       contextual_summary: 'Student-generated question and tutor answer memory. Used for analytics/memory, not curriculum grounding.',
       embedding_text: content,
       source_type: 'student',
+      question_text: question,
+      answer_text: answer || null,
+      metadata: {
+        graphPath,
+        storedBy: 'curriculum-memory-api',
+      },
       embedding,
     }
 
@@ -84,7 +101,7 @@ export async function POST(req: NextRequest) {
     console.error('/api/curriculum-memory error:', err)
     return NextResponse.json(
       { stored: false, error: err instanceof Error ? err.message : 'Unknown error' },
-      { status: 500 }
+      { status: 200 }
     )
   }
 }
