@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server'
 import { deriveTopic } from '@/lib/study-buddy/topic'
 import { findMatchingRoom } from '@/lib/study-buddy/matching'
-import { generateStudyBuddyQuiz } from '@/lib/study-buddy/quiz-generator'
+import { generateStudyBuddyQuiz, isWeakStudyBuddyQuestion } from '@/lib/study-buddy/quiz-generator'
 import { getOrCreateAnonymousSessionId, getStudyBuddyConfig, getSupabaseAdmin, isStudyBuddyEnabled, logStudyBuddyEvent } from '@/lib/study-buddy/server'
 import { joinStudyBuddySchema } from '@/lib/study-buddy/validators'
 import type { StudyBuddyJoinResponse, StudyBuddyLanguage } from '@/lib/study-buddy/types'
+
+function simpleHash(str: string): number {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash
+  }
+  return Math.abs(hash)
+}
 
 type JoinRoom = {
   id: string
@@ -16,8 +26,13 @@ type JoinRoom = {
 }
 
 async function ensureQuiz(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>, roomId: string, topicTitle: string, subject?: string | null) {
-  const existing = await supabase.from('study_room_questions').select('id').eq('room_id', roomId).limit(1)
-  if (existing.data?.length) return
+  const existing = await supabase.from('study_room_questions').select('id, prompt_bn, options').eq('room_id', roomId).order('question_order').limit(5)
+  const hasWeakQuestions = (existing.data || []).some(isWeakStudyBuddyQuestion)
+  if (existing.data?.length && !hasWeakQuestions) return
+  if (hasWeakQuestions) {
+    await supabase.from('study_room_questions').delete().eq('room_id', roomId)
+    await supabase.from('study_room_messages').delete().eq('room_id', roomId).in('message_type', ['system', 'explanation'])
+  }
 
   const quiz = await generateStudyBuddyQuiz(topicTitle, subject)
   await supabase.from('study_room_messages').insert({
@@ -116,7 +131,12 @@ export async function POST(req: Request) {
     }
 
     const memberCountResult = await supabase.from('study_room_members').select('id', { count: 'exact', head: true }).eq('room_id', room.id)
-    const alias = `Bondhu ${(memberCountResult.count || 0) + 1}`
+    const adjectives = ['Smart', 'Curious', 'Quick', 'Patient', 'Brave', 'Calm', 'Kind', 'Bold', 'Wise', 'Keen']
+    const colors = ['Red', 'Blue', 'Green', 'Gold', 'Purple', 'Indigo', 'Coral', 'Sky', 'Forest', 'Amber']
+    const seed = simpleHash(`${room.id}${sessionId}`)
+    const adjIdx = seed % adjectives.length
+    const colorIdx = Math.floor(seed / adjectives.length) % colors.length
+    const alias = `${adjectives[adjIdx]} ${colors[colorIdx]}`
     const memberInsert = await supabase.from('study_room_members').upsert({
       room_id: room.id,
       anonymous_session_id: sessionId,
@@ -127,6 +147,12 @@ export async function POST(req: Request) {
       left_at: null,
     }, { onConflict: 'room_id,anonymous_session_id' })
     if (memberInsert.error) throw memberInsert.error
+
+    await supabase.from('study_room_session_audit').insert({
+      room_id: room.id,
+      anonymous_session_id: sessionId,
+      action: 'joined',
+    })
 
     const members = await supabase.from('study_room_members').select('id').eq('room_id', room.id).eq('member_status', 'active')
     const memberCount = members.data?.length || 1

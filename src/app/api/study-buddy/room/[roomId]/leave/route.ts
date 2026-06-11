@@ -13,6 +13,11 @@ export async function POST(_: Request, { params }: { params: { roomId: string } 
     member_status: 'left',
     left_at: new Date().toISOString(),
   }).eq('room_id', parsedRoomId.data).eq('anonymous_session_id', sessionId)
+  await supabase.from('study_room_session_audit').insert({
+    room_id: parsedRoomId.data,
+    anonymous_session_id: sessionId,
+    action: 'left',
+  })
   const active = await supabase.from('study_room_members').select('id').eq('room_id', parsedRoomId.data).eq('member_status', 'active')
   if (!active.data?.length) {
     await supabase.from('study_rooms').update({ room_status: 'expired', ended_at: new Date().toISOString() }).eq('id', parsedRoomId.data)

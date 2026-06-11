@@ -1,0 +1,47 @@
+[
+  {
+    "conceptKey": "physics-newtons-second-law",
+    "subject": "Physics",
+    "classLevel": "9",
+    "title": "Newton's Second Law",
+    "content": "নিউটনের দ্বিতীয় সূত্র অনুযায়ী, কোনো বস্তুর উপর নিট বল প্রয়োগ করলে বস্তুটির ত্বরণ হয়। ত্বরণ বলের সমানুপাতিক এবং ভরের ব্যস্তানুপাতিক। সূত্র: F = ma।",
+    "examples": ["রিকশা ঠেলা", "বাস ব্রেক", "বল মারা"],
+    "keywords": ["newton", "second law", "force", "mass", "acceleration", "F=ma", "বল", "ভর", "ত্বরণ"]
+  },
+  {
+    "conceptKey": "physics-motion",
+    "subject": "Physics",
+    "classLevel": "9",
+    "title": "Motion",
+    "content": "কোনো বস্তু সময়ের সাথে অবস্থান পরিবর্তন করলে তাকে গতি বলে। গতি বুঝতে অবস্থান, সময়, বেগ এবং ত্বরণ জানা দরকার।",
+    "examples": ["বাস চলা", "নৌকা চলা", "স্কুলে হাঁটা"],
+    "keywords": ["motion", "position", "time", "velocity", "speed", "গতি", "বেগ", "সময়"]
+  },
+  {
+    "conceptKey": "physics-force",
+    "subject": "Physics",
+    "classLevel": "9",
+    "title": "Force",
+    "content": "বল হলো ধাক্কা বা টান, যা কোনো বস্তুর স্থির অবস্থা, গতির অবস্থা, দিক বা আকৃতি পরিবর্তন করতে পারে।",
+    "examples": ["দরজা ঠেলা", "দড়ি টানা", "ফুটবল কিক"],
+    "keywords": ["force", "push", "pull", "change motion", "বল", "ধাক্কা", "টান"]
+  },
+  {
+    "conceptKey": "physics-inertia",
+    "subject": "Physics",
+    "classLevel": "9",
+    "title": "Inertia",
+    "content": "জড়তা হলো বস্তুর নিজ অবস্থার পরিবর্তন প্রতিরোধ করার প্রবণতা। স্থির বস্তু স্থির থাকতে চায়, আর গতিশীল বস্তু একইভাবে চলতে চায়।",
+    "examples": ["বাস হঠাৎ ব্রেক করলে সামনে ঝোঁকা", "টেবিলক্লথ টানলে প্লেট স্থির থাকা", "ধুলো ঝাড়া"],
+    "keywords": ["inertia", "rest", "motion", "resistance", "জড়তা", "স্থিতি", "গতি"]
+  },
+  {
+    "conceptKey": "physics-acceleration",
+    "subject": "Physics",
+    "classLevel": "9",
+    "title": "Acceleration",
+    "content": "সময়ের সাথে বেগের পরিবর্তনের হারকে ত্বরণ বলে। বেগ বাড়লে, কমলে বা দিক বদলালে ত্বরণ থাকতে পারে।",
+    "examples": ["বাস গতি বাড়ানো", "সাইকেল ধীরে থামা", "মোড়ে গাড়ির দিক বদল"],
+    "keywords": ["acceleration", "velocity change", "speed up", "slow down", "ত্বরণ", "বেগ পরিবর্তন"]
+  }
+]

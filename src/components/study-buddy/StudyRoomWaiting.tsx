@@ -27,7 +27,7 @@ export default function StudyRoomWaiting(props: {
           Solo AI practice শুরু করো
         </button>
       )}
-      <p className="bangla mt-5 text-xs leading-5 text-ink/45">Never fake human students. Personal info share করো না।</p>
+      <p className="bangla mt-5 text-xs leading-5 text-ink/45">Fake human student দেখানো হয় না। Personal info share করো না।</p>
     </section>
   )
 }

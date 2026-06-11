@@ -19,5 +19,11 @@ export async function POST(req: Request, { params }: { params: { roomId: string 
     reason: parsedBody.data.reason,
     details: parsedBody.data.details || null,
   })
+  await supabase.from('study_room_session_audit').insert({
+    room_id: parsedRoomId.data,
+    anonymous_session_id: sessionId,
+    action: 'flagged',
+    reason: parsedBody.data.reason,
+  })
   return NextResponse.json({ ok: true })
 }

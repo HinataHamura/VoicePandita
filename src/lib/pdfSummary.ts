@@ -3,7 +3,7 @@ export type PdfSummaryResult = {
   fileName: string
   pages: number
   pdfType: 'text_pdf'
-  summaryLanguage: 'bn'
+  summaryLanguage: 'bn' | 'en'
   shortSummary: string
   detailedSummary: string
   keyPoints: string[]
@@ -176,8 +176,51 @@ export function buildLocalStudySummary(cleanText: string, fileName = 'PDF', page
   }
 }
 
-export function createLocalPdfSummary(text: string, fileName?: string, pages?: number) {
-  return buildLocalStudySummary(cleanPdfText(text), fileName, pages)
+export function buildEnglishLocalStudySummary(cleanText: string, fileName = 'PDF', pages = 0): SummaryFields {
+  const lines = meaningfulLines(cleanText)
+  const topic = detectTopic(lines, fileName)
+  const formulas = extractFormulas(cleanText)
+  const sourcePoints = extractImportantLines(lines, formulas)
+  const keyPoints = uniqueStrings([
+    ...formulas.map(formula => `Important formula: ${formula}`),
+    ...sourcePoints.map(line => cleanSummaryText(line).replace(/[।]$/, '.')),
+  ]).slice(0, 6)
+
+  const importantTerms = uniqueStrings([
+    ...formulas,
+    ...PHYSICS_TERMS.filter(term => term.test.test(cleanText)).map(term => term.label),
+  ]).slice(0, 8)
+
+  return {
+    shortSummary: `This PDF discusses key ideas from ${topic}. The extracted text has been organized into concise study notes for quick revision. Important formulas and terms are highlighted where available.`,
+    detailedSummary: [
+      `The readable PDF text is about ${topic}. VoicePandita grouped the main definitions, formulas, examples, and exam-relevant lines into a clean local study summary.`,
+      keyPoints.length
+        ? `The most important ideas are: ${keyPoints.slice(0, 3).join(' ')}`
+        : 'Start by reviewing the headings and definitions, then connect them with examples from the text.',
+      formulas.length
+        ? `Practice the formulas separately: ${formulas.slice(0, 5).join(', ')}. Write what each symbol means before solving numerical problems.`
+        : 'For revision, rewrite each important line in your own words and prepare a short example.',
+    ].join('\n\n'),
+    keyPoints: keyPoints.length ? keyPoints : ['Read the headings first.', 'Mark definitions and examples.', 'Review formulas separately.'],
+    importantTerms: importantTerms.length ? importantTerms : [topic],
+    studyNotes: uniqueStrings([
+      'Read headings, definitions, and examples in that order.',
+      'Write each formula with the meaning of every symbol.',
+      'For exam answers, use definition, explanation, and example.',
+      pages > 1 ? `Review 1-2 key ideas from each of the ${pages} pages.` : 'Make a short one-page revision note.',
+      formulas.length ? 'For numerical problems, write the formula first, then substitute values.' : 'Use your own words to check understanding.',
+    ]).slice(0, 6),
+    warning: FALLBACK_WARNING,
+    fallbackReason: 'local_study_fallback',
+  }
+}
+
+export function createLocalPdfSummary(text: string, fileName?: string, pages?: number, language: 'bn' | 'en' = 'bn') {
+  const cleaned = cleanPdfText(text)
+  return language === 'en'
+    ? buildEnglishLocalStudySummary(cleaned, fileName, pages)
+    : buildLocalStudySummary(cleaned, fileName, pages)
 }
 
 function meaningfulLines(text: string) {

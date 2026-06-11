@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { generateStudyBuddyQuiz } from '@/lib/study-buddy/quiz-generator'
+import { generateStudyBuddyQuiz, isWeakStudyBuddyQuestion } from '@/lib/study-buddy/quiz-generator'
 import { getOrCreateAnonymousSessionId, getSupabaseAdmin, isStudyBuddyEnabled } from '@/lib/study-buddy/server'
 import { roomIdSchema } from '@/lib/study-buddy/validators'
 
-export async function POST(_: Request, { params }: { params: { roomId: string } }) {
+export async function POST(req: Request, { params }: { params: { roomId: string } }) {
   if (!isStudyBuddyEnabled()) return NextResponse.json({ error: 'Disabled' }, { status: 404 })
   const parsedRoomId = roomIdSchema.safeParse(params.roomId)
   if (!parsedRoomId.success) return NextResponse.json({ error: 'Invalid room id' }, { status: 400 })
@@ -18,10 +18,20 @@ export async function POST(_: Request, { params }: { params: { roomId: string } 
   ])
   if (!member.data || !room.data) return NextResponse.json({ error: 'Room not found' }, { status: 404 })
   if (room.data.room_status !== 'waiting') return NextResponse.json({ status: room.data.room_status })
-  if ((members.data?.length || 0) < Number(room.data.min_members || 3)) return NextResponse.json({ error: 'Need more students' }, { status: 409 })
+  const body = await req.json().catch(() => ({}))
+  const solo = body?.solo === true
+  if (!solo && (members.data?.length || 0) < Number(room.data.min_members || 3)) {
+    return NextResponse.json({ error: 'Need more students' }, { status: 409 })
+  }
 
-  const existing = await supabase.from('study_room_questions').select('id').eq('room_id', parsedRoomId.data).limit(1)
-  if (!existing.data?.length) {
+  const existing = await supabase.from('study_room_questions').select('id, prompt_bn, options').eq('room_id', parsedRoomId.data).order('question_order').limit(5)
+  const hasWeakQuestions = (existing.data || []).some(isWeakStudyBuddyQuestion)
+  if (hasWeakQuestions) {
+    await supabase.from('study_room_questions').delete().eq('room_id', parsedRoomId.data)
+    await supabase.from('study_room_messages').delete().eq('room_id', parsedRoomId.data).in('message_type', ['system', 'explanation'])
+  }
+
+  if (!existing.data?.length || hasWeakQuestions) {
     const quiz = await generateStudyBuddyQuiz(room.data.topic_title, room.data.subject)
     await supabase.from('study_room_questions').insert(quiz.questions.map(question => ({
       room_id: parsedRoomId.data,
@@ -45,6 +55,9 @@ export async function POST(_: Request, { params }: { params: { roomId: string } 
     })
   }
 
-  await supabase.from('study_rooms').update({ room_status: 'active', started_at: new Date().toISOString() }).eq('id', parsedRoomId.data)
+  await supabase.from('study_rooms').update({
+    room_status: 'active',
+    started_at: new Date().toISOString(),
+  }).eq('id', parsedRoomId.data)
   return NextResponse.json({ status: 'active' })
 }

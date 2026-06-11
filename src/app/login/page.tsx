@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { useLanguage } from '@/components/LanguageProvider'
 import { setDemoAuthCookie, setGuestAuthCookie } from '@/lib/authFlow'
 import { createClient, hasBrowserSupabaseConfig } from '@/lib/supabase/client'
 import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent, startGuestStudent } from '@/lib/studentStore'
@@ -13,6 +15,7 @@ const AFTER_LOGIN_PATH = '/profile'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { language, t } = useLanguage()
   const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -89,11 +92,32 @@ export default function LoginPage() {
     finishLogin()
   }
 
-  function fillDemoLogin() {
+  function demoLogin() {
     setIsSignup(false)
-    setEmail(DEMO_EMAIL)
-    setPassword(DEMO_PASSWORD)
     setError('')
+    startDemoStudent()
+    setDemoAuthCookie()
+    finishLogin()
+  }
+
+  async function handleGoogleLogin() {
+    setLoading(true)
+    setError('')
+    try {
+      if (!hasBrowserSupabaseConfig()) {
+        throw new Error(t('auth.missingSupabase'))
+      }
+      const next = getNextPath()
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}&lang=${language}`
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      })
+      if (error) throw error
+    } catch (e: any) {
+      setError(e.message || t('auth.genericError'))
+      setLoading(false)
+    }
   }
 
   return (
@@ -105,18 +129,21 @@ export default function LoginPage() {
         className="w-full max-w-sm"
       >
         <div className="text-center mb-8">
+          <div className="mb-4 flex justify-center">
+            <LanguageSwitcher compact />
+          </div>
           <Link href="/" className="font-display text-2xl font-bold">
             Voice<span className="text-saffron">Pandita</span>
           </Link>
           <p className="bangla text-ink/50 mt-2 text-sm">
-            {isSignup ? 'নতুন account তৈরি করো' : 'আবার স্বাগতম!'}
+            {isSignup ? t('auth.signupTitle') : t('auth.welcome')}
           </p>
         </div>
 
         <div className="card p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="bangla text-sm font-medium text-ink/70 block mb-1.5">Email</label>
+              <label className="bangla text-sm font-medium text-ink/70 block mb-1.5">{t('auth.email')}</label>
               <div className="relative">
                 <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink/30" />
                 <input
@@ -124,14 +151,14 @@ export default function LoginPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
-                  placeholder="তোমার email"
+                  placeholder={t('auth.emailPlaceholder')}
                   className="w-full rounded-lg border border-forest/10 bg-white/78 py-3 pl-9 pr-4 text-sm shadow-sm focus:border-saffron/50 focus:outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label className="bangla text-sm font-medium text-ink/70 block mb-1.5">Password</label>
+              <label className="bangla text-sm font-medium text-ink/70 block mb-1.5">{t('auth.password')}</label>
               <div className="relative">
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink/30" />
                 <input
@@ -163,7 +190,7 @@ export default function LoginPage() {
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-saffron py-3 text-sm font-semibold text-white shadow-lg shadow-saffron/18 hover:bg-saffron/90 disabled:opacity-60"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
-              <span className="bangla">{isSignup ? 'Account তৈরি করো' : 'Login করো'}</span>
+              <span className="bangla">{isSignup ? t('auth.signup') : t('auth.login')}</span>
             </button>
           </form>
 
@@ -171,23 +198,32 @@ export default function LoginPage() {
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-black/8" />
             </div>
-            <div className="relative flex justify-center bg-white/0 px-3 text-xs text-ink/40">অথবা</div>
+            <div className="relative flex justify-center bg-white/0 px-3 text-xs text-ink/40">{t('auth.or')}</div>
           </div>
+
+          <button
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-forest/10 bg-white/90 py-3 text-sm font-semibold text-ink/75 shadow-sm hover:bg-white disabled:opacity-60"
+          >
+            {loading && <Loader2 size={16} className="animate-spin" />}
+            {loading ? t('auth.googleLoading') : t('auth.google')}
+          </button>
 
           <button
             onClick={guestLogin}
             disabled={loading}
             className="bangla w-full rounded-lg border border-forest/10 bg-white/70 py-3 text-sm font-medium text-ink/70 shadow-sm hover:bg-paper/80 disabled:opacity-60"
           >
-            Guest হিসেবে চালিয়ে যাও
+            {t('auth.guest')}
           </button>
 
           <button
-            onClick={fillDemoLogin}
+            onClick={demoLogin}
             disabled={loading}
             className="mt-3 w-full rounded-lg border border-saffron/30 bg-saffron/5 py-3 text-sm font-semibold text-saffron shadow-sm hover:bg-saffron/10 disabled:opacity-60"
           >
-            Use judge demo account
+            {t('auth.demo')}
           </button>
 
           <div className="mt-3 rounded-lg border border-forest/8 bg-paper/72 px-3 py-2 text-xs text-ink/55">
