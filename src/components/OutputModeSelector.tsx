@@ -1,15 +1,12 @@
 'use client'
 
-import { Bot, FileText, GraduationCap, PenTool, Sparkles, Video } from 'lucide-react'
+import { Bot, PenTool, Video } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 
 const MODES: { val: OutputMode; label: string; Icon: LucideIcon }[] = [
   { val: 'whiteboard', label: 'Whiteboard', Icon: PenTool },
-  { val: 'text', label: 'Text', Icon: FileText },
-  { val: 'exam', label: 'Exam', Icon: GraduationCap },
-  { val: 'simple', label: 'Simple', Icon: Sparkles },
   { val: 'animation', label: 'Visual', Icon: Bot },
   { val: 'video', label: 'Video', Icon: Video },
 ]

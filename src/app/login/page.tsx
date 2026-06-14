@@ -7,7 +7,7 @@ import { motion } from 'framer-motion'
 import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { useLanguage } from '@/components/LanguageProvider'
-import { setDemoAuthCookie, setGuestAuthCookie } from '@/lib/authFlow'
+import { clearLocalAuthCookies, setDemoAuthCookie, setGuestAuthCookie } from '@/lib/authFlow'
 import { createClient, hasBrowserSupabaseConfig } from '@/lib/supabase/client'
 import { DEMO_EMAIL, DEMO_PASSWORD, setCurrentStudent, startDemoStudent, startGuestStudent } from '@/lib/studentStore'
 
@@ -16,7 +16,6 @@ const AFTER_LOGIN_PATH = '/profile'
 export default function LoginPage() {
   const router = useRouter()
   const { language, t } = useLanguage()
-  const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
@@ -32,6 +31,7 @@ export default function LoginPage() {
   }
 
   function finishLogin() {
+    window.dispatchEvent(new Event('vp-auth-change'))
     router.replace(getNextPath())
     router.refresh()
   }
@@ -42,7 +42,10 @@ export default function LoginPage() {
     setError('')
 
     try {
-      if (!isSignup && email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD) {
+      const normalizedEmail = email.trim().toLowerCase()
+
+      if (!isSignup && normalizedEmail === DEMO_EMAIL && password === DEMO_PASSWORD) {
+        clearLocalAuthCookies()
         startDemoStudent()
         setDemoAuthCookie()
         finishLogin()
@@ -50,34 +53,38 @@ export default function LoginPage() {
       }
 
       if (!hasBrowserSupabaseConfig()) {
-        throw new Error('Supabase env missing. Demo login বা Guest mode ব্যবহার করো, অথবা .env.local এ Supabase public keys দাও।')
+        throw new Error(t('auth.missingSupabase'))
       }
 
+      const supabase = createClient()
+      clearLocalAuthCookies()
+      localStorage.removeItem('vp_guest')
+
       if (isSignup) {
-        const { data, error } = await supabase.auth.signUp({ email, password })
+        const { data, error } = await supabase.auth.signUp({ email: normalizedEmail, password })
         if (error) throw error
         if (data.user) {
           setCurrentStudent({
             id: data.user.id,
-            email: data.user.email || email,
+            email: data.user.email || normalizedEmail,
             name: data.user.email?.split('@')[0] || 'Student',
           })
         }
         finishLogin()
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
         if (error) throw error
         if (data.user) {
           setCurrentStudent({
             id: data.user.id,
-            email: data.user.email || email,
+            email: data.user.email || normalizedEmail,
             name: data.user.email?.split('@')[0] || 'Student',
           })
         }
         finishLogin()
       }
     } catch (e: any) {
-      setError(e.message || 'কিছু সমস্যা হয়েছে। আবার চেষ্টা করো।')
+      setError(e.message || t('auth.genericError'))
     } finally {
       setLoading(false)
     }
@@ -86,6 +93,7 @@ export default function LoginPage() {
   async function guestLogin() {
     setLoading(true)
     setError('')
+    clearLocalAuthCookies()
     localStorage.setItem('vp_guest', 'true')
     startGuestStudent()
     setGuestAuthCookie()
@@ -95,6 +103,7 @@ export default function LoginPage() {
   function demoLogin() {
     setIsSignup(false)
     setError('')
+    clearLocalAuthCookies()
     startDemoStudent()
     setDemoAuthCookie()
     finishLogin()
@@ -107,8 +116,12 @@ export default function LoginPage() {
       if (!hasBrowserSupabaseConfig()) {
         throw new Error(t('auth.missingSupabase'))
       }
+      clearLocalAuthCookies()
+      localStorage.removeItem('vp_guest')
+      localStorage.removeItem('vp_current_student')
       const next = getNextPath()
       const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}&lang=${language}`
+      const supabase = createClient()
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo },
@@ -235,7 +248,7 @@ export default function LoginPage() {
           onClick={() => setIsSignup(value => !value)}
           className="bangla text-center w-full mt-4 text-sm text-ink/50 hover:text-ink transition-colors"
         >
-          {isSignup ? 'আগে থেকেই account আছে? Login করো' : 'নতুন user? Account তৈরি করো'}
+          {isSignup ? t('auth.existingUser') : t('auth.newUser')}
         </button>
       </motion.div>
     </div>

@@ -6,8 +6,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Brain, ClipboardCheck, Globe, History, Home, LogOut, Mic, Settings, Sparkles, TrendingUp, User, UserRoundPlus, Users, X } from 'lucide-react'
-import { clearDemoAuthCookie, clearGuestAuthCookie, getVisibleStudent } from '@/lib/authFlow'
-import { createClient } from '@/lib/supabase/client'
+import { clearLocalAuthCookies, getVisibleStudent } from '@/lib/authFlow'
+import { createClient, hasBrowserSupabaseConfig } from '@/lib/supabase/client'
 
 const nav = [
   { href: '/', icon: Home, label: 'Home', sub: 'Overview' },
@@ -48,15 +48,17 @@ export default function Sidebar({ open, onClose }: Props) {
   }, [open])
 
   async function handleLogout() {
-    clearDemoAuthCookie()
-    clearGuestAuthCookie()
+    clearLocalAuthCookies()
     localStorage.removeItem('vp_guest')
     localStorage.removeItem('vp_session_id')
     localStorage.removeItem('vp_current_student')
-    await createClient().auth.signOut()
+    if (hasBrowserSupabaseConfig()) {
+      await createClient().auth.signOut().catch(() => undefined)
+    }
     window.dispatchEvent(new Event('vp-auth-change'))
     onClose()
-    router.push('/')
+    router.replace('/login')
+    router.refresh()
   }
 
   return (

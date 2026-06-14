@@ -5,6 +5,16 @@ import { getRequiredEnv, hasSupabaseConfig } from '@/lib/supabase/env'
 const protectedRoutes = ['/onboarding', '/student-path', '/history', '/profile', '/progress', '/settings', '/chakma', '/pwn', '/study-buddy', '/voice-practice', '/answer-checker', '/docs/admin']
 const demoAdminRoutes = ['/docs/admin']
 
+function safeRedirectUrl(request: NextRequest, fallback = '/learn') {
+  const redirectUrl = request.nextUrl.clone()
+  const next = request.nextUrl.searchParams.get('next')
+  const target = !next || !next.startsWith('/') || next.startsWith('//') ? fallback : next
+  const parsedTarget = new URL(target, request.url)
+  redirectUrl.pathname = parsedTarget.pathname
+  redirectUrl.search = parsedTarget.search
+  return redirectUrl
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } })
   const { pathname, search } = request.nextUrl
@@ -23,10 +33,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if (pathname === '/login' && hasLocalSession) {
-      const redirectUrl = request.nextUrl.clone()
-      redirectUrl.pathname = '/learn'
-      redirectUrl.search = ''
-      return NextResponse.redirect(redirectUrl)
+      return NextResponse.redirect(safeRedirectUrl(request))
     }
 
     return response
@@ -68,10 +75,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === '/login' && (hasSupabaseSession || hasLocalSession)) {
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/learn'
-    redirectUrl.search = ''
-    return NextResponse.redirect(redirectUrl)
+    return NextResponse.redirect(safeRedirectUrl(request))
   }
 
   return response

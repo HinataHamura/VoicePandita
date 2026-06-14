@@ -14,11 +14,12 @@ const questionMoves = [
 ] as const
 
 const optionIds = ['A', 'B', 'C', 'D']
+type QuizOption = { id: string; text: string }
 
 function normalizeText(value: string) {
   return value
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/[^\w\u0980-\u09FF]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -36,6 +37,21 @@ function hasRepeatedQuestionShape(prompts: string[]) {
   ]
 
   return repeatedStems.some(stem => prompts.filter(prompt => normalizeText(prompt).includes(normalizeText(stem))).length > 1)
+}
+
+export function isWeakStudyBuddyQuestion(question: { prompt_bn?: string | null; options?: unknown }) {
+  const prompt = normalizeText(question.prompt_bn || '')
+  if (prompt.length < 12) return true
+
+  const options = Array.isArray(question.options) ? question.options : []
+  if (options.length < 4) return true
+
+  const optionTexts = options.map((option: any) => normalizeText(String(option?.text || option || '')))
+  if (optionTexts.some(text => text.length < 2)) return true
+  if (new Set(optionTexts).size !== optionTexts.length) return true
+
+  const weakStems = ['concept check', 'which answer is most logical']
+  return weakStems.some(stem => prompt === normalizeText(stem) || prompt.startsWith(normalizeText(stem)))
 }
 
 function fallbackQuestion(topicTitle: string, order: number, move: (typeof questionMoves)[number]) {
@@ -145,8 +161,8 @@ function parseQuizJson(text: string, topicTitle: string): StudyBuddyQuiz {
   const parsed = JSON.parse(cleaned)
   if (!Array.isArray(parsed.questions) || parsed.questions.length !== 5) throw new Error('Quiz must have exactly 5 questions')
 
-  const questions = parsed.questions.slice(0, 5).map((q: any, index: number) => {
-    const options = Array.isArray(q.options)
+  const questions: StudyBuddyQuiz['questions'] = parsed.questions.slice(0, 5).map((q: any, index: number) => {
+    const options: QuizOption[] = Array.isArray(q.options)
       ? q.options.slice(0, 4).map((option: any, optionIndex: number) => ({
         id: optionIds.includes(String(option.id)) ? String(option.id) : optionIds[optionIndex],
         text: String(option.text || option).slice(0, 180),

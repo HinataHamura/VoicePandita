@@ -67,6 +67,30 @@ export default function PricingPage() {
     }
   }
 
+  async function switchDemoPlan(nextPlan: SubscriptionPlan) {
+    setUpgrading(true)
+    try {
+      setUserPlan(nextPlan)
+      const supabase = createClient()
+      const { data } = await supabase.auth.getUser()
+      if (data.user) {
+        await supabase.from('profiles').upsert(
+          {
+            id: data.user.id,
+            email: data.user.email,
+            plan: nextPlan,
+            plan_expires_at: null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        )
+      }
+      setPlan(nextPlan)
+    } finally {
+      setUpgrading(false)
+    }
+  }
+
   return (
     <div className="ai-shell min-h-dvh">
       <header className="glass-panel sticky top-0 z-20 border-x-0 border-t-0 px-4 py-4">
@@ -156,6 +180,15 @@ export default function PricingPage() {
             >
               {upgrading ? <span className="animate-pulse">Upgrading...</span> : <><Sparkles size={14} /> Upgrade demo to Pro</>}
             </button>
+            {plan === 'pro' && (
+              <button
+                onClick={() => switchDemoPlan('free')}
+                disabled={upgrading}
+                className="ml-3 mt-6 inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white/75 px-5 py-3 text-sm font-semibold text-ink/60 shadow-sm hover:bg-white"
+              >
+                Reset to Free
+              </button>
+            )}
           </motion.article>
         </section>
 
@@ -164,19 +197,21 @@ export default function PricingPage() {
             <BarChart3 size={16} className="text-forest" />
             Feature comparison
           </div>
-          <div className="overflow-hidden rounded-2xl border border-white/70">
-            <div className="grid grid-cols-[1.2fr_1fr_1fr] bg-ink/3 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
-              <div>Feature</div>
-              <div>Free</div>
-              <div>Pro</div>
-            </div>
-            {FEATURES.map(([feature, freeValue, proValue], index) => (
-              <div key={feature} className={`grid grid-cols-[1.2fr_1fr_1fr] px-4 py-3 text-sm ${index % 2 === 0 ? 'bg-white' : 'bg-cream/40'}`}>
-                <div className="font-medium text-ink">{feature}</div>
-                <div className="text-ink/65">{freeValue}</div>
-                <div className="text-ink/65">{proValue}</div>
+          <div className="overflow-x-auto rounded-2xl border border-white/70">
+            <div className="min-w-[620px]">
+              <div className="grid grid-cols-[1.2fr_1fr_1fr] bg-ink/[0.03] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
+                <div>Feature</div>
+                <div>Free</div>
+                <div>Pro</div>
               </div>
-            ))}
+              {FEATURES.map(([feature, freeValue, proValue], index) => (
+                <div key={feature} className={`grid grid-cols-[1.2fr_1fr_1fr] px-4 py-3 text-sm ${index % 2 === 0 ? 'bg-white' : 'bg-cream/40'}`}>
+                  <div className="font-medium text-ink">{feature}</div>
+                  <div className="text-ink/65">{freeValue}</div>
+                  <div className="text-ink/65">{proValue}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 

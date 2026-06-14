@@ -7,24 +7,27 @@
       "title": "Newton's Second Law",
       "concept": "Force, mass, and acceleration as F = ma",
       "src": "/animations/manim/videos/newton_second_law.mp4",
+      "durationSeconds": 7,
       "available": true,
-      "generatedAt": "2026-06-07T19:41:22.036417+00:00"
+      "generatedAt": "2026-06-11T23:10:59.721502+00:00"
     },
     {
       "key": "quadratic_formula",
       "title": "Quadratic Formula",
       "concept": "Identify a, b, c and solve ax^2 + bx + c = 0",
       "src": "/animations/manim/videos/quadratic_formula.mp4",
+      "durationSeconds": 7,
       "available": true,
-      "generatedAt": "2026-06-07T19:41:29.285984+00:00"
+      "generatedAt": "2026-06-11T23:11:09.986146+00:00"
     },
     {
       "key": "photosynthesis",
       "title": "Photosynthesis",
       "concept": "Light, water, carbon dioxide, glucose, and oxygen",
       "src": "/animations/manim/videos/photosynthesis.mp4",
+      "durationSeconds": 7,
       "available": true,
-      "generatedAt": "2026-06-07T19:41:34.806676+00:00"
+      "generatedAt": "2026-06-11T23:11:18.284677+00:00"
     }
   ]
 }

@@ -82,9 +82,10 @@ def render_scene(key: str, quality: str) -> Path:
     ]
     subprocess.run(command, cwd=str(ROOT), check=True)
 
-    rendered = next(MEDIA_DIR.rglob(output_name), None)
-    if not rendered:
+    rendered_files = list(MEDIA_DIR.rglob(output_name))
+    if not rendered_files:
         raise SystemExit(f"Rendered video not found for {key}")
+    rendered = max(rendered_files, key=lambda path: path.stat().st_mtime)
 
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     destination = VIDEO_DIR / output_name

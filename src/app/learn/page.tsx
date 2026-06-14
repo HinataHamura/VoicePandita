@@ -26,6 +26,7 @@ import { appendChatMessages, createChatSession, fetchChatMessages, flushPendingH
 import { setGuestAuthCookie } from '@/lib/authFlow'
 import { startGuestStudent } from '@/lib/studentStore'
 import { FREE_DAILY_QUESTION_LIMIT, SUBSCRIPTION_CHANGE_EVENT, getPlanBadgeLabel, getUserPlan, type SubscriptionPlan } from '@/lib/subscription'
+import { repairMojibakeText } from '@/lib/textEncoding'
 
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
@@ -116,6 +117,158 @@ const ANSWER_SECTION_LABELS = [
   'গুরুত্ব:',
 ]
 
+function readMathGroup(text: string, start: number) {
+  if (text[start] !== '{') return null
+  let depth = 0
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === '{') depth += 1
+    if (text[index] === '}') depth -= 1
+    if (depth === 0) return { value: text.slice(start + 1, index), end: index + 1 }
+  }
+  return null
+}
+
+function cleanMathText(text: string) {
+  return text
+    .trim()
+    .replace(/^\\\(|\\\)$/g, '')
+    .replace(/^\\\[|\\\]$/g, '')
+    .replace(/^\$|\$$/g, '')
+    .replace(/\$/g, '')
+    .replace(/\\Longrightarrow|\\Rightarrow|\\rightarrow|\\implies/g, '⇒')
+    .replace(/\\leftarrow/g, '←')
+    .replace(/\\leq|\\le/g, '≤')
+    .replace(/\\geq|\\ge/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\quad|\\qquad/g, ' ')
+    .replace(/\\left|\\right/g, '')
+    .replace(/\\,/g, ' ')
+    .replace(/\\cdot|\\times/g, '×')
+    .replace(/\\pi/g, 'π')
+    .replace(/\\theta/g, 'θ')
+    .replace(/\\text\{([^{}]*)\}/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function renderMathExpression(text: string, keyPrefix = 'math'): JSX.Element[] {
+  const source = cleanMathText(text)
+  const nodes: JSX.Element[] = []
+  let cursor = 0
+
+  while (cursor < source.length) {
+    if (source.startsWith('\\frac', cursor)) {
+      const numerator = readMathGroup(source, cursor + 5)
+      const denominator = numerator ? readMathGroup(source, numerator.end) : null
+      if (numerator && denominator) {
+        nodes.push(
+          <span key={`${keyPrefix}-frac-${cursor}`} className="vp-math-frac">
+            <span className="vp-math-frac-top">{renderMathExpression(numerator.value, `${keyPrefix}-n-${cursor}`)}</span>
+            <span className="vp-math-frac-bottom">{renderMathExpression(denominator.value, `${keyPrefix}-d-${cursor}`)}</span>
+          </span>
+        )
+        cursor = denominator.end
+        continue
+      }
+    }
+
+    if (source.startsWith('\\sqrt', cursor)) {
+      const group = readMathGroup(source, cursor + 5)
+      if (group) {
+        nodes.push(
+          <span key={`${keyPrefix}-sqrt-${cursor}`} className="vp-math-sqrt">
+            {renderMathExpression(group.value, `${keyPrefix}-sqrt-in-${cursor}`)}
+          </span>
+        )
+        cursor = group.end
+        continue
+      }
+    }
+
+    const char = source[cursor]
+    if (char === '^' || char === '_') {
+      const group = source[cursor + 1] === '{' ? readMathGroup(source, cursor + 1) : null
+      const value = group ? group.value : source[cursor + 1] || ''
+      const end = group ? group.end : cursor + 2
+      const Tag = char === '^' ? 'sup' : 'sub'
+      nodes.push(
+        <Tag key={`${keyPrefix}-script-${cursor}`} className="vp-math-script">
+          {renderMathExpression(value, `${keyPrefix}-script-in-${cursor}`)}
+        </Tag>
+      )
+      cursor = end
+      continue
+    }
+
+    const simpleFraction = source.slice(cursor).match(/^(\d+|[A-Za-z])\/(\d+|[A-Za-z])/)
+    if (simpleFraction) {
+      nodes.push(
+        <span key={`${keyPrefix}-simple-frac-${cursor}`} className="vp-math-frac">
+          <span className="vp-math-frac-top">{simpleFraction[1]}</span>
+          <span className="vp-math-frac-bottom">{simpleFraction[2]}</span>
+        </span>
+      )
+      cursor += simpleFraction[0].length
+      continue
+    }
+
+    const next = [
+      source.indexOf('\\frac', cursor + 1),
+      source.indexOf('\\sqrt', cursor + 1),
+      source.indexOf('^', cursor + 1),
+      source.indexOf('_', cursor + 1),
+    ].filter(index => index !== -1)
+    const nextIndex = next.length ? Math.min(...next) : source.length
+    nodes.push(<span key={`${keyPrefix}-text-${cursor}`}>{source.slice(cursor, nextIndex)}</span>)
+    cursor = nextIndex
+  }
+
+  return nodes
+}
+
+function renderRichAnswerInline(text: string) {
+  const nodes: JSX.Element[] = []
+  const pattern = /(\*\*[^*]+\*\*|\$[^$]+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])/g
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(
+        <span key={`plain-${cursor}`}>
+          {renderMathExpression(text.slice(cursor, match.index), `plain-math-${cursor}`)}
+        </span>
+      )
+    }
+
+    const token = match[0]
+    if (token.startsWith('**')) {
+      nodes.push(<strong key={`bold-${match.index}`} className="font-bold text-ink">{token.slice(2, -2)}</strong>)
+    } else {
+      nodes.push(
+        <span key={`math-${match.index}`} className="vp-math-inline">
+          {renderMathExpression(token, `inline-${match.index}`)}
+        </span>
+      )
+    }
+    cursor = match.index + token.length
+  }
+
+  if (cursor < text.length) {
+    nodes.push(
+      <span key={`tail-${cursor}`}>
+        {renderMathExpression(text.slice(cursor), `tail-math-${cursor}`)}
+      </span>
+    )
+  }
+  return nodes
+}
+
+function cleanAnswerLine(text: string) {
+  return text.replace(/^\s*[-*]\s+/, '').trim()
+}
+
 function renderMathInline(text: string) {
   const tokenPattern = /(1\/[A-Za-z]\^\d+|\d+\/\d+|\^\([^)]+\)|\^\d+|√\([^)]+\)|√\d+)/g
   const nodes: JSX.Element[] = []
@@ -162,13 +315,25 @@ function looksLikeEquationLine(text: string) {
   return /([=+\-*/]|√|\^|\d+\/\d+|π|θ| m\/s| kg| N\b| M\b)/.test(text) && /[0-9A-Za-z]/.test(text)
 }
 
+function shouldDisplayAsEquationBlock(text: string) {
+  const hasBangla = /[\u0980-\u09ff]/.test(text)
+  const explicitMath = /(\$[^$]+\$|\\frac|\\sqrt|\\Rightarrow|\\Longrightarrow|\\rightarrow|\\implies)/.test(text)
+  const startsLikeMath = /^\s*(\$|\\|[A-Za-z0-9(.-])/.test(text)
+  const mathChars = (text.match(/[A-Za-z0-9=+\-*/^_(){}\\]/g) || []).length
+  const mathDensity = mathChars / Math.max(text.length, 1)
+  if (hasBangla && !explicitMath && mathDensity < 0.58) return false
+  return (explicitMath || startsLikeMath || mathDensity >= 0.58) &&
+    /([=+\-*/]|\^|_|\d+\/\d+|π|θ| m\/s| kg| N\b| M\b)/.test(cleanMathText(text)) &&
+    /[0-9A-Za-z]/.test(text)
+}
+
 function FormattedAnswer({ text }: { text: string }) {
   const lines = text.replace(/\r/g, '').split('\n')
 
   return (
     <div className="bangla space-y-2 leading-relaxed text-ink">
       {lines.map((line, index) => {
-        const trimmed = line.trim()
+        const trimmed = cleanAnswerLine(line)
         if (!trimmed) return <div key={index} className="h-1" />
 
         const isFinal = /^চূ[ড়ড়]ান্ত উত্তর:/.test(trimmed)
@@ -192,15 +357,15 @@ function FormattedAnswer({ text }: { text: string }) {
           )
         }
 
-        if (looksLikeEquationLine(trimmed)) {
+        if (shouldDisplayAsEquationBlock(trimmed)) {
           return (
-            <div key={index} className="overflow-x-auto rounded-md bg-white/60 px-3 py-2 font-mono text-[0.96rem] leading-7 text-ink shadow-sm ring-1 ring-indigo/8">
-              {renderMathInline(trimmed)}
+            <div key={index} className="vp-equation-block">
+              {renderMathExpression(trimmed, `eq-${index}`)}
             </div>
           )
         }
 
-        return <p key={index}>{renderMathInline(trimmed)}</p>
+        return <p key={index}>{renderRichAnswerInline(trimmed)}</p>
       })}
     </div>
   )
@@ -555,13 +720,13 @@ export default function LearnPage() {
       setActiveChatSessionId(seededSession)
       fetchChatMessages(seededSession)
         .then(rows => {
-          const visibleRows = plan === 'pro' ? rows : rows.slice(-12)
+          const visibleRows = getUserPlan() === 'pro' ? rows : rows.slice(-12)
           const restored: Message[] = visibleRows
             .filter(row => row.role === 'user' || row.role === 'assistant')
             .map(row => ({
               id: row.id,
               role: row.role === 'user' ? 'user' : 'ai',
-              text: row.content,
+              text: repairMojibakeText(row.content),
               diagram: row.diagram,
               animationKey: (row.metadata?.animationKey as AnimationKey | undefined) || null,
               emotion: (row.emotion as EmotionState) || null,
@@ -848,7 +1013,7 @@ export default function LearnPage() {
           }),
         })
         const data = await res.json()
-        const answerText = data.answer || data.answerText || 'Ollama চালু নেই. Terminal এ `ollama run qwen2.5:0.5b` চালাও।'
+        const answerText = repairMojibakeText(data.answer || data.answerText || 'Ollama চালু নেই. Terminal এ `ollama run qwen2.5:0.5b` চালাও।')
         setMessages(prev => prev.map(msg =>
           msg.id === loadingMsg.id
             ? {
@@ -975,7 +1140,7 @@ export default function LearnPage() {
         return
       }
       const nextEmotion = (data.detectedEmotion ?? localEmotion) as EmotionState
-      const answerText = data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।'
+      const answerText = repairMojibakeText(data.answer || 'দুঃখিত, উত্তর পাওয়া যায়নি। আবার চেষ্টা করো।')
       const answerAnimationKey = isVisualMode(outputMode) ? data.animationKey : null
       setEmotion(nextEmotion)
       setMessages(prev => prev.map(msg =>

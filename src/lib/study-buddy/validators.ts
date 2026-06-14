@@ -141,3 +141,15 @@ export const reactionSchema = {
     return REACTIONS.has(content) ? ok({ content }) : fail('content', 'Invalid reaction')
   },
 }
+
+export const messageSchema = {
+  safeParse(value: unknown): ParseResult<{ content: string }> {
+    const body = asObject(value)
+    if (!body) return fail('body', 'Invalid message')
+
+    const content = cleanString(body.content, 500)
+    if (content.length < 1) return fail('content', 'Message is required')
+
+    return ok({ content })
+  },
+}

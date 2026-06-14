@@ -678,6 +678,76 @@ body { line-height: 1.6; }
   line-height: 1.3;
 }
 
+.vp-equation-block {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(248,250,252,0.74));
+  padding: 12px 14px;
+  color: var(--ink);
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1rem;
+  line-height: 2;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.7), 0 8px 22px rgba(79,70,229,0.06);
+  white-space: nowrap;
+}
+
+.vp-math-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08rem;
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.74);
+  padding: 0.02rem 0.28rem;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.96em;
+  vertical-align: baseline;
+}
+
+.vp-math-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0.14rem;
+  vertical-align: middle;
+  line-height: 1.05;
+}
+
+.vp-math-frac-top {
+  display: block;
+  border-bottom: 1.5px solid currentColor;
+  padding: 0 0.28rem 0.08rem;
+}
+
+.vp-math-frac-bottom {
+  display: block;
+  padding: 0.08rem 0.28rem 0;
+}
+
+.vp-math-script {
+  font-size: 0.68em;
+  font-weight: 700;
+  line-height: 0;
+}
+
+.vp-math-sqrt::before {
+  content: "√";
+  margin-right: 0.08rem;
+  font-weight: 700;
+}
+
+.vp-math-sqrt {
+  display: inline-flex;
+  align-items: baseline;
+  border-top: 1.5px solid currentColor;
+  margin-left: 0.08rem;
+  padding: 0.02rem 0.1rem 0;
+}
+
 /* Slightly stronger, consistent primary CTA utility */
 .vp-primary {
   background: linear-gradient(90deg,var(--forest),var(--indigo));

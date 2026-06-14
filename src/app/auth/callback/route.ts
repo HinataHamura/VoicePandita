@@ -32,6 +32,10 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase.auth.exchangeCodeForSession(code)
   if (!error && data.user) {
+    response.cookies.set('vp_demo_session', '', { path: '/', maxAge: 0, sameSite: 'lax' })
+    response.cookies.set('vp_guest_session', '', { path: '/', maxAge: 0, sameSite: 'lax' })
+    response.cookies.set('vp_student_id', data.user.id, { path: '/', maxAge: 2592000, sameSite: 'lax' })
+
     const profile = {
       id: data.user.id,
       email: data.user.email,
