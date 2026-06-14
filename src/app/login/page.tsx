@@ -134,14 +134,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-cream flex items-center justify-center px-4">
+    <div className="min-h-dvh overflow-y-auto bg-cream flex items-start justify-center px-4 py-5 sm:py-7">
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="w-full max-w-sm"
       >
-        <div className="text-center mb-8">
+        <div className="text-center mb-5">
           <div className="mb-4 flex justify-center">
             <LanguageSwitcher compact />
           </div>
@@ -153,8 +153,8 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="card p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="card p-5">
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div>
               <label className="bangla text-sm font-medium text-ink/70 block mb-1.5">{t('auth.email')}</label>
               <div className="relative">
@@ -165,7 +165,7 @@ export default function LoginPage() {
                   onChange={e => setEmail(e.target.value)}
                   required
                   placeholder={t('auth.emailPlaceholder')}
-                  className="w-full rounded-lg border border-forest/10 bg-white/78 py-3 pl-9 pr-4 text-sm shadow-sm focus:border-saffron/50 focus:outline-none"
+                  className="w-full rounded-lg border border-forest/10 bg-white/78 py-2.5 pl-9 pr-4 text-sm shadow-sm focus:border-saffron/50 focus:outline-none"
                 />
               </div>
             </div>
@@ -180,7 +180,7 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className="w-full rounded-lg border border-forest/10 bg-white/78 py-3 pl-9 pr-10 text-sm shadow-sm focus:border-saffron/50 focus:outline-none"
+                  className="w-full rounded-lg border border-forest/10 bg-white/78 py-2.5 pl-9 pr-10 text-sm shadow-sm focus:border-saffron/50 focus:outline-none"
                 />
                 <button
                   type="button"
@@ -200,14 +200,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-saffron py-3 text-sm font-semibold text-white shadow-lg shadow-saffron/18 hover:bg-saffron/90 disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-saffron py-2.5 text-sm font-semibold text-white shadow-lg shadow-saffron/18 hover:bg-saffron/90 disabled:opacity-60"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
               <span className="bangla">{isSignup ? t('auth.signup') : t('auth.login')}</span>
             </button>
           </form>
 
-          <div className="relative my-4">
+          <div className="relative my-3">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-black/8" />
             </div>
@@ -217,7 +217,7 @@ export default function LoginPage() {
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-forest/10 bg-white/90 py-3 text-sm font-semibold text-ink/75 shadow-sm hover:bg-white disabled:opacity-60"
+            className="mb-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-forest/10 bg-white/90 py-2.5 text-sm font-semibold text-ink/75 shadow-sm hover:bg-white disabled:opacity-60"
           >
             {loading && <Loader2 size={16} className="animate-spin" />}
             {loading ? t('auth.googleLoading') : t('auth.google')}
@@ -226,7 +226,7 @@ export default function LoginPage() {
           <button
             onClick={guestLogin}
             disabled={loading}
-            className="bangla w-full rounded-lg border border-forest/10 bg-white/70 py-3 text-sm font-medium text-ink/70 shadow-sm hover:bg-paper/80 disabled:opacity-60"
+            className="bangla w-full rounded-lg border border-forest/10 bg-white/70 py-2.5 text-sm font-medium text-ink/70 shadow-sm hover:bg-paper/80 disabled:opacity-60"
           >
             {t('auth.guest')}
           </button>
@@ -234,22 +234,22 @@ export default function LoginPage() {
           <button
             onClick={demoLogin}
             disabled={loading}
-            className="mt-3 w-full rounded-lg border border-saffron/30 bg-saffron/5 py-3 text-sm font-semibold text-saffron shadow-sm hover:bg-saffron/10 disabled:opacity-60"
+            className="mt-2.5 w-full rounded-lg border border-saffron/30 bg-saffron/5 py-2.5 text-sm font-semibold text-saffron shadow-sm hover:bg-saffron/10 disabled:opacity-60"
           >
             {t('auth.demo')}
           </button>
 
-          <div className="mt-3 rounded-lg border border-forest/8 bg-paper/72 px-3 py-2 text-xs text-ink/55">
+          <div className="mt-2.5 rounded-lg border border-forest/8 bg-paper/72 px-3 py-2 text-xs text-ink/55">
             Demo: <span className="font-mono">{DEMO_EMAIL}</span> / <span className="font-mono">{DEMO_PASSWORD}</span>
           </div>
-        </div>
 
-        <button
-          onClick={() => setIsSignup(value => !value)}
-          className="bangla text-center w-full mt-4 text-sm text-ink/50 hover:text-ink transition-colors"
-        >
-          {isSignup ? t('auth.existingUser') : t('auth.newUser')}
-        </button>
+          <button
+            onClick={() => setIsSignup(value => !value)}
+            className="bangla text-center w-full mt-3 rounded-lg py-2 text-sm font-medium text-ink/60 hover:bg-forest/5 hover:text-ink transition-colors"
+          >
+            {isSignup ? t('auth.existingUser') : t('auth.newUser')}
+          </button>
+        </div>
       </motion.div>
     </div>
   )
