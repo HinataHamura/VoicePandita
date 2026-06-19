@@ -186,6 +186,20 @@ answer = generate_answer(
 
 ---
 
+## Live Demo Links
+
+Primary link:
+
+- https://voice-pandita.vercel.app/
+
+If the primary link is unavailable, try one of these Vercel deployment links:
+
+- https://voice-pandita-9my2c0pen-esha-s-projects5.vercel.app/
+- https://voice-pandita-esha-s-projects5.vercel.app
+- https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app
+
+---
+
 ## API Keys Required
 
 ### 1. Supabase (Database + Auth)

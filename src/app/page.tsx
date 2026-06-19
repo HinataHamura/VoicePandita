@@ -9,6 +9,7 @@ import {
   BookOpenCheck,
   BrainCircuit,
   CheckCircle2,
+  ExternalLink,
   FileText,
   Globe2,
   GraduationCap,
@@ -50,6 +51,13 @@ const pillars = [
     title: 'Inclusive by design',
     desc: 'Bangla, BdSL, and indigenous language bridge modes keep learning close to identity and access.',
   },
+]
+
+const deploymentLinks = [
+  'https://voice-pandita.vercel.app/',
+  'https://voice-pandita-9my2c0pen-esha-s-projects5.vercel.app/',
+  'https://voice-pandita-esha-s-projects5.vercel.app',
+  'https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app',
 ]
 
 const answerSteps = ['প্রশ্ন বুঝি', 'Context খুঁজি', 'ধাপে ধাপে বুঝাই', 'Practice দিই']
@@ -131,7 +139,29 @@ export default function HomePage() {
             </Link>
           </motion.div>
 
-          <motion.div variants={fadeUp} custom={4} className="mt-9 grid max-w-3xl grid-cols-2 gap-3 md:grid-cols-4">
+          <motion.div variants={fadeUp} custom={4} className="mt-6 max-w-3xl rounded-md border border-forest/15 bg-white/75 p-4 shadow-sm shadow-forest/10 backdrop-blur-xl">
+            <div className="flex items-start gap-3">
+              <ExternalLink className="mt-0.5 flex-shrink-0 text-forest" size={18} />
+              <div>
+                <p className="text-sm font-bold text-ink">Main link na khulle ei mirror links try korun</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {deploymentLinks.map((url, index) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border border-forest/15 bg-paper/80 px-3 py-2 text-xs font-semibold text-forest hover:border-forest/30 hover:bg-white"
+                    >
+                      Link {index + 1}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div variants={fadeUp} custom={5} className="mt-9 grid max-w-3xl grid-cols-2 gap-3 md:grid-cols-4">
             {proofPoints.map(item => (
               <div key={item.label} className="rounded-md border border-white/70 bg-white/70 p-4 shadow-sm shadow-forest/6 backdrop-blur-xl">
                 <div className="text-lg font-bold text-ink">{item.value}</div>
