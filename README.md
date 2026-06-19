@@ -2,7 +2,6 @@
 
 Live demo links:
 
-- https://voice-pandita-3pr309jn4-esha-s-projects5.vercel.app/
 - https://voice-pandita-esha-s-projects5.vercel.app
 - https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app
 - https://voice-pandita.vercel.app/
@@ -196,7 +195,6 @@ Primary link:
 
 If the primary link is unavailable or shows a browser connection timeout, try one of these Vercel deployment links. Browser-level timeout pages are outside the app, so the fallback links need to be shared separately before opening the site.
 
-- https://voice-pandita-3pr309jn4-esha-s-projects5.vercel.app/
 - https://voice-pandita-esha-s-projects5.vercel.app
 - https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app
 

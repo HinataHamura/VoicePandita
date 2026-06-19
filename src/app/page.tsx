@@ -54,7 +54,6 @@ const pillars = [
 ]
 
 const deploymentLinks = [
-  'https://voice-pandita-3pr309jn4-esha-s-projects5.vercel.app/',
   'https://voice-pandita-esha-s-projects5.vercel.app',
   'https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app',
   'https://voice-pandita.vercel.app/',
