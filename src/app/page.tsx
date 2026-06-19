@@ -54,10 +54,10 @@ const pillars = [
 ]
 
 const deploymentLinks = [
-  'https://voice-pandita.vercel.app/',
-  'https://voice-pandita-9my2c0pen-esha-s-projects5.vercel.app/',
+  'https://voice-pandita-3pr309jn4-esha-s-projects5.vercel.app/',
   'https://voice-pandita-esha-s-projects5.vercel.app',
   'https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app',
+  'https://voice-pandita.vercel.app/',
 ]
 
 const answerSteps = ['প্রশ্ন বুঝি', 'Context খুঁজি', 'ধাপে ধাপে বুঝাই', 'Practice দিই']
