@@ -2,8 +2,8 @@
 
 Link : https://voice-pandita-9my2c0pen-esha-s-projects5.vercel.app/
 or, https://voice-pandita.vercel.app/
-or, voice-pandita-esha-s-projects5.vercel.app
-or, voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app
+or, https://voice-pandita-esha-s-projects5.vercel.app
+or, https://voice-pandita-eshafarzana666-6279-esha-s-projects5.vercel.app
 
 > Bangladesh-এর প্রথম voice-first AI tutoring system।
 > Voice দাও — Visual পাও। NCTB curriculum অনুযায়ী।
