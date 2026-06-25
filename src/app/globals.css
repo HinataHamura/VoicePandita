@@ -758,3 +758,125 @@ body { line-height: 1.6; }
 
 /* Non-invasive: these are helper utilities only and do not alter existing component styles unless explicitly used */
 
+/* ---- Production-grade utility classes ---- */
+
+.text-gradient-brand {
+  background: linear-gradient(135deg, var(--forest), var(--indigo));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.heading-tight {
+  letter-spacing: -0.03em;
+  font-weight: 900;
+}
+
+.vp-nav-active {
+  border-left: 4px solid var(--forest);
+  background: linear-gradient(90deg, rgba(18, 162, 139, 0.08), transparent);
+  color: var(--forest);
+}
+
+html.vp-dark .vp-nav-active {
+  border-left-color: #9DEEF2;
+  background: linear-gradient(90deg, rgba(157, 238, 242, 0.1), transparent);
+  color: #9DEEF2;
+}
+
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(23, 32, 51, 0.3);
+  padding: 0.6rem 0.75rem 0.25rem;
+}
+
+html.vp-dark .nav-section-label {
+  color: rgba(236, 246, 241, 0.3);
+}
+
+.thinking-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--saffron);
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinking-bounce {
+  0%, 100% { transform: scaleY(0.5); opacity: 0.5; }
+  50% { transform: scaleY(1.4); opacity: 1; }
+}
+
+.waveform-bar {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--forest);
+  transition: height 80ms ease;
+}
+
+.profile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--forest), var(--indigo));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.step-circle-done {
+  background: var(--forest);
+  color: white;
+}
+
+.step-circle-active {
+  background: white;
+  color: var(--forest);
+  border: 2px solid var(--forest);
+  box-shadow: 0 0 0 4px rgba(18, 162, 139, 0.15);
+  animation: step-pulse 2s ease-in-out infinite;
+}
+
+.step-circle-future {
+  background: rgba(23, 32, 51, 0.08);
+  color: rgba(23, 32, 51, 0.35);
+}
+
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(18, 162, 139, 0.15); }
+  50% { box-shadow: 0 0 0 6px rgba(18, 162, 139, 0.25); }
+}
+
+.step-connector {
+  height: 2px;
+  flex: 1;
+  background: linear-gradient(90deg, var(--forest), rgba(23, 32, 51, 0.1));
+}
+
+.step-connector-future {
+  height: 2px;
+  flex: 1;
+  background: rgba(23, 32, 51, 0.1);
+}
+

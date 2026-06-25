@@ -8,17 +8,17 @@ const config = {
   theme: {
     extend: {
       colors: {
-        ink: '#1E293B',
-        paper: '#EEF2FF',
-        saffron: '#FDBA74',
-        forest: '#6366F1',
-        mist: '#C4B5FD',
-        clay: '#F97373',
-        gold: '#FDBA74',
-        cream: '#F8FAFC',
-        indigo: '#7C83FD',
-        aqua: '#A5F3FC',
-        lavender: '#C4B5FD',
+        ink: '#172033',
+        paper: '#EEF3FF',
+        saffron: '#F59E0B',
+        forest: '#12A28B',
+        mist: '#B9C8FF',
+        clay: '#EF5B5B',
+        gold: '#F6C453',
+        cream: '#F7FAFF',
+        indigo: '#4F46E5',
+        aqua: '#22D3EE',
+        lavender: '#B9C8FF',
       },
       fontFamily: {
         display: ['var(--font-display)', 'serif'],

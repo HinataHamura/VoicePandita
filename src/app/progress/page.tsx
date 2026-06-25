@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion, useSpring, useTransform, useInView } from 'framer-motion'
+import { useRef } from 'react'
 import {
   ArrowLeft,
   BarChart3,
@@ -92,6 +93,65 @@ const statusTone: Record<ConceptStatus, string> = {
   Confused: 'bg-clay/12 text-clay',
   Improving: 'bg-saffron/18 text-orange-700',
   Clear: 'bg-forest/12 text-forest',
+}
+
+function RadialArc({ radius, value, color, strokeWidth = 6, size = 200 }: {
+  radius: number; value: number; color: string; strokeWidth?: number; size?: number
+}) {
+  const ref = useRef<SVGCircleElement>(null)
+  const inView = useInView(ref, { once: true })
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - value / 100)
+  const spring = useSpring(inView ? 0 : circumference, { stiffness: 60, damping: 20 })
+  const dashOffset = useTransform(spring, v => circumference - (circumference - offset) * (1 - v / circumference))
+
+  useEffect(() => {
+    if (inView) spring.set(offset)
+  }, [inView, offset, spring])
+
+  const cx = size / 2, cy = size / 2
+  return (
+    <motion.circle
+      ref={ref}
+      cx={cx} cy={cy} r={radius}
+      fill="none"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeDasharray={circumference}
+      style={{ strokeDashoffset: dashOffset, rotate: -90, originX: `${cx}px`, originY: `${cy}px` }}
+      transform={`rotate(-90 ${cx} ${cy})`}
+    />
+  )
+}
+
+function SubjectRadialChart({ subjects }: { subjects: { label: string; value: number; color: string }[] }) {
+  const size = 180
+  const center = size / 2
+  const radii = [72, 60, 48, 36]
+  return (
+    <div className="flex items-center gap-6">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-shrink-0">
+        {subjects.slice(0, 4).map((s, i) => (
+          <g key={s.label}>
+            <circle cx={center} cy={center} r={radii[i]} fill="none" stroke="rgba(23,32,51,0.06)" strokeWidth={6} />
+            <RadialArc radius={radii[i]} value={s.value} color={s.color} strokeWidth={6} size={size} />
+          </g>
+        ))}
+        <text x={center} y={center - 4} textAnchor="middle" fontSize="18" fontWeight="700" fill="var(--ink)">{subjects[0]?.value ?? 0}%</text>
+        <text x={center} y={center + 14} textAnchor="middle" fontSize="9" fill="rgba(23,32,51,0.45)">{subjects[0]?.label ?? ''}</text>
+      </svg>
+      <div className="space-y-2">
+        {subjects.slice(0, 4).map(s => (
+          <div key={s.label} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
+            <span className="text-xs font-semibold text-ink/65">{s.label}</span>
+            <span className="ml-auto text-xs font-bold text-ink">{s.value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function clamp(value: number, min = 0, max = 100) {
@@ -297,6 +357,40 @@ export default function ProgressPage() {
       />
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+        {/* Subject mastery radial chart */}
+        {insights.length > 0 && (
+          <section className="card p-6">
+            <div className="mb-5 flex items-center gap-2">
+              <BarChart3 size={17} className="text-forest" />
+              <h2 className="text-sm font-semibold text-ink/75">Subject Mastery Overview</h2>
+            </div>
+            <SubjectRadialChart
+              subjects={[
+                {
+                  label: 'Overall',
+                  value: clamp(Math.round((clearCount / Math.max(insights.length, 1)) * 100)),
+                  color: '#12A28B',
+                },
+                {
+                  label: 'Improving',
+                  value: clamp(Math.round((improvingCount / Math.max(insights.length, 1)) * 100)),
+                  color: '#4F46E5',
+                },
+                {
+                  label: 'Voice avg',
+                  value: clamp(improvementOverview.voiceAverage),
+                  color: '#F59E0B',
+                },
+                {
+                  label: 'Written avg',
+                  value: clamp(improvementOverview.writtenAverage),
+                  color: '#22D3EE',
+                },
+              ]}
+            />
+          </section>
+        )}
+
         <section>
           <div className="mb-4 flex items-center gap-2">
             <Gauge size={17} className="text-forest" />

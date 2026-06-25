@@ -12,6 +12,7 @@ export function useStudyBuddyJoin() {
     emotionLabel?: 'confident' | 'confused' | 'frustrated'
     conceptHint?: string
     anonymousSessionId?: string
+    solo?: boolean
   }) {
     setLoading(true)
     setError('')

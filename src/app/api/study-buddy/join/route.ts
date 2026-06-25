@@ -110,18 +110,19 @@ export async function POST(req: Request) {
       maxMembers: config.maxMembers,
     }) as JoinRoom | null
 
-    if (!room) {
+    const isSolo = parsed.data.solo === true
+    if (!room || isSolo) {
       const expiresAt = new Date(Date.now() + config.waitTimeoutSeconds * 1000).toISOString()
       const created = await supabase.from('study_rooms').insert({
-        topic_key: topic.topicKey,
+        topic_key: isSolo ? `${topic.topicKey}-solo-${Date.now()}` : topic.topicKey,
         topic_title: topic.topicTitle,
         subject: topic.subject,
         class_level: parsed.data.classLevel || null,
         language,
         source_question: parsed.data.questionText.slice(0, 1000),
         source_question_hash: topic.topicKey,
-        min_members: config.minMembers,
-        max_members: config.maxMembers,
+        min_members: isSolo ? 1 : config.minMembers,
+        max_members: isSolo ? 1 : config.maxMembers,
         expires_at: expiresAt,
         created_by_session_id: sessionId,
       }).select('id, topic_title, room_status, min_members, max_members, subject').single()

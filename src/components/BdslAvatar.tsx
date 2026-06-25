@@ -890,6 +890,29 @@ function ThreeSignRig({ token, fallbackShape, accent, playing }: {
     const rim = new THREE.DirectionalLight(new THREE.Color(accent), 0.55)
     rim.position.set(-2, 2, 2.4)
     scene.add(rim)
+
+    // Halo ring behind hands
+    const haloGeo = new THREE.RingGeometry(0.32, 0.38, 64)
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(accent),
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+    })
+    const halo = new THREE.Mesh(haloGeo, haloMat)
+    halo.position.set(0, 0.6, -0.15)
+    scene.add(halo)
+
+    // Soft ground shadow plane
+    const shadowGeo = new THREE.PlaneGeometry(4, 4)
+    const shadowMat = new THREE.ShadowMaterial({ opacity: 0.12 })
+    const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat)
+    shadowPlane.rotation.x = -Math.PI / 2
+    shadowPlane.position.y = -0.6
+    shadowPlane.receiveShadow = true
+    scene.add(shadowPlane)
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
     const resize = () => {
       const rect = host.getBoundingClientRect()
       renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false)
@@ -910,6 +933,12 @@ function ThreeSignRig({ token, fallbackShape, accent, playing }: {
       rightHand.rotation.set(degToRad(sampled.rightRot[0]), degToRad(sampled.rightRot[1] + 18), degToRad(sampled.rightRot[2]))
       applyRigHandShape(leftHand, motion.leftHand)
       applyRigHandShape(rightHand, motion.rightHand)
+      // Halo pulse when playing
+      if (playing) {
+        haloMat.opacity = 0.3 + Math.sin(performance.now() * 0.002) * 0.15
+      } else {
+        haloMat.opacity = 0.15
+      }
       renderer.render(scene, camera)
       raf = window.requestAnimationFrame(animate)
     }

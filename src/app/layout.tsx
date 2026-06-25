@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import AppChrome from '@/components/AppChrome'
 import { LanguageProvider } from '@/components/LanguageProvider'
+import PageTransition from '@/components/PageTransition'
 import { bangla, body, display, mono } from '@/lib/fonts'
 import './globals.css'
 
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="bn" className={`${display.variable} ${body.variable} ${bangla.variable} ${mono.variable}`}>
       <body className="bg-cream text-ink antialiased">
         <LanguageProvider>
-          {children}
+          <PageTransition>
+            {children}
+          </PageTransition>
           <AppChrome />
         </LanguageProvider>
       </body>
