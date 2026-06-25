@@ -1413,23 +1413,33 @@ export default function LearnPage() {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.role === 'user' ? (
-                  <div className="bangla max-w-[84%] rounded-[1.4rem] rounded-br-md bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-xl shadow-forest/20">
+                  <div className="bangla max-w-[84%] rounded-2xl rounded-br-sm bg-gradient-to-br from-forest to-indigo px-5 py-3 leading-relaxed text-white shadow-2xl shadow-forest/25">
                     {msg.text}
                   </div>
                 ) : (
                   <div className="max-w-[94%] space-y-3 md:max-w-[76%]">
                     {msg.loading ? (
-                      <div className="card space-y-3 p-5">
-                        <div className="flex items-center gap-2 text-xs text-ink/50">
-                          <Loader2 size={14} className="animate-spin" /> TutorAgent traversing NCTB graph...
+                      <div className="card space-y-4 p-5">
+                        <div className="flex items-center gap-3 text-xs text-ink/50">
+                          <div className="flex items-end gap-1 h-5">
+                            <span className="thinking-dot" />
+                            <span className="thinking-dot" />
+                            <span className="thinking-dot" />
+                          </div>
+                          TutorAgent NCTB graph traverse করছে...
                         </div>
-                        <div className="skeleton h-4 w-3/4" />
-                        <div className="skeleton h-4 w-full" />
-                        <div className="skeleton h-4 w-2/3" />
+                        <div className="skeleton h-3.5 w-3/4 rounded-full" />
+                        <div className="skeleton h-3.5 w-full rounded-full" />
+                        <div className="skeleton h-3.5 w-2/3 rounded-full" />
                       </div>
                     ) : (
                       <>
-                        <div className="card p-5">
+                        <motion.div
+                          className="card p-5"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+                        >
                           <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
                             {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
                             {msg.targetLanguage && (
@@ -1489,7 +1499,7 @@ export default function LearnPage() {
                             </div>
                           )}
                           <FormattedAnswer text={msg.text} />
-                        </div>
+                        </motion.div>
                         {((msg.outputMode === 'video' && msg.animationKey) || msg.animationKey || msg.diagram) && (
                           <div className="card p-4">
                             <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-forest">

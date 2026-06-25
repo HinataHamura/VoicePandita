@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpen, ChevronLeft, ChevronRight, GraduationCap, Target } from 'lucide-react'
+import { BookOpen, Check, ChevronLeft, ChevronRight, GraduationCap, Target } from 'lucide-react'
 import { getAuthenticatedStudent } from '@/lib/authFlow'
 import { saveStudentProfile } from '@/lib/studentStore'
 
@@ -41,6 +41,29 @@ const steps = [
   },
 ]
 
+function StepIndicator({ current, total }: { current: number; total: number }) {
+  return (
+    <div className="flex items-center gap-0">
+      {Array.from({ length: total }).map((_, i) => (
+        <div key={i} className="flex items-center">
+          <motion.div
+            className={`step-circle ${
+              i < current ? 'step-circle-done' : i === current ? 'step-circle-active' : 'step-circle-future'
+            }`}
+            animate={{ scale: i === current ? 1.08 : 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+          >
+            {i < current ? <Check size={14} /> : <span>{i + 1}</span>}
+          </motion.div>
+          {i < total - 1 && (
+            <div className={i < current ? 'step-connector' : 'step-connector-future'} style={{ width: 40 }} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(0)
@@ -55,7 +78,6 @@ export default function OnboardingPage() {
 
   const current = steps[step]
   const selected = answers[current.id]
-  const progress = ((step + 1) / steps.length) * 100
   const Icon = current.icon
 
   function pick(val: string) {
@@ -74,63 +96,82 @@ export default function OnboardingPage() {
   }
 
   function back() {
-    if (step === 0) {
-      router.push('/')
-      return
-    }
+    if (step === 0) { router.push('/'); return }
     setDir(-1)
     setStep(prev => prev - 1)
   }
 
   return (
     <div className="ai-shell flex min-h-dvh flex-col items-center justify-center px-4 py-12">
-      <div className="mb-10 w-full max-w-md">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="font-mono text-xs text-ink/40">{step + 1} / {steps.length}</span>
-          <span className="text-xs font-semibold text-forest">SSC/HSC setup</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-forest/10">
-          <motion.div className="h-full rounded-full bg-gradient-to-r from-forest to-indigo" animate={{ width: `${progress}%` }} transition={{ duration: 0.4, ease: 'easeOut' }} />
-        </div>
+      {/* Step indicator */}
+      <div className="mb-10 flex flex-col items-center gap-4">
+        <StepIndicator current={step} total={steps.length} />
+        <span className="text-xs font-semibold text-ink/40">{step + 1} / {steps.length} ধাপ</span>
       </div>
 
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md" style={{ perspective: '800px' }}>
         <AnimatePresence mode="wait" custom={dir}>
           <motion.div
             key={step}
             custom={dir}
-            initial={{ opacity: 0, x: dir * 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -dir * 50 }}
-            transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, x: dir * 80, rotateY: dir * 8 }}
+            animate={{ opacity: 1, x: 0, rotateY: 0 }}
+            exit={{ opacity: 0, x: -dir * 80, rotateY: -dir * 8 }}
+            transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-forest to-indigo text-white shadow-xl shadow-forest/20">
+            <motion.div
+              className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-forest to-indigo text-white shadow-xl shadow-forest/20"
+              animate={{ y: [0, -6, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            >
               <Icon size={24} />
-            </div>
+            </motion.div>
             <h2 className="bangla mb-2 text-center font-display text-2xl font-bold leading-snug md:text-3xl">{current.q}</h2>
             <p className="bangla mb-8 text-center text-sm text-ink/55">{current.sub}</p>
 
             <div className="space-y-3">
               {current.opts.map(opt => (
-                <button
+                <motion.button
                   key={opt.val}
                   onClick={() => pick(opt.val)}
-                  className={`w-full rounded-2xl border p-4 text-left shadow-sm ${
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`relative w-full rounded-2xl border p-4 text-left shadow-sm transition-colors ${
                     selected === opt.val
-                      ? 'border-forest bg-forest/10 shadow-md shadow-forest/10'
+                      ? 'border-forest bg-forest/8 shadow-md shadow-forest/12'
                       : 'border-white/60 bg-white/82 hover:border-forest/30 hover:bg-white'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${selected === opt.val ? 'border-forest bg-forest' : 'border-forest/20'}`}>
-                      {selected === opt.val && <div className="h-2 w-2 rounded-full bg-white" />}
+                    <div className={`relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                      selected === opt.val ? 'border-forest bg-forest' : 'border-forest/25'
+                    }`}>
+                      <AnimatePresence>
+                        {selected === opt.val && (
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                          >
+                            <Check size={13} className="text-white" />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                     <div>
                       <div className="font-semibold text-ink">{opt.label}</div>
                       <div className="text-xs text-ink/50 mt-0.5">{opt.sub}</div>
                     </div>
                   </div>
-                </button>
+                  {selected === opt.val && (
+                    <motion.div
+                      layoutId="option-highlight"
+                      className="absolute inset-0 rounded-2xl bg-gradient-to-r from-forest/6 to-indigo/4"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                </motion.button>
               ))}
             </div>
           </motion.div>
@@ -141,18 +182,19 @@ export default function OnboardingPage() {
         <button onClick={back} className="flex items-center gap-1.5 px-3 py-2 text-sm text-ink/45 hover:text-ink">
           <ChevronLeft size={16} /> Back
         </button>
-        <button
+        <motion.button
           onClick={next}
           disabled={!selected}
+          whileHover={selected ? { scale: 1.02 } : undefined}
+          whileTap={selected ? { scale: 0.97 } : undefined}
+          transition={{ type: 'spring', stiffness: 400, damping: 20 }}
           className={`flex flex-1 items-center justify-center gap-2 rounded-full py-4 text-base font-semibold ${
-            selected
-              ? 'soft-button hover:-translate-y-0.5'
-              : 'cursor-not-allowed bg-forest/8 text-ink/30'
+            selected ? 'soft-button' : 'cursor-not-allowed bg-forest/8 text-ink/30'
           }`}
         >
           {step === steps.length - 1 ? 'Start learning' : 'Next'}
           <ChevronRight size={18} />
-        </button>
+        </motion.button>
       </div>
     </div>
   )

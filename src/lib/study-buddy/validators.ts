@@ -47,6 +47,7 @@ export const joinStudyBuddySchema = {
     emotionLabel?: EmotionLabel
     conceptHint?: string
     anonymousSessionId?: string
+    solo?: boolean
   }> {
     const body = asObject(value)
     if (!body) return fail('body', 'Invalid request')
@@ -71,6 +72,7 @@ export const joinStudyBuddySchema = {
       emotionLabel: emotionLabel ? emotionLabel as EmotionLabel : undefined,
       conceptHint: cleanString(body.conceptHint, 160) || undefined,
       anonymousSessionId: anonymousSessionId || undefined,
+      solo: body.solo === true,
     })
   },
 }

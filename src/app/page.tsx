@@ -1,8 +1,12 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion, useScroll, useTransform } from 'framer-motion'
+
+const HeroOrb = dynamic(() => import('@/components/three/HeroOrb'), { ssr: false })
 import {
   Accessibility,
   ArrowRight,
@@ -61,13 +65,35 @@ const deploymentLinks = [
 
 const answerSteps = ['প্রশ্ন বুঝি', 'Context খুঁজি', 'ধাপে ধাপে বুঝাই', 'Practice দিই']
 
+const ease = [0.16, 1, 0.3, 1] as const
+
 const fadeUp = {
   hidden: { opacity: 0, y: 22 },
   visible: (index = 0) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: index * 0.08, duration: 0.55, ease: [0.16, 1, 0.3, 1] },
+    transition: { delay: index * 0.08, duration: 0.55, ease },
   }),
+}
+
+const proofPointSparklines = [
+  [30, 60, 45, 80, 65, 90],
+  [20, 40, 35, 55, 70, 65],
+  [50, 45, 70, 60, 85, 80],
+  [40, 55, 50, 75, 65, 95],
+]
+
+function Sparkline({ points }: { points: number[] }) {
+  const max = Math.max(...points)
+  const w = 56, h = 24, pad = 2
+  const xs = points.map((_, i) => pad + (i / (points.length - 1)) * (w - pad * 2))
+  const ys = points.map(v => h - pad - ((v / max) * (h - pad * 2)))
+  const d = xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x} ${ys[i]}`).join(' ')
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <path d={d} fill="none" stroke="var(--forest)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
+    </svg>
+  )
 }
 
 function BrandMark() {
@@ -75,7 +101,7 @@ function BrandMark() {
     <Link href="/" className="flex items-center gap-3" aria-label="VoicePandita home">
       <Image src="/icon.jpg" alt="" width={42} height={42} className="h-10 w-10 rounded-md object-cover shadow-lg shadow-forest/20" priority />
       <span className="font-display text-xl font-bold tracking-tight text-ink">
-        Voice<span className="text-forest">Pandita</span>
+        Voice<span className="text-gradient-brand">Pandita</span>
       </span>
     </Link>
   )
@@ -92,9 +118,15 @@ function SectionHeading({ eyebrow, title, sub }: { eyebrow: string; title: strin
 }
 
 export default function HomePage() {
+  const heroRef = useRef<HTMLDivElement>(null)
+  const { scrollY } = useScroll()
+  const heroOpacity = useTransform(scrollY, [0, 280], [1, 0.72])
+  const heroY = useTransform(scrollY, [0, 280], [0, -24])
+
   return (
     <main className="ai-shell min-h-dvh overflow-hidden">
       <nav className="sticky top-0 z-50 border-b border-white/70 bg-white/70 backdrop-blur-2xl">
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-forest/40 to-transparent" />
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
           <BrandMark />
           <div className="flex items-center gap-2">
@@ -116,26 +148,32 @@ export default function HomePage() {
       <section className="relative mx-auto grid min-h-[calc(100dvh-4rem)] max-w-7xl items-center gap-8 px-4 pb-16 pt-10 lg:grid-cols-[1fr_0.92fr]">
         <div className="hero-ribbon" aria-hidden="true" />
 
-        <motion.div initial="hidden" animate="visible" className="relative z-10">
+        <motion.div initial="hidden" animate="visible" className="relative z-10" style={{ opacity: heroOpacity, y: heroY }} ref={heroRef}>
           <motion.div variants={fadeUp} custom={0} className="vp-kicker mb-5 w-fit">
             <Sparkles size={15} />
             Bangladesh-first AI tutor
           </motion.div>
-          <motion.h1 variants={fadeUp} custom={1} className="max-w-4xl font-display text-5xl font-bold leading-[1.02] text-ink md:text-7xl">
-            প্রত্যেক শিক্ষার্থীর জন্য personal AI শিক্ষক।
+          <motion.h1 variants={fadeUp} custom={1} className="heading-tight max-w-4xl font-display text-5xl leading-[1.02] text-ink md:text-7xl">
+            প্রত্যেক শিক্ষার্থীর জন্য{' '}
+            <span className="text-gradient-brand">personal AI</span>{' '}
+            শিক্ষক।
           </motion.h1>
           <motion.p variants={fadeUp} custom={2} className="bangla mt-6 max-w-2xl text-lg leading-relaxed text-ink/60">
             VoicePandita বাংলা ভাষায় প্রশ্ন নেয়, curriculum context ধরে উত্তর দেয়, diagram বানায়, voice পড়ে শোনায়, আর weak topic মনে রেখে পরের practice সাজায়।
           </motion.p>
           <motion.div variants={fadeUp} custom={3} className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link href="/learn" className="soft-button inline-flex items-center justify-center gap-2 px-7 py-4 text-base font-bold">
-              Tutor খুলুন
-              <ArrowRight size={18} />
-            </Link>
-            <Link href="/study-buddy" className="inline-flex items-center justify-center gap-2 rounded-md border border-forest/15 bg-white/80 px-7 py-4 text-base font-bold text-ink shadow-lg shadow-forest/10 backdrop-blur-xl hover:-translate-y-0.5 hover:border-forest/30 hover:bg-white">
-              Study Room দেখুন
-              <Network size={18} className="text-forest" />
-            </Link>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
+              <Link href="/learn" className="soft-button inline-flex items-center justify-center gap-2 px-7 py-4 text-base font-bold">
+                Tutor খুলুন
+                <ArrowRight size={18} />
+              </Link>
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
+              <Link href="/study-buddy" className="inline-flex items-center justify-center gap-2 rounded-md border border-forest/15 bg-white/80 px-7 py-4 text-base font-bold text-ink shadow-lg shadow-forest/10 backdrop-blur-xl hover:border-forest/30 hover:bg-white">
+                Study Room দেখুন
+                <Network size={18} className="text-forest" />
+              </Link>
+            </motion.div>
           </motion.div>
 
           <motion.div variants={fadeUp} custom={4} className="mt-6 max-w-3xl rounded-md border border-forest/15 bg-white/75 p-4 shadow-sm shadow-forest/10 backdrop-blur-xl">
@@ -161,11 +199,21 @@ export default function HomePage() {
           </motion.div>
 
           <motion.div variants={fadeUp} custom={5} className="mt-9 grid max-w-3xl grid-cols-2 gap-3 md:grid-cols-4">
-            {proofPoints.map(item => (
-              <div key={item.label} className="rounded-md border border-white/70 bg-white/70 p-4 shadow-sm shadow-forest/6 backdrop-blur-xl">
-                <div className="text-lg font-bold text-ink">{item.value}</div>
-                <div className="mt-1 text-xs font-semibold text-ink/50">{item.label}</div>
-              </div>
+            {proofPoints.map((item, i) => (
+              <motion.div
+                key={item.label}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08, duration: 0.45, ease }}
+                className="rounded-md border border-white/70 bg-white/70 p-4 shadow-sm shadow-forest/6 backdrop-blur-xl"
+              >
+                <div className="mb-1 flex items-end justify-between">
+                  <div className="text-lg font-bold text-ink">{item.value}</div>
+                  <Sparkline points={proofPointSparklines[i]} />
+                </div>
+                <div className="text-xs font-semibold text-ink/50">{item.label}</div>
+              </motion.div>
             ))}
           </motion.div>
         </motion.div>
@@ -174,10 +222,22 @@ export default function HomePage() {
           initial={{ opacity: 0, scale: 0.96, y: 18 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-          className="relative"
+          className="relative flex flex-col items-center justify-center"
         >
-          <div className="demo-device">
-            <div className="mb-4 flex items-center justify-between gap-3">
+          {/* 3D Orb */}
+          <div className="relative h-[340px] w-full max-w-[420px] lg:h-[420px]">
+            <HeroOrb className="rounded-2xl" />
+            <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/20" />
+          </div>
+
+          {/* Floating chat preview card */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8, duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            className="demo-device mt-4 w-full max-w-[420px]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold text-ink">Live Tutor Preview</div>
                 <div className="text-xs font-medium text-ink/45">Bangla voice + RAG + graph memory</div>
@@ -187,37 +247,22 @@ export default function HomePage() {
                 Low-data ready
               </div>
             </div>
-
-            <div className="space-y-4">
-              <div className="ml-auto max-w-[82%] rounded-md bg-gradient-to-br from-forest to-indigo px-5 py-3 text-white shadow-xl shadow-forest/20">
+            <div className="space-y-3">
+              <div className="ml-auto max-w-[82%] rounded-2xl bg-gradient-to-br from-forest to-indigo px-4 py-2.5 text-sm text-white shadow-xl shadow-forest/20">
                 সালোকসংশ্লেষণ সহজ করে বুঝাও
               </div>
-              <div className="rounded-md border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur-xl">
-                <div className="mb-4 flex flex-wrap gap-2">
-                  <span className="rounded-md bg-forest/10 px-3 py-1 text-xs font-bold text-forest">Curriculum grounded</span>
-                  <span className="rounded-md bg-saffron/20 px-3 py-1 text-xs font-bold text-orange-700">Confused learner</span>
-                </div>
-                <p className="bangla leading-relaxed text-ink/75">
-                  গাছ সূর্যের আলো, পানি এবং কার্বন ডাই-অক্সাইড ব্যবহার করে নিজের খাবার তৈরি করে। এই খাবারের নাম গ্লুকোজ, আর পাশে অক্সিজেন বের হয়।
+              <div className="rounded-xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur-xl">
+                <p className="bangla text-sm leading-relaxed text-ink/75">
+                  গাছ সূর্যের আলো, পানি এবং CO₂ ব্যবহার করে গ্লুকোজ তৈরি করে।
                 </p>
-                <div className="mt-5 grid grid-cols-4 items-center gap-2 text-center text-xs font-bold text-ink/60">
-                  {answerSteps.map((step, index) => (
-                    <div key={step} className="relative rounded-md bg-gradient-to-br from-white to-paper px-2 py-3 shadow-sm">
-                      {step}
-                      {index < answerSteps.length - 1 && <span className="absolute -right-2 top-1/2 hidden h-px w-4 bg-forest/25 md:block" />}
-                    </div>
+                <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold text-ink/55">
+                  {answerSteps.map(step => (
+                    <div key={step} className="rounded-md bg-gradient-to-br from-white to-paper px-1.5 py-2 shadow-sm">{step}</div>
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                {['Diagram', 'Voice', 'Practice'].map(item => (
-                  <div key={item} className="rounded-md border border-white/70 bg-white/60 p-3 text-center text-xs font-bold text-ink/60 shadow-sm">
-                    {item}
-                  </div>
-                ))}
-              </div>
             </div>
-          </div>
+          </motion.div>
         </motion.div>
       </section>
 
@@ -229,8 +274,17 @@ export default function HomePage() {
         />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {demoRoutes.map((route, index) => (
-            <motion.div key={route.href} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index}>
-              <Link href={route.href} className="card group block h-full p-5">
+            <motion.div
+              key={route.href}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              variants={fadeUp}
+              custom={index}
+              whileHover={{ y: -5 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              <Link href={route.href} className="card group block h-full p-5 hover:border-forest/20">
                 <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-md bg-gradient-to-br from-forest to-indigo text-white shadow-lg shadow-forest/20">
                   <route.icon size={21} />
                 </div>
