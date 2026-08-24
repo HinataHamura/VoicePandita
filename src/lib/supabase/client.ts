@@ -3,6 +3,7 @@ import {
   DEMO_SUPABASE_ANON_KEY,
   DEMO_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   NEXT_PUBLIC_SUPABASE_URL,
 } from './env'
 
@@ -19,7 +20,7 @@ export function createClient() {
   if (!browserClient) {
     browserClient = createBrowserClient(
       NEXT_PUBLIC_SUPABASE_URL || DEMO_SUPABASE_URL,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY || DEMO_SUPABASE_ANON_KEY,
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || NEXT_PUBLIC_SUPABASE_ANON_KEY || DEMO_SUPABASE_ANON_KEY,
       {
         auth: {
           autoRefreshToken: browserIsOnline(),
@@ -33,7 +34,7 @@ export function createClient() {
 }
 
 export function hasBrowserSupabaseConfig() {
-  return Boolean(NEXT_PUBLIC_SUPABASE_URL && NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  return Boolean(NEXT_PUBLIC_SUPABASE_URL && (NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || NEXT_PUBLIC_SUPABASE_ANON_KEY))
 }
 
 export function syncSupabaseAuthRefreshWithNetwork(online = browserIsOnline()) {
