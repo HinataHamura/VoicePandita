@@ -1,4 +1,5 @@
 export const NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+export const NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 export const NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 export const SUPABASE_URL = process.env.SUPABASE_URL
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
@@ -12,7 +13,7 @@ function resolveEnv(key: string): string | undefined {
     case 'NEXT_PUBLIC_SUPABASE_URL':
       return NEXT_PUBLIC_SUPABASE_URL
     case 'NEXT_PUBLIC_SUPABASE_ANON_KEY':
-      return NEXT_PUBLIC_SUPABASE_ANON_KEY
+      return NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || NEXT_PUBLIC_SUPABASE_ANON_KEY
     case 'SUPABASE_URL':
       return SUPABASE_URL
     case 'SUPABASE_ANON_KEY':
@@ -41,6 +42,6 @@ export function getRequiredEnv(key: string, fallbackKeys: string[] = []) {
 export function hasSupabaseConfig() {
   return Boolean(
     (NEXT_PUBLIC_SUPABASE_URL || SUPABASE_URL) &&
-      (NEXT_PUBLIC_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY)
+      (NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || NEXT_PUBLIC_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY)
   )
 }
