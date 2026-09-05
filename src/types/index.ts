@@ -5,7 +5,11 @@ export type EmotionState = 'confident' | 'confused' | 'frustrated'
 export type Language = 'bn' | 'ccp' | 'ckm' | 'mrm' | 'gnk'
 export type TargetLanguage = 'Bangla' | 'Chakma' | 'Marma' | 'Garo'
 export type DetectedScript = 'Bengali' | 'Latin' | 'Chakma' | 'Myanmar' | 'Unknown'
-export type AnswerProvenance = 'verified' | 'generated' | 'fallback'
+export type AnswerProvenance =
+  | 'verified-dataset'
+  | 'local-bridge'
+  | 'unverified-demo'
+  | 'fallback-standard-bangla'
 export type LearnerLanguage = 'bn' | 'chakma' | 'garo' | 'marma' | 'en' | 'unknown'
 export type LearnerScript = 'bengali' | 'latin' | 'chakma' | 'myanmar' | 'unknown'
 export type UserLevel = 'ssc' | 'hsc'
@@ -49,18 +53,33 @@ export interface AskResponse {
     outputScript: LearnerScript
     detectionConfidence: number
     translationConfidence: number
-    fallbackUsed: boolean
-    verified: boolean
-  }
+	    fallbackUsed: boolean
+	    verified: boolean
+    routeSource: 'selected-tab' | 'script-detection' | 'fallback'
+    provenance: AnswerProvenance
+	    badge: AnswerProvenance
+	    fallbackReason?: string
+    bridgeSource?: string
+	  }
   diagram?:        string | null
   animationKey?:    AnimationKey | null
   detectedEmotion: EmotionState
   detectedLanguage?: string
   detectedLanguageDetail?: string
   detectedScript?: DetectedScript
-  selectedTargetLanguage?: TargetLanguage
-  requestedTargetLanguage?: TargetLanguage
-  outputScript?: DetectedScript
+	  selectedTargetLanguage?: TargetLanguage
+	  requestedTargetLanguage?: TargetLanguage
+	  selectedLanguage?: string
+	  targetLanguage?: LearnerLanguage
+	  targetScript?: LearnerScript
+	  banglaAnswer?: string
+	  detectedInputScript?: string
+	  confidence?: number
+	  provenance?: AnswerProvenance
+    routeSource?: 'selected-tab' | 'script-detection' | 'fallback'
+	  badge?: AnswerProvenance
+	  fallbackReason?: string | null
+	  outputScript?: DetectedScript
   languageConfidence?: number
   languageMetadata?: {
     detectedLanguage: string
@@ -71,10 +90,14 @@ export interface AskResponse {
     outputScript: DetectedScript
     confidence: number
     verified: boolean
-    provenance: AnswerProvenance
-    fallback: boolean
-    reasons: string[]
-  }
+	    provenance: AnswerProvenance
+	    badge?: AnswerProvenance
+	    fallback: boolean
+	    fallbackReason?: string | null
+    routeSource?: 'selected-tab' | 'script-detection' | 'fallback'
+    bridgeSource?: string
+	    reasons: string[]
+	  }
 }
 
 export interface CurriculumChunk {

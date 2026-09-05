@@ -1,4 +1,4 @@
-import type { LearnerScript, ScriptDetection } from './types'
+import type { LearnerScript, LearnerScriptCounts, ScriptDetection } from './types'
 
 const SCRIPT_RANGES: Array<{ script: Exclude<LearnerScript, 'unknown'>; start: number; end: number }> = [
   { script: 'bengali', start: 0x0980, end: 0x09ff },
@@ -8,12 +8,13 @@ const SCRIPT_RANGES: Array<{ script: Exclude<LearnerScript, 'unknown'>; start: n
   { script: 'latin', start: 0x0061, end: 0x007a },
 ]
 
-function emptyCounts(): Record<LearnerScript, number> {
+function emptyCounts(): LearnerScriptCounts {
   return {
     bengali: 0,
     latin: 0,
     chakma: 0,
     myanmar: 0,
+    mixed: 0,
     unknown: 0,
   }
 }
@@ -35,13 +36,13 @@ export function detectScriptWithConfidence(text: string): ScriptDetection {
     if (script !== 'unknown') recognized += 1
   }
 
-  const candidates: LearnerScript[] = ['chakma', 'myanmar', 'bengali', 'latin']
-  const script = candidates.reduce<LearnerScript>(
-    (best, candidate) => (counts[candidate] > counts[best] ? candidate : best),
-    'unknown',
+  const candidates: Exclude<LearnerScript, 'mixed' | 'unknown'>[] = ['chakma', 'myanmar', 'bengali', 'latin']
+  const script = candidates.reduce<Exclude<LearnerScript, 'unknown'>>(
+    (best, candidate) => ((counts[candidate] || 0) > (counts[best] || 0) ? candidate : best),
+    candidates[0],
   )
 
-  if (script === 'unknown' || recognized === 0) {
+  if (recognized === 0 || (counts[script] || 0) === 0) {
     return {
       script: 'unknown',
       confidence: 0,
@@ -49,9 +50,18 @@ export function detectScriptWithConfidence(text: string): ScriptDetection {
     }
   }
 
+  const activeScripts = candidates.filter(candidate => counts[candidate] > 0)
+  if (activeScripts.length > 1 && (counts[script] || 0) / recognized < 0.7) {
+    return {
+      script: 'mixed',
+      confidence: Number((((counts[script] || 0) / recognized)).toFixed(2)),
+      counts,
+    }
+  }
+
   return {
     script,
-    confidence: Number((counts[script] / recognized).toFixed(2)),
+    confidence: Number((((counts[script] || 0) / recognized)).toFixed(2)),
     counts,
   }
 }

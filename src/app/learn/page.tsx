@@ -31,7 +31,7 @@ import { repairMojibakeText } from '@/lib/textEncoding'
 type OutputMode = 'whiteboard' | 'text' | 'exam' | 'simple' | 'animation' | 'video'
 type EmotionState = 'confident' | 'confused' | 'frustrated' | null
 type LanguageMode = 'bn' | 'ckm' | 'mrm' | 'gnk'
-type AnswerProvenance = 'verified' | 'generated' | 'fallback'
+type AnswerProvenance = 'verified-dataset' | 'local-bridge' | 'unverified-demo' | 'fallback-standard-bangla'
 
 const LANGUAGE_LABEL_BY_CODE: Record<LanguageMode, string> = {
   bn: 'Bangla',
@@ -379,10 +379,18 @@ interface Message {
   animationKey?: AnimationKey | null
   emotion?: EmotionState
   targetLanguage?: string
+  targetScript?: string
+  selectedLanguage?: string
   requestedTargetLanguage?: string
+  detectedInputScript?: string
+  detectedLearnerLanguage?: string
+  detectedLearnerScript?: string
   languageConfidence?: number
   outputScript?: string
   answerProvenance?: AnswerProvenance
+  routeSource?: string
+  provenance?: AnswerProvenance
+  fallbackReason?: string | null
   languageFallback?: boolean
   verified?: boolean
   pwnMessage?: string
@@ -594,15 +602,54 @@ const OUTPUT_LANGUAGE_LABELS: Record<string, string> = {
   chakma: 'চাকমা',
   garo: 'গারো',
   marma: 'মারমা',
+  english: 'English',
+  en: 'English',
+  unknown: 'Unknown',
 }
 
 const OUTPUT_SCRIPT_LABELS: Record<string, string> = {
   bengali: 'বাংলা হরফ',
   latin: 'English horof',
+  chakma: 'Chakma script',
+  myanmar: 'Marma script',
+  unknown: 'unknown script',
 }
 
-const LOW_RESOURCE_FALLBACK_MESSAGE = 'এই ভাষা/হরফে যাচাইকৃত ডেটা সীমিত, তাই বাংলা ব্যাখ্যাও দেওয়া হলো।'
+const DETECTED_LANGUAGE_LABELS: Record<string, string> = {
+  bn: 'Bangla',
+  bangla: 'Bangla',
+  bengali: 'Bangla',
+  en: 'English',
+  english: 'English',
+  chakma: 'Chakma',
+  garo: 'Garo',
+  marma: 'Marma',
+  unknown: 'Unknown',
+}
+
+const DETECTED_SCRIPT_LABELS: Record<string, string> = {
+  bengali: 'Bengali script',
+  latin: 'Latin script',
+  chakma: 'Chakma script',
+  'chakma-native': 'Chakma script',
+  myanmar: 'Marma script',
+  mixed: 'mixed script',
+  unknown: 'unknown script',
+}
+
+const LOW_RESOURCE_FALLBACK_MESSAGE = 'এই ভাষা/হরফে যাচাইকৃত ডেটা সীমিত, তাই নিরাপদ সংক্ষিপ্ত ব্যাখ্যা দেখানো হলো।'
 const EXPERIMENTAL_VOICE_MESSAGE = 'এই ভাষার ভয়েস এখনো পরীক্ষামূলক।'
+const LOW_RESOURCE_GUIDANCE = [
+  'Chakma: Bengali script দিলে dataset-backed উত্তর পাওয়ার সুযোগ বেশি; Latin বা Chakma script হলে Demo / unverified হিসেবে উত্তর দেখানো হবে।',
+  'Marma: Bengali script route সবচেয়ে নিরাপদ; Marma script মানে Marma ভাষা, Burmese নয়। verified resource না থাকলে Bangla fallback দেখাবে।',
+  'Garo: Bengali script route ব্যবহার করো; Latin Garo এখন verified নয়, তাই confident না হলে Bangla fallback থাকবে।',
+].join('\n')
+const BADGE_LABELS: Record<AnswerProvenance, string> = {
+  'verified-dataset': 'Verified dataset',
+  'local-bridge': 'Local bridge',
+  'unverified-demo': 'Demo / unverified',
+  'fallback-standard-bangla': 'Standard Bangla fallback',
+}
 
 function normalizedKey(value?: string | null) {
   return String(value || '').trim().toLowerCase()
@@ -610,7 +657,7 @@ function normalizedKey(value?: string | null) {
 
 function answerOutputLabel(message: Message) {
   const languageKey = normalizedKey(message.targetLanguage)
-  const scriptKey = normalizedKey(message.outputScript)
+  const scriptKey = normalizedKey(message.targetScript || message.outputScript)
   const languageLabel = OUTPUT_LANGUAGE_LABELS[languageKey] || message.targetLanguage || 'বাংলা'
 
   if (languageLabel === 'বাংলা') return 'উত্তর ভাষা: বাংলা'
@@ -619,8 +666,47 @@ function answerOutputLabel(message: Message) {
   return scriptLabel ? `উত্তর ভাষা: ${languageLabel} · ${scriptLabel}` : `উত্তর ভাষা: ${languageLabel}`
 }
 
+function selectedLanguageLabel(message: Message) {
+  const key = normalizedKey(message.selectedLanguage || message.requestedTargetLanguage)
+  const label = OUTPUT_LANGUAGE_LABELS[key] || message.selectedLanguage || message.requestedTargetLanguage
+  return label ? `Selected: ${label}` : null
+}
+
+function badgeLabel(provenance: AnswerProvenance) {
+  return BADGE_LABELS[provenance] || provenance
+}
+
+function detectedInputScriptLabel(message: Message) {
+  const key = normalizedKey(message.detectedInputScript)
+  const label = DETECTED_SCRIPT_LABELS[key]
+  return label ? `Input script: ${label}` : null
+}
+
+function detectedInputLabel(message: Message) {
+  const languageKey = normalizedKey(message.detectedLearnerLanguage)
+  const scriptKey = normalizedKey(message.detectedLearnerScript)
+  const languageLabel = DETECTED_LANGUAGE_LABELS[languageKey]
+  const scriptLabel = DETECTED_SCRIPT_LABELS[scriptKey]
+
+  if (!languageLabel && !scriptLabel) return null
+  return `Detected: ${languageLabel || 'Unknown'} · ${scriptLabel || 'unknown script'}`
+}
+
 function usesRomanizedLowResourceOutput(message: Message) {
-  return ['chakma', 'garo', 'marma'].includes(normalizedKey(message.targetLanguage)) && normalizedKey(message.outputScript) === 'latin'
+  return ['chakma', 'garo', 'marma'].includes(normalizedKey(message.targetLanguage)) && normalizedKey(message.targetScript || message.outputScript) === 'latin'
+}
+
+function shouldShowLowResourceGuidance(message: Message) {
+  const selected = normalizedKey(message.selectedLanguage || message.requestedTargetLanguage)
+  const target = normalizedKey(message.targetLanguage)
+  return (
+    ['ckm', 'chakma', 'mrm', 'marma', 'gnk', 'garo'].includes(selected) ||
+    ['chakma', 'marma', 'garo'].includes(target)
+  ) && (
+    message.languageFallback ||
+    message.answerProvenance === 'unverified-demo' ||
+    message.answerProvenance === 'fallback-standard-bangla'
+  )
 }
 
 export default function LearnPage() {
@@ -1151,11 +1237,19 @@ export default function LearnPage() {
               diagram: data.diagram,
               animationKey: answerAnimationKey,
               emotion: nextEmotion,
-              targetLanguage: data.selectedTargetLanguage || LANGUAGE_LABEL_BY_CODE[language],
+              targetLanguage: data.targetLanguage || data.selectedTargetLanguage || LANGUAGE_LABEL_BY_CODE[language],
+              targetScript: data.targetScript || data.outputScript,
+              selectedLanguage: data.selectedLanguage || data.requestedTargetLanguage,
               requestedTargetLanguage: data.requestedTargetLanguage,
-              languageConfidence: data.languageConfidence,
+              detectedInputScript: data.detectedInputScript,
+              languageConfidence: data.confidence ?? data.languageConfidence,
               outputScript: data.outputScript,
-              answerProvenance: data.languageMetadata?.provenance,
+              detectedLearnerLanguage: data.languageMetadata?.detectedLearnerLanguage || data.languageMetadata?.detectedLanguage || data.detectedLearnerLanguage || data.detectedLanguage,
+              detectedLearnerScript: data.languageMetadata?.detectedLearnerScript || data.languageMetadata?.detectedScript || data.detectedLearnerScript || data.detectedScript,
+              answerProvenance: data.badge || data.provenance || data.languageMetadata?.badge || data.languageMetadata?.provenance,
+              provenance: data.provenance || data.languageMetadata?.provenance,
+              routeSource: data.routeSource || data.languageMetadata?.routeSource,
+              fallbackReason: data.fallbackReason || data.languageMetadata?.fallbackReason,
               languageFallback: Boolean(data.languageMetadata?.fallback),
               verified: data.languageMetadata?.verified,
               pwnMessage: data.pwnMessage,
@@ -1441,10 +1535,25 @@ export default function LearnPage() {
                           transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
                         >
                           <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-forest/10 pb-3">
-                            {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
-                            {msg.targetLanguage && (
-                              <span className="rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs font-medium text-saffron">
-                                {answerOutputLabel(msg)}
+	                            {msg.emotion && <EmotionBadge emotion={msg.emotion} small />}
+                            {selectedLanguageLabel(msg) && (
+                              <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-ink/55">
+                                {selectedLanguageLabel(msg)}
+                              </span>
+                            )}
+	                            {msg.targetLanguage && (
+	                              <span className="rounded-full bg-saffron/10 px-2.5 py-0.5 text-xs font-medium text-saffron">
+	                                {answerOutputLabel(msg)}
+	                              </span>
+	                            )}
+                            {detectedInputScriptLabel(msg) && (
+                              <span className="rounded-full bg-aqua/10 px-2.5 py-0.5 text-xs font-medium text-teal-700">
+                                {detectedInputScriptLabel(msg)}
+                              </span>
+                            )}
+                            {detectedInputLabel(msg) && (
+                              <span className="rounded-full bg-aqua/10 px-2.5 py-0.5 text-xs font-medium text-teal-700">
+                                {detectedInputLabel(msg)}
                               </span>
                             )}
                             {typeof msg.languageConfidence === 'number' && (
@@ -1454,13 +1563,13 @@ export default function LearnPage() {
                             )}
                             {msg.answerProvenance && (
                               <span className={`rounded-full px-2.5 py-0.5 text-xs ${
-                                msg.answerProvenance === 'fallback'
+                                msg.answerProvenance === 'fallback-standard-bangla'
                                   ? 'bg-clay/10 text-clay'
                                   : msg.verified
                                     ? 'bg-forest/8 text-forest'
                                     : 'bg-ink/5 text-ink/55'
                               }`}>
-                                {msg.answerProvenance}{msg.verified ? ' verified' : ''}
+                                {badgeLabel(msg.answerProvenance)}
                               </span>
                             )}
                             {msg.graphPath && (
@@ -1479,9 +1588,14 @@ export default function LearnPage() {
                               </span>
                             )}
                           </div>
-                          {msg.languageFallback && (
-                            <p className="bangla mb-3 rounded-lg bg-clay/8 px-3 py-2 text-xs leading-relaxed text-clay">
-                              {LOW_RESOURCE_FALLBACK_MESSAGE}
+	                          {msg.languageFallback && (
+	                            <p className="bangla mb-3 rounded-lg bg-clay/8 px-3 py-2 text-xs leading-relaxed text-clay">
+	                              {msg.fallbackReason || LOW_RESOURCE_FALLBACK_MESSAGE}
+	                            </p>
+	                          )}
+                          {shouldShowLowResourceGuidance(msg) && (
+                            <p className="bangla mb-3 whitespace-pre-line rounded-lg bg-aqua/10 px-3 py-2 text-xs leading-relaxed text-teal-800">
+                              {LOW_RESOURCE_GUIDANCE}
                             </p>
                           )}
                           {!msg.languageFallback && usesRomanizedLowResourceOutput(msg) && (

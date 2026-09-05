@@ -69,7 +69,7 @@ The render script updates `public/animations/manim/manifest.json` and marks succ
 
 ## Text Multilingual Support
 
-The `/learn` chat detects the learner's input language and script before choosing the answer style. A student can type in Standard Bangla, English, Chakma, Marma, or Garo. For Chakma/Garo/Marma, the API tries to preserve whether the learner used Bengali script/Bangla horof, native script, or Romanized text when confidence is high.
+The `/learn` chat detects the learner's input script and keeps the selected language tab as the strongest target-language signal. For Chakma/Garo/Marma, language target and output script are handled separately: the tab chooses the language intent, while the learner's script asks for Bengali, Latin/Roman, Chakma Unicode, or Marma-script output.
 
 ```json
 {
@@ -79,13 +79,13 @@ The `/learn` chat detects the learner's input language and script before choosin
   "target_language": "<resolved answer language>",
   "output_script": "<resolved answer script>",
   "confidence": 0.82,
-  "provenance": "verified | generated | fallback"
+  "provenance": "verified-dataset | local-bridge | unverified-demo | fallback-standard-bangla"
 }
 ```
 
-The API first prepares a grounded Standard Bangla answer from curriculum context, then adapts that answer into the resolved language/script. Standard Bangla input returns Standard Bangla. Clear Chakma, Garo, or Marma input returns the same language and script preference where possible. If detection confidence is low or verified translation support is too limited, VoicePandita returns a Standard Bangla explanation with a short note that verified translation is limited.
+The API first prepares a grounded Standard Bangla answer from curriculum context, then adapts that answer only through verified dataset/local bridge support. The current bridge data is treated as verified only for Bengali-script localized output. If bridge data is missing, confidence is low, or the learner requests unverified native/Roman output, VoicePandita returns a Standard Bangla explanation with a clear fallback reason.
 
-Chakma uses the local/Hugging Face dataset-backed Bangla/Chakma bridge plus Bengali-script Chakma examples. Garo and Marma support is generated or safely falls back with metadata; the app does not claim perfect translation for low-resource languages.
+Chakma can use the local Bengali-script bridge when an exact or fuzzy verified match exists. Garo and Marma Bengali-script bridge rows can be added through the normalized dataset format; until verified matches exist, they safely fall back with metadata. The app does not claim perfect translation for low-resource languages.
 
 ### Build JSONL datasets
 
