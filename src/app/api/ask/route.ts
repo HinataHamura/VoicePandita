@@ -3,9 +3,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import chakmaBridgeRows from '@/data/chakma/chakmaBridge.json'
-import { detectLanguage, normalizeSelectedLanguage as normalizeSelectedLearnLanguage } from '@/lib/multilingual/detectLanguage'
+import { detectLearnerLanguageAndScript, normalizeSelectedLanguage as normalizeSelectedLearnLanguage } from '@/lib/multilingual/detectLanguage'
 import { detectScriptWithConfidence } from '@/lib/multilingual/detectScript'
 import { localizeAnswer as localizeAnswerPhase2 } from '@/lib/multilingual/localizeAnswer'
+import { detectInputScript, normalizeDetectedInputScript, resolveOutputScript } from '@/lib/language/script'
 import {
   formatChakmaExamples,
   prepareChakmaBridge,
@@ -677,6 +678,32 @@ function learnerScriptToDetectedScript(script: string): DetectedScript {
   return 'Unknown'
 }
 
+function learnerLanguageToSpecLabel(language: string) {
+  if (language === 'bn' || language === 'bangla') return 'Bangla'
+  if (language === 'en' || language === 'english') return 'English'
+  if (language === 'chakma' || language === 'ccp' || language === 'ckm') return 'Chakma'
+  if (language === 'marma' || language === 'mrm') return 'Marma'
+  if (language === 'garo' || language === 'gnk' || language === 'grt') return 'Garo'
+  return 'Unknown'
+}
+
+function inputScriptToSpecLabel(script: string) {
+  if (script === 'chakma-native' || script === 'chakma') return 'Chakma_Native'
+  if (script === 'myanmar') return 'Marma_Myanmar_Block'
+  if (script === 'bengali') return 'Bengali'
+  if (script === 'latin') return 'Latin'
+  if (script === 'mixed') return 'Mixed'
+  return 'Unknown'
+}
+
+function outputScriptToSpecLabel(script: string) {
+  if (script === 'chakma-native' || script === 'chakma') return 'Chakma Native Unicode'
+  if (script === 'myanmar') return 'Marma script'
+  if (script === 'bengali') return 'Bengali script'
+  if (script === 'latin') return 'Latin/Roman'
+  return 'Unknown'
+}
+
 const BANGLA_TO_MARMA_SCRIPT: Record<string, string> = {
   অ: 'အ',
   আ: 'အာ',
@@ -920,7 +947,7 @@ async function translateBanglaAnswerToMarma(params: {
 
   const prompt = `You are VoicePandita's multilingual tutoring translator.
 You are writing for Marma-speaking students in Bangladesh.
-Use Marma language written in Myanmar script.
+Use Marma language written in Marma script.
 The examples below are real Marma text from CLEAR-Global/marmaspeak-text. Use them only as script/style evidence, not as answer content.
 
 Marma corpus examples:
@@ -937,7 +964,7 @@ Bangla educational source answer:
 ${params.banglaAnswer}
 
 Rules:
-- Return only the student-facing answer in Marma language using Myanmar script.
+- Return only the student-facing answer in Marma language using Marma script.
 - Keep formulas, symbols, and science terms like CO2, glucose, photosynthesis, F = ma if there is no reliable Marma equivalent.
 - Keep it simple for a school student.
 - Do not output Bangla or English paragraphs.
@@ -1306,7 +1333,7 @@ async function translateBanglaAnswerToLowResourceScript(params: {
     : params.outputScript === 'Latin'
       ? 'Romanized Latin form'
       : params.targetLanguage === 'Marma'
-        ? 'Myanmar script'
+        ? 'Marma script'
         : 'Latin-script A.chik/Garo style'
 
   const deterministic = params.targetLanguage === 'Garo' && params.outputScript === 'Bengali'
@@ -1366,7 +1393,7 @@ async function localizeAnswer(params: {
       diagram,
       targetLanguage: 'Bangla',
       outputScript: 'Bengali',
-      provenance: 'fallback',
+      provenance: 'fallback-standard-bangla',
       verified: false,
       sourceSuffix: `${route.targetLanguage.toLowerCase()}-low-confidence-fallback`,
     }
@@ -1378,7 +1405,7 @@ async function localizeAnswer(params: {
       diagram,
       targetLanguage: 'Bangla',
       outputScript: 'Bengali',
-      provenance: 'verified',
+      provenance: 'verified-dataset',
       verified: true,
       sourceSuffix: 'bangla-grounded',
     }
@@ -1399,7 +1426,7 @@ async function localizeAnswer(params: {
       diagram: route.outputScript === 'Chakma' ? localizeDiagram(diagram, 'Chakma', bridge) : diagram,
       targetLanguage: 'Chakma',
       outputScript: route.outputScript,
-      provenance: 'generated',
+      provenance: 'unverified-demo',
       verified: false,
       sourceSuffix: `chakma-${route.outputScript.toLowerCase()}-${bridge.source}`,
     }
@@ -1411,7 +1438,7 @@ async function localizeAnswer(params: {
       diagram: localizeDiagram(diagram, 'Marma', bridge),
       targetLanguage: 'Marma',
       outputScript: 'Myanmar',
-      provenance: 'generated',
+      provenance: 'unverified-demo',
       verified: false,
       sourceSuffix: 'marma-corpus-bridge',
     }
@@ -1432,7 +1459,7 @@ async function localizeAnswer(params: {
       : localizeDiagram(diagram, route.targetLanguage, bridge),
     targetLanguage: route.targetLanguage,
     outputScript: route.outputScript,
-    provenance: 'generated',
+    provenance: 'unverified-demo',
     verified: false,
     sourceSuffix: `${route.targetLanguage.toLowerCase()}-${route.outputScript.toLowerCase()}-safe-routing`,
   }
@@ -1447,14 +1474,18 @@ export async function POST(req: NextRequest) {
     const outputMode = String(body.outputMode || 'whiteboard') as OutputMode
     const selectedTargetLanguage = normalizeTargetLanguage(body.selected_target_language || body.target_language || body.language || 'Bangla')
     const selectedLanguageForDetection = normalizeSelectedLearnLanguage(body.language || body.selected_target_language || body.target_language || selectedTargetLanguage)
+    const detectedInputScriptInfo = detectInputScript(originalQuestion)
+    const detectedInputScript = normalizeDetectedInputScript(detectedInputScriptInfo)
+    const resolvedAnswerScript = resolveOutputScript(selectedLanguageForDetection || selectedTargetLanguage, detectedInputScriptInfo, originalQuestion)
     const scriptDetection = detectScriptWithConfidence(originalQuestion)
-    const languageDetection = detectLanguage({
+    const languageDetection = detectLearnerLanguageAndScript({
       text: originalQuestion,
       selectedLanguage: selectedLanguageForDetection,
     })
     const route = detectMultilingualRoute(originalQuestion, selectedTargetLanguage)
     const targetLanguage = route.targetLanguage
-    const language = targetLanguageToCode(targetLanguage)
+    const targetLanguageCode = targetLanguageToCode(targetLanguage)
+    const sourceAnswerLanguage = 'bn'
     const inputLanguage = languageDetection.language
     const repeatCount = Number(body.repeatCount || 0)
     const selectedSubject = String(body.subject || 'physics')
@@ -1474,7 +1505,7 @@ export async function POST(req: NextRequest) {
       : undefined
     const extractedText = String(body.extractedText || '').trim()
     const requestSource = String(body.source || '')
-    const bridge = await prepareChakmaBridge(originalQuestion, language)
+    const bridge = await prepareChakmaBridge(originalQuestion, targetLanguageCode)
     const question = await translateQuestionToBangla({ originalQuestion, route, bridge })
     const curriculumChunks = await retrieveCurriculumChunks(question, body.curriculumChunks)
     const conceptSignal = requestSource === 'ocr' && extractedText ? `${extractedText}\n${question}` : question
@@ -1485,7 +1516,7 @@ export async function POST(req: NextRequest) {
     const animationKey = selectedAnimationKey(conceptSignal, outputMode, lessonKey)
 
     let lesson = lessonKey ? LESSONS[lessonKey] : null
-    let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, language) : ''
+    let answer: string = lessonKey ? answerFromLesson(lessonKey, outputMode, emotion, sourceAnswerLanguage) : ''
     let diagram: string = lesson?.diagram || safeDiagram(null, question.slice(0, 30) || 'Concept')
     let graphPath: string[] = lesson ? [...lesson.path] : [selectedSubject || 'Curriculum', 'Needs Clarification']
     let source = genAI ? 'local-graphrag-fallback-after-gemini-error' : 'local-graphrag-fallback-no-key'
@@ -1500,7 +1531,7 @@ export async function POST(req: NextRequest) {
           selectedSubject,
           outputMode,
           emotion,
-          language,
+          language: sourceAnswerLanguage,
           studentProfile,
           chatContext,
           curriculumChunks,
@@ -1516,7 +1547,7 @@ export async function POST(req: NextRequest) {
           selectedSubject,
           outputMode,
           emotion,
-          language,
+          language: sourceAnswerLanguage,
           studentProfile,
           chatContext,
           curriculumChunks,
@@ -1540,7 +1571,7 @@ ${activeLesson.facts.join('\n')}
 Student question: ${question}
 ${profileInstruction(studentProfile)}
 Emotion: ${emotion}
-Language: ${language}
+Language: ${sourceAnswerLanguage}
 Mode: ${outputMode}
 
 Recent chat context:
@@ -1571,7 +1602,7 @@ Rules:
         source = 'local-ocr-context-fallback'
         mode = 'ocr_context'
       } else if (!answer) {
-        answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, language)
+        answer = answerFromLesson(defaultBySubject[selectedSubject] || 'newton_second_law', outputMode, emotion, sourceAnswerLanguage)
       }
     }
 
@@ -1580,41 +1611,77 @@ Rules:
       question: originalQuestion,
       languageDetection,
       scriptDetection,
-      selectedLanguage: selectedLanguageForDetection,
+      selectedLanguage: selectedTargetLanguage,
+      detectedInputScript,
+      resolvedOutputScript: resolvedAnswerScript,
       subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
       generateText: geminiText,
     })
-    const resolvedTargetLanguage = learnerLanguageToTargetLanguage(localized.metadata.outputLanguage)
+    const resolvedTargetLanguage = localized.metadata.outputLanguage === 'en'
+      ? 'English'
+      : learnerLanguageToTargetLanguage(localized.metadata.outputLanguage)
     const resolvedOutputScript = learnerScriptToDetectedScript(localized.metadata.outputScript)
     const sourceScript = learnerScriptToDetectedScript(localized.metadata.sourceScript)
-    const languageSource = `${source}+phase2-${localized.metadata.outputLanguage}-${localized.metadata.outputScript}${localized.metadata.fallbackUsed ? '-fallback' : '-generated'}`
+    const provenance = localized.metadata.provenance || localized.metadata.badge
+    const badge = localized.metadata.badge || provenance
+    const fallbackReason = localized.metadata.fallbackReason || null
+    const languageSource = `${source}+phase2-${localized.metadata.outputLanguage}-${localized.metadata.outputScript}-${provenance}`
 
     return NextResponse.json({
       answerText: localized.answerText,
       answer: localized.answerText,
+      banglaAnswer: answer,
+      selected_language: learnerLanguageToSpecLabel(selectedLanguageForDetection || selectedTargetLanguage),
+      detected_input_script: inputScriptToSpecLabel(detectedInputScript),
+      target_language: learnerLanguageToSpecLabel(localized.metadata.outputLanguage),
+      target_script: outputScriptToSpecLabel(localized.metadata.outputScript),
+      route_source: localized.metadata.routeSource,
+      routeSource: localized.metadata.routeSource,
+      provenance,
+      fallback_reason: fallbackReason,
+      selectedLanguage: selectedLanguageForDetection || selectedTargetLanguage,
+      detectedInputScript,
+      targetLanguage: localized.metadata.outputLanguage,
+      targetScript: localized.metadata.outputScript,
+      confidence: localized.metadata.detectionConfidence,
+      badge,
+      fallbackReason,
       metadata: localized.metadata,
       diagram: outputMode === 'simple' || outputMode === 'exam' ? null : (diagram ? polishMermaidDiagram(diagram) : null),
       animationKey,
       detectedEmotion,
       detectedLanguage: localized.metadata.sourceLanguage,
+      detectedLearnerLanguage: localized.metadata.sourceLanguage,
       detectedLanguageDetail: route.detail,
       detectedScript: sourceScript,
+      detectedLearnerScript: sourceScript,
       selectedTargetLanguage: resolvedTargetLanguage,
       requestedTargetLanguage: selectedTargetLanguage,
       outputScript: resolvedOutputScript,
+      resolvedOutputScript: resolvedAnswerScript,
       languageConfidence: localized.metadata.detectionConfidence,
       languageMetadata: {
         detectedLanguage: localized.metadata.sourceLanguage,
+        detectedLearnerLanguage: localized.metadata.sourceLanguage,
         detectedLanguageDetail: route.detail,
         detectedScript: sourceScript,
+        detectedLearnerScript: sourceScript,
         selectedTargetLanguage,
         resolvedTargetLanguage,
         outputScript: resolvedOutputScript,
+        detectedInputScript,
+        resolvedOutputScript: resolvedAnswerScript,
+        targetLanguage: localized.metadata.outputLanguage,
+        targetScript: localized.metadata.outputScript,
+        routeSource: localized.metadata.routeSource,
         confidence: localized.metadata.detectionConfidence,
         translationConfidence: localized.metadata.translationConfidence,
         verified: localized.metadata.verified,
-        provenance: localized.metadata.fallbackUsed ? 'fallback' : localized.metadata.verified ? 'verified' : 'generated',
+        provenance,
+        badge,
         fallback: localized.metadata.fallbackUsed,
+        fallbackReason,
+        bridgeSource: localized.metadata.bridgeSource,
         reasons: languageDetection.reasons,
       },
       translatedQuestion: question !== originalQuestion ? question : null,

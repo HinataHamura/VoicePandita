@@ -3,7 +3,11 @@ import chakmaBridgeRows from '@/data/chakma/chakmaBridge.json'
 export type DetectedLanguage = 'Bangla' | 'English' | 'Chakma' | 'Marma' | 'Garo' | 'unknown'
 export type TargetLanguage = 'Bangla' | 'Chakma' | 'Marma' | 'Garo'
 export type DetectedScript = 'Bengali' | 'Latin' | 'Chakma' | 'Myanmar' | 'Unknown'
-export type AnswerProvenance = 'verified' | 'generated' | 'fallback'
+export type AnswerProvenance =
+  | 'verified-dataset'
+  | 'local-bridge'
+  | 'unverified-demo'
+  | 'fallback-standard-bangla'
 
 export type LanguageDetectionDetail =
   | 'Standard Bangla'
