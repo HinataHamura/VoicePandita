@@ -1,13 +1,20 @@
 export type LearnerLanguage = 'bn' | 'chakma' | 'garo' | 'marma' | 'en' | 'unknown'
 
-export type LearnerScript = 'bengali' | 'latin' | 'chakma' | 'myanmar' | 'unknown'
+export type LearnerScript = 'bengali' | 'latin' | 'chakma' | 'myanmar' | 'mixed' | 'unknown'
+export type LearnerScriptCounts = Record<Exclude<LearnerScript, 'mixed'>, number> & Partial<Record<'mixed', number>>
+
+export type AnswerProvenance =
+  | 'verified-dataset'
+  | 'local-bridge'
+  | 'unverified-demo'
+  | 'fallback-standard-bangla'
 
 export type SelectedLearnLanguage = Exclude<LearnerLanguage, 'unknown'>
 
 export type ScriptDetection = {
   script: LearnerScript
   confidence: number
-  counts: Record<LearnerScript, number>
+  counts: LearnerScriptCounts
 }
 
 export type LanguageDetectionInput = {

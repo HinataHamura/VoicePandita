@@ -1,19 +1,22 @@
 # Multilingual Response Pipeline
 
-VoicePandita's multilingual answer pipeline keeps the learner's language and script visible without claiming production-grade native fluency for low-resource languages.
+VoicePandita's multilingual answer pipeline keeps the learner's target language and script preference visible without claiming production-grade native fluency for low-resource languages.
 
 ## Same-Language Same-Script Rule
 
-The `/learn` UI sends the selected language tab with the student question. The API detects the input script and language, prepares a grounded Standard Bangla curriculum answer, then localizes only when confidence and examples are sufficient.
+The `/learn` UI sends the selected language tab with the student question. The API detects the input script, prepares a grounded Standard Bangla curriculum answer, then localizes only when verified dataset/local bridge support exists for the requested language-script pair.
 
 Rule:
 
 - Standard Bangla input returns Standard Bangla in Bengali script.
-- Chakma input returns Chakma in the same script the learner used when confidence is high.
-- Garo input returns Garo in the same script the learner used when confidence is high.
-- Marma input returns Marma in the same script the learner used when confidence is high.
-- If the learner uses English letters for Chakma/Garo/Marma, the answer must also use English letters.
-- If the learner uses Bengali script for Chakma/Garo/Marma, the answer must also use Bengali script.
+- The selected Chakma/Garo/Marma tab controls the target language intent.
+- Bengali-script input requests Bengali-script output.
+- Latin input requests Latin/Roman output.
+- Chakma Unicode input requests Chakma Unicode output.
+- Marma Myanmar-block input requests Marma-script output; it is not treated as Burmese/Myanmar language.
+- Bengali script does not override the selected language tab.
+- The current low-resource bridge is verified only for Bengali-script localized output where a dataset/local bridge match exists.
+- Missing bridge data, native-script support, Roman-script support, or low confidence returns Standard Bangla fallback.
 
 The UI label uses the resolved answer metadata:
 
@@ -31,9 +34,8 @@ Bengali-script low-resource examples are questions or answers where the target l
 
 Examples:
 
-- Chakma tab + `সালোকসংশ্লেষণ কী` -> `outputLanguage: chakma`, `outputScript: bengali`
-- Garo tab + `সালোকসংশ্লেষণ কী` -> `outputLanguage: garo`, `outputScript: bengali`
-- Marma tab + `সালোকসংশ্লেষণ কী` -> `outputLanguage: marma`, `outputScript: bengali`
+- Chakma tab + exact verified bridge phrase -> `outputLanguage: chakma`, `outputScript: bengali`
+- Chakma/Garo/Marma tab + no verified bridge match -> Standard Bangla fallback
 
 Dataset row shape for a Bengali-script example:
 
@@ -73,19 +75,26 @@ Fallback is required when:
 
 - language detection confidence is below `LANGUAGE_CONFIDENCE_FALLBACK_THRESHOLD`
 - the input language or script is unknown
-- no generator is available for low-resource localization
-- generated output does not use the detected script
-- the generated answer is empty, unchanged Bangla, or signals Standard Bangla fallback
+- no verified dataset/local bridge match exists
+- the requested script is unsupported
+- the requested native/Roman script lacks verified support
+- unverified demo output is disabled in production
 
-When fallback is used, the answer metadata resolves to Bangla/Bengali script and `/learn` shows:
+When fallback is used, the answer metadata resolves to Bangla/Bengali script and includes:
 
-`এই ভাষা/হরফে যাচাইকৃত ডেটা সীমিত, তাই বাংলা ব্যাখ্যাও দেওয়া হলো।`
+- `badge: "fallback-standard-bangla"`
+- `fallbackReason: "Not enough verified Chakma/Marma/Garo data for confident answer"`
+
+For prototype/demo low-resource output, VoicePandita may return best-effort generated text only behind an explicit feature flag and when it is clearly marked:
+
+- `badge: "unverified-demo"`
+- `verified: false`
 
 Unknown Latin input without a selected language tab must fall back safely instead of guessing Chakma, Garo, or Marma.
 
 ## Dataset Requirements
 
-Rows are loaded by `src/lib/multilingual/datasets.ts` from `data/multilingual/sample-parallel.jsonl`.
+Demo rows are loaded by `src/lib/multilingual/datasets.ts` from `data/multilingual/sample-parallel.jsonl`. Production-safe Bengali-script bridge rows are normalized by `src/lib/multilingual/localBridge.ts` from named bridge files such as `data/multilingual/localization-bridge.jsonl` and the existing Chakma Bengali-script bridge.
 
 Each row must include:
 
@@ -103,10 +112,10 @@ Use `verified: false` for demo, machine-generated, or unreviewed rows. Use `veri
 
 ## Known Limitations
 
-- Current Chakma/Garo/Marma coverage is limited and should be treated as prototype/demo unless rows are verified.
+- Current Chakma/Garo/Marma coverage is limited and should fall back unless rows are verified and script-compatible.
 - Romanized spelling can vary by community, dialect, and contributor.
 - Bengali-script low-resource text can be ambiguous without the selected tab.
-- Native Chakma Unicode and Myanmar-script Marma support is separate from Bengali-script and Romanized support.
+- Native Chakma Unicode, Marma script, and Romanized support are separate from Bengali-script support and currently fall back unless verified resources are added.
 - The UI does not fake native TTS. Romanized Chakma/Garo/Marma answers are text-first, with the note `এই ভাষার ভয়েস এখনো পরীক্ষামূলক।` when shown.
 
 ## Future Work

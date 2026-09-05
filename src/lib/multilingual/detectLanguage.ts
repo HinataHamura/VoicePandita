@@ -13,6 +13,7 @@ const SELECTED_LANGUAGE_ALIASES: Record<string, SelectedLearnLanguage> = {
   bengali: 'bn',
   bn: 'bn',
   ccp: 'chakma',
+  ckm: 'chakma',
   chakma: 'chakma',
   garo: 'garo',
   grt: 'garo',
@@ -231,6 +232,16 @@ function detectLatinScriptLanguage(
   text: string,
   selectedLanguage: SelectedLearnLanguage | null,
 ): Omit<LanguageDetectionResult, 'shouldFallback'> {
+  if (selectedLanguage === 'bn') {
+    return {
+      language: 'bn',
+      script: 'latin',
+      confidence: 0.86,
+      selectedLanguage,
+      reasons: ['selected-bn-tab', 'latin-script-target-bangla'],
+    }
+  }
+
   if (selectedLanguage) {
     return {
       language: LATIN_SCRIPT_SELECTED_LANGUAGE[selectedLanguage],
@@ -241,7 +252,10 @@ function detectLatinScriptLanguage(
     }
   }
 
-  const best = scoreLatinWithoutSelectedLanguage(tokenizeLatin(text))
+  const tokens = tokenizeLatin(text)
+  const best = scoreLatinWithoutSelectedLanguage(tokens)
+  const banglaHits = countHits(tokens, BANGLA_LATIN_HINTS)
+  const englishHits = countHits(tokens, ENGLISH_HINTS)
 
   return {
     language: best.language,
@@ -288,5 +302,7 @@ export function detectLanguage(input: LanguageDetectionInput | string): Language
     reasons: ['unsupported-or-unrecognized-script'],
   })
 }
+
+export const detectLearnerLanguageAndScript = detectLanguage
 
 export { normalizeSelectedLanguage }
