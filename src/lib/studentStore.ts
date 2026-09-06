@@ -87,7 +87,7 @@ const DEMO_PROGRESS: StudentProgress = {
   ],
 }
 
-const DEFAULT_PROGRESS: StudentProgress = {
+export const DEFAULT_PROGRESS: StudentProgress = {
   questions: 0,
   avgScore: 0,
   badges: 0,
