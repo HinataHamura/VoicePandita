@@ -1329,6 +1329,72 @@ function translateMermaidLabels(chart: string, translator: (label: string) => st
   return chart.replace(/\[([^\]]+)\]/g, (_, label: string) => `[${sanitizeMermaidLabel(translator(label))}]`)
 }
 
+function mermaidLabels(chart: string) {
+  return Array.from(new Set(
+    Array.from(chart.matchAll(/\[([^\]]+)\]/g), match => match[1].trim()).filter(Boolean)
+  ))
+}
+
+// The answer is localized by the Phase 2 pipeline, so the diagram has to follow
+// the same language and script or the card shows two different languages.
+async function localizeDiagramLabels(params: {
+  chart: string
+  targetLanguage: Exclude<TargetLanguage, 'Bangla'>
+  outputScript: DetectedScript
+  subjectContext: string
+}) {
+  const labels = mermaidLabels(params.chart)
+  if (!labels.length) return params.chart
+
+  const scriptLabel = params.outputScript === 'Latin'
+    ? 'Roman/English letters'
+    : params.outputScript === 'Bengali'
+      ? 'Bengali letters'
+      : params.outputScript === 'Chakma'
+        ? 'Chakma native Unicode letters'
+        : params.outputScript === 'Myanmar'
+          ? 'Marma script letters'
+          : 'the same letters as the source'
+
+  const prompt = `Translate each short concept-map label into ${params.targetLanguage}, written in ${scriptLabel}.
+
+Subject context: ${params.subjectContext || 'school science'}
+
+Rules:
+- Return ONLY a JSON array of strings, same length and order as the input.
+- Keep each label short (max 4 words) so it fits inside a diagram box.
+- Keep chemical formulas, symbols, and numbers unchanged (CO2, O2, H2O, F = ma).
+- Do not add brackets, quotes inside the label, or explanations.
+- If no reliable local word exists, keep the widely understood term.
+
+Labels:
+${JSON.stringify(labels)}`
+
+  try {
+    const raw = await geminiText(prompt)
+    if (!raw) return params.chart
+
+    const start = raw.indexOf('[')
+    const end = raw.lastIndexOf(']')
+    if (start === -1 || end <= start) return params.chart
+
+    const parsed = JSON.parse(raw.slice(start, end + 1))
+    if (!Array.isArray(parsed) || parsed.length !== labels.length) return params.chart
+
+    const mapping = new Map<string, string>()
+    labels.forEach((label, index) => {
+      const translated = sanitizeMermaidLabel(String(parsed[index] ?? ''))
+      if (translated && translated !== 'Concept') mapping.set(label, translated)
+    })
+    if (!mapping.size) return params.chart
+
+    return translateMermaidLabels(params.chart, label => mapping.get(label.trim()) || label)
+  } catch (err) {
+    console.warn('/api/ask diagram label localization failed', err instanceof Error ? err.message : err)
+    return params.chart
+  }
+}
+
 function localizeDiagram(
   chart: string | null,
   targetLanguage: TargetLanguage,
@@ -2162,12 +2228,21 @@ Rules:
     const sourceScript = learnerScriptToDetectedScript(localized.metadata.sourceScript)
     const languageSource = `${source}+phase2-${localized.metadata.outputLanguage}-${localized.metadata.outputScript}${localized.metadata.fallbackUsed ? '-fallback' : '-generated'}`
 
+    const localizedDiagram = safeOutputDiagram && resolvedTargetLanguage !== 'Bangla' && !localized.metadata.fallbackUsed
+      ? await localizeDiagramLabels({
+          chart: safeOutputDiagram,
+          targetLanguage: resolvedTargetLanguage as Exclude<TargetLanguage, 'Bangla'>,
+          outputScript: resolvedOutputScript,
+          subjectContext: Array.isArray(graphPath) ? graphPath.join(' -> ') : selectedSubject,
+        })
+      : safeOutputDiagram
+
     const repairedAnswerText = repairMojibakeText(localized.answerText)
     const responseBody = {
       answerText: repairedAnswerText,
       answer: repairedAnswerText,
       metadata: localized.metadata,
-      diagram: safeOutputDiagram && looksMojibake(safeOutputDiagram) ? null : safeOutputDiagram,
+      diagram: localizedDiagram && looksMojibake(localizedDiagram) ? null : localizedDiagram,
       animationKey,
       detectedEmotion,
       detectedLanguage: localized.metadata.sourceLanguage,
