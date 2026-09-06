@@ -43,15 +43,6 @@ type CurriculumChunk = {
   chunk_type?: string
   similarity: number
 }
-type LocalizedAnswer = {
-  answer: string
-  diagram: string | null
-  targetLanguage: TargetLanguage
-  outputScript: DetectedScript
-  provenance: AnswerProvenance
-  verified: boolean
-  sourceSuffix: string
-}
 type ChakmaBridgeRow = {
   bangla?: string
   bengaliScriptChakma?: string
@@ -1900,95 +1891,6 @@ Rules:
   } catch (err) {
     console.warn(`/api/ask ${params.targetLanguage} ${params.outputScript} answer generation failed`, err instanceof Error ? err.message : err)
     return deterministic
-  }
-}
-
-async function localizeAnswer(params: {
-  banglaAnswer: string
-  diagram: string | null
-  route: ReturnType<typeof detectMultilingualRoute>
-  bridge: ChakmaBridgeContext
-  originalQuestion: string
-  inputLanguage: string
-  subjectContext: string
-}) : Promise<LocalizedAnswer> {
-  const { banglaAnswer, diagram, route, bridge, originalQuestion, inputLanguage, subjectContext } = params
-
-  if (route.shouldFallbackToBangla && route.targetLanguage !== 'Bangla') {
-    return {
-      answer: `${safeLowResourceFallback(route.targetLanguage as Exclude<TargetLanguage, 'Bangla'>)}\n\n${banglaAnswer}`,
-      diagram,
-      targetLanguage: 'Bangla',
-      outputScript: 'Bengali',
-      provenance: 'fallback',
-      verified: false,
-      sourceSuffix: `${route.targetLanguage.toLowerCase()}-low-confidence-fallback`,
-    }
-  }
-
-  if (route.targetLanguage === 'Bangla') {
-    return {
-      answer: banglaAnswer,
-      diagram,
-      targetLanguage: 'Bangla',
-      outputScript: 'Bengali',
-      provenance: 'verified',
-      verified: true,
-      sourceSuffix: 'bangla-grounded',
-    }
-  }
-
-  if (route.targetLanguage === 'Chakma') {
-    let answer = banglaAnswer
-    if (route.outputScript === 'Bengali') {
-      answer = await translateBanglaAnswerToChakmaBengaliScript({ banglaAnswer, originalQuestion, subjectContext })
-    } else if (route.outputScript === 'Latin') {
-      answer = await translateBanglaAnswerToChakmaRomanized({ banglaAnswer, originalQuestion, subjectContext })
-    } else {
-      answer = await translateBanglaAnswerToChakma(banglaAnswer, bridge)
-    }
-
-    return {
-      answer,
-      diagram: route.outputScript === 'Chakma' ? localizeDiagram(diagram, 'Chakma', bridge) : diagram,
-      targetLanguage: 'Chakma',
-      outputScript: route.outputScript,
-      provenance: 'generated',
-      verified: false,
-      sourceSuffix: `chakma-${route.outputScript.toLowerCase()}-${bridge.source}`,
-    }
-  }
-
-  if (route.targetLanguage === 'Marma' && route.outputScript === 'Myanmar') {
-    return {
-      answer: await translateBanglaAnswerToMarma({ banglaAnswer, originalQuestion, inputLanguage, subjectContext }),
-      diagram: localizeDiagram(diagram, 'Marma', bridge),
-      targetLanguage: 'Marma',
-      outputScript: 'Myanmar',
-      provenance: 'generated',
-      verified: false,
-      sourceSuffix: 'marma-corpus-bridge',
-    }
-  }
-
-  const lowResourceAnswer = await translateBanglaAnswerToLowResourceScript({
-    banglaAnswer,
-    originalQuestion,
-    targetLanguage: route.targetLanguage as Exclude<TargetLanguage, 'Bangla' | 'Chakma'>,
-    outputScript: route.outputScript,
-    subjectContext,
-  })
-
-  return {
-    answer: lowResourceAnswer,
-    diagram: route.outputScript === 'Bengali' || route.outputScript === 'Latin'
-      ? diagram
-      : localizeDiagram(diagram, route.targetLanguage, bridge),
-    targetLanguage: route.targetLanguage,
-    outputScript: route.outputScript,
-    provenance: 'generated',
-    verified: false,
-    sourceSuffix: `${route.targetLanguage.toLowerCase()}-${route.outputScript.toLowerCase()}-safe-routing`,
   }
 }
 
