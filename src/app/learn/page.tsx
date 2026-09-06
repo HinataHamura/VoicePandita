@@ -316,15 +316,23 @@ function looksLikeEquationLine(text: string) {
 }
 
 function shouldDisplayAsEquationBlock(text: string) {
-  const hasBangla = /[\u0980-\u09ff]/.test(text)
   const explicitMath = /(\$[^$]+\$|\\frac|\\sqrt|\\Rightarrow|\\Longrightarrow|\\rightarrow|\\implies)/.test(text)
-  const startsLikeMath = /^\s*(\$|\\|[A-Za-z0-9(.-])/.test(text)
+  if (explicitMath) return true
+
+  // Prose must never reach the equation block, which does not wrap: a lone
+  // hyphen in a word like "jaibo-rasayonik" was enough to qualify, so whole
+  // romanized answers rendered as one horizontally scrolling line.
+  const wordyTokens = text
+    .split(/\s+/)
+    .filter(word => /^[A-Za-z\u0980-\u09ff][A-Za-z\u0980-\u09ff'’-]{2,}$/.test(word))
+  if (wordyTokens.length >= 4) return false
+
+  const hasOperator = /(=|≈|≤|≥|→|⇒|\^|_|\d\s*[+*/×÷]\s*\d|\d+\/\d+|π|θ)/.test(cleanMathText(text))
+  if (!hasOperator) return false
+
   const mathChars = (text.match(/[A-Za-z0-9=+\-*/^_(){}\\]/g) || []).length
   const mathDensity = mathChars / Math.max(text.length, 1)
-  if (hasBangla && !explicitMath && mathDensity < 0.58) return false
-  return (explicitMath || startsLikeMath || mathDensity >= 0.58) &&
-    /([=+\-*/]|\^|_|\d+\/\d+|π|θ| m\/s| kg| N\b| M\b)/.test(cleanMathText(text)) &&
-    /[0-9A-Za-z]/.test(text)
+  return mathDensity >= 0.58 && /[0-9A-Za-z]/.test(text)
 }
 
 function FormattedAnswer({ text }: { text: string }) {
