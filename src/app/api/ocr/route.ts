@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest, NextResponse } from 'next/server'
 import { cleanOcrText, imageFileToGenerativePart, validateImageFile } from '@/lib/ocr'
+import { geminiVisionModels } from '@/lib/ai/models'
 
 const OCR_PROMPT =
   'Extract all readable educational text from this image. Preserve important headings, questions, equations, labels, and bullet points. Do not answer the content. Do not explain. Return only the extracted text. If some parts are unclear, return only the readable parts.'
@@ -20,13 +21,7 @@ let ocrQueue = Promise.resolve()
 let lastOcrStartedAt = 0
 
 function getVisionModelCandidates() {
-  return [
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash',
-    process.env.GEMINI_VISION_MODEL?.trim(),
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
-  ].filter((model, index, models): model is string => Boolean(model) && models.indexOf(model) === index)
+  return geminiVisionModels()
 }
 
 function friendlyOcrError(message: string) {
@@ -35,7 +30,7 @@ function friendlyOcrError(message: string) {
     return 'Gemini OCR quota/rate limit reached. Image theke text extract kora jacche na ekhon. Please text ta manually paste/type kore question korun.'
   }
   if (normalized.includes('404') || normalized.includes('not found') || normalized.includes('not supported') || normalized.includes('model')) {
-    return 'Gemini OCR model available na. GEMINI_VISION_MODEL=gemini-2.0-flash-lite or gemini-2.0-flash diye server restart korun, or text manually paste/type korun.'
+    return 'Gemini OCR model available na. GEMINI_VISION_MODEL=gemini-flash-latest diye server restart korun, or text manually paste/type korun.'
   }
   if (normalized.includes('api key') || normalized.includes('api_key_invalid') || normalized.includes('invalid')) {
     return 'Gemini API key problem. GEMINI_API_KEY check kore dev server restart korun, or text manually paste/type korun.'

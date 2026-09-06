@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { geminiTextModels } from '@/lib/ai/models'
 import type { StudyBuddyQuiz } from './types'
 
 const genAI = process.env.GEMINI_API_KEY?.trim()
@@ -607,7 +608,7 @@ export async function generateStudyBuddyQuiz(topicTitle: string, subject?: strin
 
   try {
     const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
+      model: geminiTextModels()[0],
       generationConfig: { temperature: 1, responseMimeType: 'application/json' },
     })
     const result = await model.generateContent(`You are VoicePandita's Bondhu Study Room AI host for Bangladeshi SSC/HSC students.

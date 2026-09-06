@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
+import { geminiTextModels } from '@/lib/ai/models'
 
 type SimilarQuestion = {
   id: string
@@ -111,7 +112,6 @@ async function generateCommunityExplanation(params: {
   if (!genAI || params.count < 3) return bestExplanationFor(params.topic, params.count)
 
   try {
-    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash' })
     const prompt = `You are VoicePandita's Peer Wisdom Network.
 Create a better community clarification in Bangla for students.
 
@@ -127,9 +127,20 @@ Rules:
 - Use warm student-friendly Bangla.
 - No personal data, no markdown.`
 
-    const result = await model.generateContent(prompt)
-    const text = result.response.text().trim()
-    return text || bestExplanationFor(params.topic, params.count)
+    let lastError: unknown = null
+    for (const modelName of geminiTextModels()) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName })
+        const result = await model.generateContent(prompt)
+        const text = result.response.text().trim()
+        if (text) return text
+      } catch (err) {
+        lastError = err
+        console.warn(`[PWN] Gemini failed: ${modelName}`, err instanceof Error ? err.message : err)
+      }
+    }
+    if (lastError) throw lastError
+    return bestExplanationFor(params.topic, params.count)
   } catch (err) {
     console.warn('[PWN] Gemini clarification fallback:', err instanceof Error ? err.message : err)
     return bestExplanationFor(params.topic, params.count)

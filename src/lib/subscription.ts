@@ -1,3 +1,5 @@
+import { DEFAULT_GEMINI_MODEL, DEFAULT_GROQ_MODEL } from '@/lib/ai/models'
+
 export type SubscriptionPlan = 'free' | 'pro'
 
 export type AIProviderConfig = {
@@ -88,7 +90,7 @@ export function getAIProvider(plan: SubscriptionPlan = 'free'): AIProviderConfig
     const provider = (process.env.PRO_AI_PROVIDER || 'premium-provider-placeholder').trim()
     const model =
       provider === 'groq'
-        ? (process.env.PRO_AI_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
+        ? (process.env.PRO_AI_MODEL || process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL).trim()
         : provider === 'gemini'
           ? (process.env.PRO_AI_MODEL || process.env.PRO_AI_GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-pro').trim()
           : (process.env.PRO_AI_MODEL || 'premium-model-placeholder').trim()
@@ -105,7 +107,7 @@ export function getAIProvider(plan: SubscriptionPlan = 'free'): AIProviderConfig
   return {
     plan,
     provider: 'gemini',
-    model: (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim(),
+    model: (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL).trim(),
     label: 'Gemini Flash',
     priority: false,
   }
