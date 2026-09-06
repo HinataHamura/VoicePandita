@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Award, BookOpen, ChevronRight, Flame, Mic, TrendingUp, User } from 'lucide-react'
 import type { StudentProfile } from '@/types'
-import { getCurrentStudent, getStudentProfile, getStudentProgress, type StudentIdentity, type StudentProgress } from '@/lib/studentStore'
+import { DEFAULT_PROGRESS, getCurrentStudent, getStudentProfile, getStudentProgress, type StudentIdentity, type StudentProgress } from '@/lib/studentStore'
 import PageHeader from '@/components/PageHeader'
 
 const labels: Record<string, string> = {
@@ -38,7 +38,9 @@ export default function ProfilePage() {
   }, [profile])
 
   const hasProfile = Object.keys(profile).length > 0
-  const stats = progress || getStudentProgress(student?.id)
+  // Reading localStorage during render diverges from the server pass, so hold
+  // the neutral default until the mount effect supplies the stored values.
+  const stats = progress || DEFAULT_PROGRESS
 
   return (
     <div className="ai-shell min-h-dvh">
