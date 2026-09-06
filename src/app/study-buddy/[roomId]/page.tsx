@@ -14,6 +14,7 @@ import StudyRoomProgress from '@/components/study-buddy/StudyRoomProgress'
 import StudyRoomSummary from '@/components/study-buddy/StudyRoomSummary'
 import StudyRoomWaiting from '@/components/study-buddy/StudyRoomWaiting'
 import { useStudyRoom } from '@/hooks/useStudyRoom'
+import { recordStudyRoomResult } from '@/lib/studentStore'
 
 export default function StudyBuddyRoomPage() {
   const params = useParams<{ roomId: string }>()
@@ -34,6 +35,25 @@ export default function StudyBuddyRoomPage() {
     const timer = window.setTimeout(() => setWaitExpired(true), 90_000)
     return () => window.clearTimeout(timer)
   }, [])
+
+  useEffect(() => {
+    if (demoQuery || !data) return
+    const questions = data.questions
+    if (!questions.length) return
+    const explained = data.messages.filter(m => m.message_type === 'explanation').length
+    const isComplete = data.room.room_status === 'completed' || explained >= questions.length
+    if (!isComplete) return
+
+    recordStudyRoomResult({
+      roomId: params.roomId,
+      topicTitle: data.room.topic_title,
+      score: questions.filter(q => selected[q.id] === q.correct_answer.id).length,
+      total: questions.length,
+      weakConcepts: questions
+        .filter(q => selected[q.id] && selected[q.id] !== q.correct_answer.id)
+        .map(q => q.concept_tag || q.prompt_bn.slice(0, 48)),
+    })
+  }, [data, demoQuery, params.roomId, selected])
 
   async function submitAnswer(questionId: string, optionId: string) {
     setSelected(prev => ({ ...prev, [questionId]: optionId }))
@@ -148,8 +168,8 @@ export default function StudyBuddyRoomPage() {
           ) : completed ? (
             <StudyRoomSummary
               topicTitle={data.room.topic_title}
-              score={demoQuery ? localScore : undefined}
-              total={demoQuery ? totalQuestions : undefined}
+              score={localScore}
+              total={totalQuestions}
               weakConcepts={weakConcepts}
             />
           ) : (
@@ -175,6 +195,8 @@ export default function StudyBuddyRoomPage() {
                       memberCount={Math.max(1, activeMembers.length)}
                       showHint={hintFor === currentQuestion.id}
                       submitting={submitting}
+                      questionNumber={currentIndex + 1}
+                      totalQuestions={totalQuestions}
                       onHint={() => setHintFor(currentQuestion.id)}
                       onSelect={optionId => submitAnswer(currentQuestion.id, optionId)}
                     />

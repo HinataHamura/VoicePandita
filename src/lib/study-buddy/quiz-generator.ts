@@ -393,11 +393,13 @@ const TOPIC_FALLBACKS: Record<string, FallbackQuizDef> = {
 // Normalize topic title for lookup
 function lookupTopicFallback(topicTitle: string): FallbackQuizDef | null {
   const key = topicTitle.toLowerCase().trim()
-  // direct match
   if (TOPIC_FALLBACKS[key]) return TOPIC_FALLBACKS[key]
-  // partial match
+
+  // Only accept a partial match when the learner's title actually contains the
+  // full fallback key. Matching the other way round let short titles ("table",
+  // "a") pull in an unrelated quiz.
   for (const k of Object.keys(TOPIC_FALLBACKS)) {
-    if (key.includes(k) || k.includes(key)) return TOPIC_FALLBACKS[k]
+    if (key.includes(k)) return TOPIC_FALLBACKS[k]
   }
   return null
 }
@@ -543,9 +545,14 @@ function fallbackQuestions(topicTitle: string): StudyBuddyQuiz {
 }
 
 function parseQuizJson(text: string, topicTitle: string): StudyBuddyQuiz {
-  const cleaned = text.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim()
+  // The model sometimes wraps the JSON in fences or adds a short preamble, so
+  // slice to the outermost object instead of only trimming leading fences.
+  const withoutFences = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+  const start = withoutFences.indexOf('{')
+  const end = withoutFences.lastIndexOf('}')
+  const cleaned = start !== -1 && end > start ? withoutFences.slice(start, end + 1) : withoutFences
   const parsed = JSON.parse(cleaned)
-  if (!Array.isArray(parsed.questions) || parsed.questions.length !== 5) throw new Error('Quiz must have exactly 5 questions')
+  if (!Array.isArray(parsed.questions) || parsed.questions.length < 5) throw new Error('Quiz must have at least 5 questions')
 
   const questions: StudyBuddyQuiz['questions'] = parsed.questions.slice(0, 5).map((q: any, index: number) => {
     const options: QuizOption[] = Array.isArray(q.options)
@@ -594,13 +601,21 @@ export async function generateStudyBuddyQuiz(topicTitle: string, subject?: strin
     return fallbackQuestions(topicTitle)
   }
 
+  // Each room gets its own angle so a repeat session on the same topic does not
+  // regenerate the identical five questions.
+  const variationSeed = Math.random().toString(36).slice(2, 8)
+
   try {
-    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash' })
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
+      generationConfig: { temperature: 1, responseMimeType: 'application/json' },
+    })
     const result = await model.generateContent(`You are VoicePandita's Bondhu Study Room AI host for Bangladeshi SSC/HSC students.
 Generate exactly one 5-question MCQ concept-check session. Return ONLY valid JSON -- no markdown, no preamble.
 
 Topic: "${topicTitle}"
 Subject: ${subject || 'general'}
+Session variation id: ${variationSeed} -- use it to pick fresh examples, numbers, and scenarios so this session differs from earlier sessions on the same topic. Never mention this id.
 
 Personality and tone:
 - Warm, concise, and peer-friendly like a calm Bangla bondhu study group host.

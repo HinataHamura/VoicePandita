@@ -296,3 +296,36 @@ export function recordPractice(subject: string, question: string) {
   }
   saveStudentProgress(nextProgress)
 }
+
+export type StudyRoomResult = {
+  roomId: string
+  topicTitle: string
+  score: number
+  total: number
+  weakConcepts: string[]
+  completedAt: string
+}
+
+export function studyRoomResultsKey(studentId = getCurrentStudent().id) {
+  return `vp_study_room_results:${studentId}`
+}
+
+export function getStudyRoomResults(studentId?: string): StudyRoomResult[] {
+  if (!canUseStorage()) return []
+  try {
+    const saved = localStorage.getItem(studyRoomResultsKey(studentId))
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+export function recordStudyRoomResult(result: Omit<StudyRoomResult, 'completedAt'>) {
+  if (!canUseStorage()) return
+  const results = getStudyRoomResults()
+  const next = [
+    { ...result, completedAt: new Date().toISOString() },
+    ...results.filter(item => item.roomId !== result.roomId),
+  ].slice(0, 50)
+  writeJson(studyRoomResultsKey(), next)
+}

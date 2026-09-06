@@ -20,6 +20,8 @@ export default function StudyQuestionCard(props: {
   memberCount: number
   showHint: boolean
   submitting?: boolean
+  questionNumber?: number
+  totalQuestions?: number
   onHint: () => void
   onSelect: (id: string) => void
 }) {
@@ -37,6 +39,11 @@ export default function StudyQuestionCard(props: {
       {/* Header */}
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
+          {props.questionNumber ? (
+            <span className="rounded-full bg-forest px-2.5 py-1 text-xs font-bold text-white">
+              {props.totalQuestions ? `প্রশ্ন ${props.questionNumber}/${props.totalQuestions}` : `প্রশ্ন ${props.questionNumber}`}
+            </span>
+          ) : null}
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${moveInfo.color}`}>
             <HelpCircle size={11} />
             {moveInfo.label}
