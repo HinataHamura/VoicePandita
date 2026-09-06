@@ -241,8 +241,11 @@ function isAcceptableOfflineAnswer(answer: string, options: { requireBangla?: bo
   return ratio >= 0.35
 }
 
-function simpleDiagram(results: OfflineSearchResult[]) {
-  const title = results[0]?.chunk.title
+function simpleDiagram(results: OfflineSearchResult[], fallbackTitle?: string) {
+  // A curriculum chunk match gives a real title; a general-concept match still
+  // has a usable title, it just never reaches results, so the diagram used to
+  // disappear whenever Ollama answered from GENERAL_CONCEPTS instead.
+  const title = results[0]?.chunk.title || fallbackTitle
   if (!title) return null
   return `graph LR
   A[${title}] --> B[মূল ধারণা]
@@ -301,7 +304,7 @@ export async function runOfflineAsk(input: OfflineAskInput): Promise<OfflineAskR
       subject: result.chunk.subject,
       classLevel: result.chunk.classLevel,
     })),
-    diagram: simpleDiagram(results),
+    diagram: simpleDiagram(results, generalConcept?.title),
     graphPath: results[0]
       ? ['Offline Curriculum', results[0].chunk.subject, results[0].chunk.title]
       : ['Offline General AI', subject, generalConcept?.title || 'No curriculum pack match'],
