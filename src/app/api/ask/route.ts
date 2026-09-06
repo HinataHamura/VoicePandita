@@ -23,6 +23,7 @@ import {
   type TargetLanguage,
 } from '@/lib/multilingualSupport'
 import { formatMarmaExamples, hasMarmaScript, loadMarmaContext } from '@/lib/marmaBridge'
+import { geminiTextModels, groqModel } from '@/lib/ai/models'
 import { fallbackEmbedding } from '@/lib/fallbackEmbedding'
 import { buildOfflineAnswer, searchOffline } from '@/lib/offline-search'
 import { offlineAiEnabled, runOfflineAsk } from '@/lib/offline/offline-ask'
@@ -298,10 +299,38 @@ const defaultBySubject: Record<string, LessonKey> = {
   english: 'creative_answer',
 }
 
+// Plain substring matching mis-routed questions: "বল" (force) is a substring of
+// "বলে" ("is called"), so every "X কাকে বলে?" question resolved to Newton's
+// second law. \b does not work for Bangla, so boundaries are checked against
+// separators. Short keywords that double as everyday words must match a whole
+// word; longer topical keywords may still prefix-match a compound, which is how
+// "সালোক" is meant to find "সালোকসংশ্লেষণ".
+const LESSON_KEYWORD_BOUNDARY = /[\s।॥.,!?;:()"'\-–—/]/
+const WHOLE_WORD_LESSON_KEYWORDS = new Set(['বল', 'ভর', 'ion', 'সূত্র', 'উত্তর', 'বাংলা', 'formula'])
+
+function matchesKeyword(haystack: string, keyword: string) {
+  if (!keyword) return false
+  const wholeWord = WHOLE_WORD_LESSON_KEYWORDS.has(keyword)
+
+  let from = 0
+  for (;;) {
+    const index = haystack.indexOf(keyword, from)
+    if (index === -1) return false
+
+    const before = index === 0 ? '' : haystack[index - 1]
+    if (!before || LESSON_KEYWORD_BOUNDARY.test(before)) {
+      const after = haystack[index + keyword.length] ?? ''
+      if (!wholeWord || !after || LESSON_KEYWORD_BOUNDARY.test(after)) return true
+    }
+
+    from = index + 1
+  }
+}
+
 function inferLesson(question: string): LessonKey | null {
   const lc = question.toLowerCase()
   return (Object.keys(LESSONS) as LessonKey[]).find(key =>
-    LESSONS[key].keywords.some(keyword => lc.includes(keyword.toLowerCase()))
+    LESSONS[key].keywords.some(keyword => matchesKeyword(lc, keyword.toLowerCase()))
   ) || null
 }
 
@@ -460,11 +489,7 @@ function safeFallbackGraphPath(question: string, selectedSubject: string) {
 }
 
 async function geminiText(prompt: string) {
-  const requested = process.env.GEMINI_MODEL?.trim()
-  const models = (requested
-    ? [requested, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
-    : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'])
-    .filter((modelName, index, allModels): modelName is string => Boolean(modelName) && allModels.indexOf(modelName) === index)
+  const models = geminiTextModels()
 
   let lastError: unknown = null
   if (genAI) {
@@ -489,7 +514,7 @@ async function geminiText(prompt: string) {
   if (groq) {
     try {
       const result = await groq.chat.completions.create({
-        model: process.env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile',
+        model: groqModel(),
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 1400,

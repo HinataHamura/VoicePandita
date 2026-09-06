@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import Groq from 'groq-sdk'
+import { geminiTextModels, groqModel } from '@/lib/ai/models'
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
@@ -8,9 +9,7 @@ const groqKey = process.env.GROQ_API_KEY?.trim()
 const groq = groqKey ? new Groq({ apiKey: groqKey }) : null
 
 async function generateText(prompt: string) {
-  const models = process.env.GEMINI_MODEL?.trim()
-    ? [process.env.GEMINI_MODEL.trim(), 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
-    : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']
+  const models = geminiTextModels()
 
   if (genAI) {
     for (const modelName of models) {
@@ -27,7 +26,7 @@ async function generateText(prompt: string) {
   if (groq) {
     try {
       const result = await groq.chat.completions.create({
-        model: process.env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile',
+        model: groqModel(),
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.1,
         max_tokens: 320,

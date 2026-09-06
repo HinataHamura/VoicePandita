@@ -8,6 +8,7 @@ import {
   normalizeSummaryJson,
   validatePdfFile,
 } from '@/lib/pdfSummary'
+import { geminiSummaryModels } from '@/lib/ai/models'
 
 export const runtime = 'nodejs'
 
@@ -18,13 +19,7 @@ const scannedPdfResponse = {
 }
 
 function getSummaryModels() {
-  return [
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash',
-    process.env.GEMINI_SUMMARY_MODEL?.trim(),
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
-  ].filter((model, index, models): model is string => Boolean(model) && models.indexOf(model) === index)
+  return geminiSummaryModels()
 }
 
 type GeminiSummaryErrorType =

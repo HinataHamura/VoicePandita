@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { geminiTextModels } from '@/lib/ai/models'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PracticeTurn = {
@@ -79,11 +80,20 @@ function safeJson(text: string) {
 
 async function generateText(prompt: string): Promise<string | null> {
   if (!genAI) return null
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
-  })
-  const result = await model.generateContent(prompt)
-  return result.response.text()
+
+  let lastError: unknown = null
+  for (const modelName of geminiTextModels()) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName })
+      const result = await model.generateContent(prompt)
+      return result.response.text()
+    } catch (err) {
+      lastError = err
+      console.warn(`/api/voice-practice Gemini failed: ${modelName}`, err instanceof Error ? err.message : err)
+    }
+  }
+
+  throw lastError
 }
 
 // ─── Fallbacks (used when Gemini is unavailable or fails) ─────────────────────

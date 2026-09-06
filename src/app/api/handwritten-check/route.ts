@@ -1,18 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest, NextResponse } from 'next/server'
 import { cleanOcrText, imageFileToGenerativePart, validateImageFile } from '@/lib/ocr'
+import { geminiVisionModels } from '@/lib/ai/models'
 
 const geminiKey = process.env.GEMINI_API_KEY?.trim()
 const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null
 
 function getVisionModelCandidates() {
-  return [
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash',
-    process.env.GEMINI_VISION_MODEL?.trim(),
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
-  ].filter((model, index, models): model is string => Boolean(model) && models.indexOf(model) === index)
+  return geminiVisionModels()
 }
 
 function safeJson(text: string): Record<string, unknown> {
@@ -27,7 +22,7 @@ function friendlyCheckError(message: string) {
     return 'Gemini rate limit reached, so the image could not be checked right now. Try again after a minute.'
   }
   if (normalized.includes('404') || normalized.includes('not found') || normalized.includes('not supported') || normalized.includes('model')) {
-    return 'Gemini vision model is not available. Set GEMINI_VISION_MODEL=gemini-2.0-flash-lite or gemini-2.0-flash and restart the server.'
+    return 'Gemini vision model is not available. Set GEMINI_VISION_MODEL=gemini-flash-latest and restart the server.'
   }
   if (normalized.includes('api key') || normalized.includes('api_key_invalid') || normalized.includes('invalid')) {
     return 'Gemini API key problem. Check GEMINI_API_KEY and restart the server.'
