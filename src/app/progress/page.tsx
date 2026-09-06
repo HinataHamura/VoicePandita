@@ -16,6 +16,7 @@ import {
   Route,
   Sparkles,
   TrendingDown,
+  Users,
   Volume2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -25,10 +26,12 @@ import {
   getConceptMemory,
   getCurrentStudent,
   getStudentProgress,
+  getStudyRoomResults,
   type ChatHistoryItem,
   type ConceptMemory,
   type StudentIdentity,
   type StudentProgress,
+  type StudyRoomResult,
   type TopicProgress,
 } from '@/lib/studentStore'
 import PageHeader from '@/components/PageHeader'
@@ -304,6 +307,7 @@ export default function ProgressPage() {
   const [memory, setMemory] = useState<ConceptMemory[]>([])
   const [practiceTurns, setPracticeTurns] = useState<PracticeTurn[]>([])
   const [handwrittenChecks, setHandwrittenChecks] = useState<SavedCheck[]>([])
+  const [studyRooms, setStudyRooms] = useState<StudyRoomResult[]>([])
 
   useEffect(() => {
     getAuthenticatedStudent().then(authStudent => {
@@ -318,6 +322,7 @@ export default function ProgressPage() {
       setMemory(getConceptMemory(current.id))
       setPracticeTurns(readStudentJsonArray<PracticeTurn>('vp_voice_practice_turns', current.id))
       setHandwrittenChecks(readStudentJsonArray<SavedCheck>('vp_handwritten_checks', current.id))
+      setStudyRooms(getStudyRoomResults(current.id))
     })
   }, [])
 
@@ -465,6 +470,59 @@ export default function ProgressPage() {
               </Link>
             </div>
           </div>
+        </section>
+
+        <section className="card p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Users size={17} className="text-forest" />
+            <h2 className="text-sm font-semibold text-ink/75">Bondhu Study Room</h2>
+          </div>
+          {studyRooms.length ? (
+            <>
+              <div className="mb-4 grid grid-cols-3 gap-3">
+                <div className="rounded-2xl bg-forest/8 p-4">
+                  <div className="font-display text-2xl font-bold text-forest">{studyRooms.length}</div>
+                  <div className="text-xs text-ink/50">Sessions</div>
+                </div>
+                <div className="rounded-2xl bg-indigo/8 p-4">
+                  <div className="font-display text-2xl font-bold text-indigo">
+                    {studyRooms.reduce((sum, item) => sum + item.score, 0)}/
+                    {studyRooms.reduce((sum, item) => sum + item.total, 0)}
+                  </div>
+                  <div className="text-xs text-ink/50">Correct answers</div>
+                </div>
+                <div className="rounded-2xl bg-saffron/12 p-4">
+                  <div className="font-display text-2xl font-bold text-orange-700">
+                    {averageScore(studyRooms.map(item => (item.score / Math.max(1, item.total)) * 100))}%
+                  </div>
+                  <div className="text-xs text-ink/50">Average accuracy</div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {studyRooms.slice(0, 5).map(item => (
+                  <div key={item.roomId} className="flex items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/65 p-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-ink/80">{item.topicTitle}</div>
+                      <div className="text-xs text-ink/45">
+                        {new Date(item.completedAt).toLocaleDateString()}
+                        {item.weakConcepts.length ? ` · ${item.weakConcepts.slice(0, 2).join(', ')}` : ''}
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-forest/10 px-3 py-1 text-xs font-bold text-forest">
+                      {item.score}/{item.total}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-ink/50">Kono study room session shesh koroni ekhono.</p>
+              <Link href="/study-buddy" className="inline-flex items-center gap-1.5 rounded-xl border border-forest/20 bg-white/75 px-3 py-2 text-xs font-semibold text-forest hover:bg-white">
+                <Users size={13} /> Join a study room
+              </Link>
+            </div>
+          )}
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
